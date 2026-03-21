@@ -1,0 +1,93 @@
+{
+  "languages": {
+    "ko": "한국어",
+    "en": "영어"
+  },
+  "header": {
+    "product": " ✦ 업스테이지 솔라-프로 ",
+    "sessionVersion": "  v1.0.0  ·  {session} "
+  },
+  "help": {
+    "text": "\n  ✦ UPSTAGE CLI 단축키 및 명령어\n  \n  단축키:\n  Tab    : 포커스 순환 (입력/채팅/사이드바)\n  Ctrl+S : 세션 브라우저 토글\n  Ctrl+T : 저장소 맵 토글\n  Ctrl+X : 외부 에디터 열기\n  Esc    : 내비게이션 모드 진입 (j/k 스크롤)\n  Esc+Esc: 세션 되돌리기 (마지막 턴 취소)\n  i      : 입력창 포커스 (입력 모드)\n  \n  슬래시 명령어:\n  /new      : 새 세션 시작\n  /sessions : 세션 브라우저 열기\n  /tree     : 저장소 맵 열기\n  /help     : 도움말 표시\n  /lang ko  : 한국어로 전환\n  /lang en  : 영어로 전환\n  /exit     : 애플리케이션 종료\n"
+  },
+  "empty": {
+    "chat": "무엇을 도와드릴까요?"
+  },
+  "sidebar": {
+    "tabs": {
+      "plan": "계획",
+      "context": "컨텍스트",
+      "tools": "도구"
+    },
+    "noActivePlan": "진행 중인 계획이 없습니다",
+    "repoMapEmpty": "저장소 맵 데이터가 없습니다",
+    "recentObservations": "최근 관찰 결과:"
+  },
+  "steps": {
+    "plan": "계획 수립: {mode}",
+    "tool": "도구 실행: {tool}",
+    "analyzing": "분석 중..."
+  },
+  "status": {
+    "idle": "대기",
+    "thinking": "생각 중...",
+    "warning": "경고",
+    "error": "오류",
+    "sessionRewound": "세션을 되돌렸습니다",
+    "newSessionStarted": "새 세션을 시작했습니다",
+    "languageChanged": "언어를 변경했습니다"
+  },
+  "warning": {
+    "badge": "경고",
+    "tokenContextHigh": "세션 컨텍스트 사용량이 Solar Pro2 토큰 한도의 80%를 초과했습니다."
+  },
+  "errors": {
+    "prefix": "오류: {message}"
+  },
+  "commands": {
+    "langUsage": "사용법: /lang <ko|en>",
+    "langUnsupported": "지원하지 않는 언어입니다: {language}. /lang <ko|en> 형식을 사용하세요.",
+    "langChanged": "언어를 {language}(으)로 변경했습니다.",
+    "langAlreadySet": "이미 {language}(으)로 설정되어 있습니다."
+  },
+  "composer": {
+    "processing": "처리 중...",
+    "askAnything": "무엇이든 물어보세요...",
+    "pressEnter": "Enter 키로 전송",
+    "typeForCommands": "/ 를 입력해 명령어 사용",
+    "pressToFocus": "\"i\" 키로 포커스"
+  },
+  "statusBar": {
+    "status": "상태",
+    "tokens": "토큰",
+    "cost": "비용",
+    "warn": "경고",
+    "language": "언어",
+    "mode": {
+      "default": "기본",
+      "plan": "계획",
+      "auto": "자동"
+    }
+  },
+  "approval": {
+    "required": "⚠️ 승인 필요: ",
+    "allowAction": "이 작업을 허용하시겠습니까? ",
+    "yes": "(y)예 ",
+    "no": "(n)아니오"
+  },
+  "sessionBrowser": {
+    "title": "✦ 세션 브라우저 ✦",
+    "noSessions": "활성 세션이 없습니다.",
+    "unknown": "알 수 없음",
+    "navigate": "↑↓: 이동",
+    "selectCancel": "Enter: 선택 · Esc: 취소"
+  },
+  "repoMap": {
+    "title": "📂 저장소 맵",
+    "noData": "저장소 데이터를 찾을 수 없습니다.",
+    "navigate": "↑↓: 이동 · Esc: 닫기"
+  },
+  "thinking": {
+    "default": "생각 중..."
+  }
+}

@@ -15,27 +15,15 @@ import { StatusBar } from './components/StatusBar.js';
 import { THEME } from './colors.js';
 import { enterFullscreenTui, exitFullscreenTui } from './tui.js';
 import { runAgentLoop } from '../agent/loop.js';
-import { listSessions, loadSession, createSession } from '../runtime/session.js';
-
-const HELP_TEXT = `
-  ✦ UPSTAGE CLI SHORTCUTS & COMMANDS
-  
-  Shortcuts:
-  Tab    : Cycle Focus (Input/Chat/Sidebar)
-  Ctrl+S : Toggle Session Browser
-  Ctrl+T : Toggle Repository Map
-  Ctrl+X : Open External Editor
-  Esc    : Enter Navigation Mode (j/k to scroll)
-  Esc+Esc: Rewind Session (Undo last turn)
-  i      : Focus Input (Insert Mode)
-  
-  Slash Commands:
-  /new      : Start a fresh session
-  /sessions : Open session browser
-  /tree     : Open repository map
-  /help     : Show this help message
-  /exit     : Exit the application
-`;
+import { createSession, listSessions, loadSession, saveSession } from '../runtime/session.js';
+import {
+  getLanguage,
+  initializeLanguage,
+  isSupportedLanguage,
+  setLanguage as setI18nLanguage,
+  subscribeLanguage,
+  t
+} from '../i18n/index.js';
 
 const LOGO_ART = `
                          :     -                         
@@ -84,7 +72,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [currentSession, setCurrentSession] = useState(initialSession);
   const [messages, setMessages] = useState([]);
-  const [status, setStatus] = useState('Idle');
+  const [statusKey, setStatusKey] = useState('idle');
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentThought, setCurrentThought] = useState(null);
   const [steps, setSteps] = useState([]);
@@ -98,6 +86,10 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   const [tokenUsage, setTokenUsage] = useState({ total: 0, cost: 0 });
   const [systemWarning, setSystemWarning] = useState('');
   const [approvalMode, setApprovalMode] = useState('default');
+  const [language, setLanguageState] = useState(() => {
+    initializeLanguage(initialSession?.preferences?.language);
+    return getLanguage();
+  });
 
   const [scrollIndex, setScrollIndex] = useState(0);
   const [autoFollow, setAutoFollow] = useState(true);
@@ -116,6 +108,36 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     };
   }, []);
 
+  useEffect(() => {
+    return subscribeLanguage((nextLanguage) => {
+      setLanguageState(nextLanguage);
+    });
+  }, []);
+
+  const persistSessionLanguage = useCallback(async (session, nextLanguage) => {
+    if (!session || !isSupportedLanguage(nextLanguage)) {
+      return;
+    }
+    if (!session.preferences || typeof session.preferences !== 'object') {
+      session.preferences = {};
+    }
+    session.preferences.language = nextLanguage;
+    session.updatedAt = Date.now();
+    await saveSession(session);
+  }, []);
+
+  useEffect(() => {
+    if (!currentSession) {
+      return;
+    }
+    const preferredLanguage = currentSession.preferences?.language;
+    if (isSupportedLanguage(preferredLanguage)) {
+      setI18nLanguage(preferredLanguage);
+      return;
+    }
+    persistSessionLanguage(currentSession, getLanguage()).catch(() => {});
+  }, [currentSession, persistSessionLanguage]);
+
   const HEADER_HEIGHT = 28; 
   const FOOTER_HEIGHT = 4; 
   const CHAT_VISIBLE_HEIGHT = Math.max(5, terminalHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
@@ -128,10 +150,12 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     return messages.slice(scrollIndex, scrollIndex + CHAT_VISIBLE_HEIGHT);
   }, [messages, scrollIndex, autoFollow, CHAT_VISIBLE_HEIGHT]);
 
+  const helpText = useMemo(() => t('help.text'), [language]);
+
   const tabs = useMemo(() => [
     { 
       id: 'plan', 
-      label: 'PLAN', 
+      label: t('sidebar.tabs.plan'), 
       component: steps.length > 0 ? (
         React.createElement(
           Box,
@@ -145,7 +169,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
                 { color: step.done ? THEME.text.success : THEME.accent },
                 step.done ? ' ✓ ' : ' ○ '
               ),
-              React.createElement(Text, { dimColor: step.done }, step.label)
+              React.createElement(Text, { dimColor: step.done }, t(step.labelKey, step.labelParams))
             )
           ))
         )
@@ -153,38 +177,38 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         React.createElement(
           Box,
           { justifyContent: "center", paddingY: 2 },
-          React.createElement(Text, { dimColor: true }, "No active plan")
+          React.createElement(Text, { dimColor: true }, t('sidebar.noActivePlan'))
         )
       )
     },
     { 
       id: 'context', 
-      label: 'CONTEXT', 
+      label: t('sidebar.tabs.context'), 
       component: Object.keys(repoMapData).length > 0 ? (
         React.createElement(RepoMap, { data: repoMapData, isSidebar: true })
       ) : (
         React.createElement(
           Box,
           { justifyContent: "center", paddingY: 2 },
-          React.createElement(Text, { dimColor: true }, "Repository map empty")
+          React.createElement(Text, { dimColor: true }, t('sidebar.repoMapEmpty'))
         )
       )
     },
     { 
       id: 'tools', 
-      label: 'TOOLS', 
+      label: t('sidebar.tabs.tools'), 
       component: (
         React.createElement(
           Box,
           { flexDirection: "column" },
-          React.createElement(Text, { color: THEME.indigo, bold: true }, "Recent Observations:"),
-          steps.filter(s => s.label.includes('tool')).slice(-5).map((s, i) => (
-            React.createElement(Text, { key: i, dimColor: true }, ` - ${s.label}`)
+          React.createElement(Text, { color: THEME.indigo, bold: true }, t('sidebar.recentObservations')),
+          steps.filter((step) => step.type === 'tool').slice(-5).map((step, i) => (
+            React.createElement(Text, { key: i, dimColor: true }, ` - ${t(step.labelKey, step.labelParams)}`)
           ))
         )
       )
     }
-  ], [steps, repoMapData]);
+  ], [steps, repoMapData, language]);
 
   useEffect(() => {
     if (initialSession && initialSession.history) {
@@ -229,8 +253,9 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       setMessages(prev => prev.slice(0, -2));
       if (currentSession && currentSession.history) {
         currentSession.history = currentSession.history.slice(0, -2);
+        saveSession(currentSession).catch(() => {});
       }
-      setStatus('Session Rewound');
+      setStatusKey('sessionRewound');
     }
   }, [messages, currentSession]);
 
@@ -303,43 +328,98 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     setMessages(loaded.history.map(h => ({ role: h.role, content: h.content, diff: h.diff })) || []);
     setTokenUsage({ total: 0, cost: 0 });
     setSystemWarning('');
+    setStatusKey('idle');
     setShowSessions(false);
     setFocusedPane('input');
+
+    const preferredLanguage = loaded.preferences?.language;
+    if (isSupportedLanguage(preferredLanguage)) {
+      setI18nLanguage(preferredLanguage);
+      return;
+    }
+    await persistSessionLanguage(loaded, getLanguage());
   };
 
   const handleSend = useCallback(async (query) => {
-    if (query === '/exit') {
+    const trimmedQuery = typeof query === 'string' ? query.trim() : '';
+    if (!trimmedQuery) {
+      return;
+    }
+
+    if (trimmedQuery === '/exit') {
         process.exit(0);
         return;
     }
-    if (query === '/new') {
+    if (trimmedQuery === '/new') {
         const newSess = createSession(process.cwd());
+        const activeLanguage = getLanguage();
+        newSess.preferences = {
+          ...(newSess.preferences || {}),
+          language: activeLanguage
+        };
+        await saveSession(newSess);
+
         setSessionId(newSess.id);
         setCurrentSession(newSess);
         setMessages([]);
         setTokenUsage({ total: 0, cost: 0 });
         setSystemWarning('');
-        setStatus('New Session Started');
+        setStatusKey('newSessionStarted');
         return;
     }
-    if (query === '/help') {
-        setMessages(prev => [...prev, { role: 'user', content: '/help' }, { role: 'assistant', content: HELP_TEXT }]);
+    if (trimmedQuery === '/help') {
+        setMessages(prev => [...prev, { role: 'user', content: '/help' }, { role: 'assistant', content: helpText }]);
         return;
     }
-    if (query === '/sessions') {
+    const [commandName, requestedLanguage] = trimmedQuery.split(/\s+/);
+    if (commandName === '/lang') {
+        setMessages(prev => [...prev, { role: 'user', content: trimmedQuery }]);
+
+        if (!requestedLanguage) {
+          setMessages(prev => [...prev, { role: 'assistant', content: t('commands.langUsage') }]);
+          return;
+        }
+        const normalizedLanguage = requestedLanguage.toLowerCase();
+        if (!isSupportedLanguage(normalizedLanguage)) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: t('commands.langUnsupported', { language: requestedLanguage })
+          }]);
+          return;
+        }
+        if (normalizedLanguage === getLanguage()) {
+          setMessages(prev => [...prev, {
+            role: 'assistant',
+            content: t('commands.langAlreadySet', { language: t(`languages.${normalizedLanguage}`) })
+          }]);
+          return;
+        }
+
+        setI18nLanguage(normalizedLanguage);
+        if (currentSession) {
+          await persistSessionLanguage(currentSession, normalizedLanguage);
+        }
+        setStatusKey('languageChanged');
+        setMessages(prev => [...prev, {
+          role: 'assistant',
+          content: t('commands.langChanged', { language: t(`languages.${normalizedLanguage}`) })
+        }]);
+        return;
+    }
+    if (trimmedQuery === '/sessions') {
         setShowSessions(true);
         setFocusedPane('chat');
         return;
     }
-    if (query === '/tree') {
+    if (trimmedQuery === '/tree') {
         setShowRepoMap(true);
         setFocusedPane('sidebar');
         return;
     }
 
     setIsProcessing(true);
-    setStatus('Thinking...');
-    setMessages(prev => [...prev, { role: 'user', content: query }]);
+    setStatusKey('thinking');
+    setMessages(prev => [...prev, { role: 'user', content: trimmedQuery }]);
     setSteps([]);
     setCurrentThought(null);
 
@@ -348,7 +428,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       let lastDiff = null;
       
       const result = await runAgentLoop({
-        input: query,
+        input: trimmedQuery,
         registry,
         cwd: process.cwd(),
         adapter,
@@ -367,19 +447,30 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         },
         onEvent: (event) => {
           if (event.type === 'PLAN') {
-            setSteps(prev => [...prev, { label: `Planning: ${event.mode}`, done: true }]);
+            setSteps(prev => [...prev, {
+              type: 'plan',
+              labelKey: 'steps.plan',
+              labelParams: { mode: event.mode },
+              done: true
+            }]);
           } else if (event.type === 'TOOL') {
-            setSteps(prev => [...prev, { label: `Using tool: ${event.tool}`, done: false }]);
+            setSteps(prev => [...prev, {
+              type: 'tool',
+              tool: event.tool,
+              labelKey: 'steps.tool',
+              labelParams: { tool: event.tool },
+              done: false
+            }]);
           } else if (event.type === 'OBSERVATION') {
             setSteps(prev => {
               const last = prev[prev.length - 1];
-              if (last && last.label.includes(event.tool)) {
+              if (last && last.type === 'tool' && last.tool === event.tool) {
                 return [...prev.slice(0, -1), { ...last, done: true }];
               }
               return prev;
             });
           } else if (event.type === 'THINKING') {
-            setCurrentThought(event.thought?.subject || 'Analyzing...');
+            setCurrentThought(event.thought?.subject || t('steps.analyzing'));
           } else if (event.type === 'PATCH_PREVIEW') {
             lastDiff = event.patch?.unifiedDiff;
             setMessages(prev => {
@@ -395,9 +486,9 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
                   cost: prev.cost + (event.usage?.cost || 0)
               }));
           } else if (event.type === 'SYSTEM_WARNING') {
-              const warningMessage = event.message || 'Session context usage exceeded 80% of Solar Pro2 token limit.';
+              const warningMessage = event.message || t('warning.tokenContextHigh');
               setSystemWarning(warningMessage);
-              setStatus('Warning');
+              setStatusKey('warning');
           }
         },
         confirm: async (tool, params) => {
@@ -415,16 +506,27 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       if (!assistantResponse && result.response) {
         setMessages(prev => [...prev, { role: 'assistant', content: result.response, diff: lastDiff }]);
       }
+
+      if (result.session) {
+        setCurrentSession(result.session);
+        await saveSession(result.session);
+      } else if (currentSession) {
+        await saveSession(currentSession);
+      }
       
-      setStatus('Idle');
+      setStatusKey('idle');
     } catch (err) {
-      setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}` }]);
-      setStatus('Error');
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      setMessages(prev => [...prev, {
+        role: 'assistant',
+        content: t('errors.prefix', { message: errorMessage })
+      }]);
+      setStatusKey('error');
     } finally {
       setIsProcessing(false);
       setCurrentThought(null);
     }
-  }, [registry, adapter, currentSession, runtimeCache]);
+  }, [registry, adapter, currentSession, runtimeCache, helpText, persistSessionLanguage]);
 
   return React.createElement(
     Box,
@@ -450,8 +552,8 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       React.createElement(
         Box,
         { paddingX: 1 },
-        React.createElement(Text, { color: THEME.primary, bold: true }, " ✦ UPSTAGE SOLAR-PRO "),
-        React.createElement(Text, { color: THEME.dim }, `  v1.0.0  ·  ${sessionId.slice(0, 8)} `)
+        React.createElement(Text, { color: THEME.primary, bold: true }, t('header.product')),
+        React.createElement(Text, { color: THEME.dim }, t('header.sessionVersion', { session: sessionId.slice(0, 8) }))
       )
     ),
 
@@ -475,7 +577,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
             ? React.createElement(
                 Box,
                 { justifyContent: "center", paddingY: 2 },
-                React.createElement(Text, { dimColor: true }, "How can I help you today?")
+                React.createElement(Text, { dimColor: true }, t('empty.chat'))
               )
             : visibleMessages.map((m, i) =>
                 React.createElement(
@@ -508,14 +610,14 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       systemWarning && React.createElement(
         Box,
         { borderStyle: "single", borderColor: THEME.text.warning, paddingX: 1 },
-        React.createElement(Text, { color: THEME.text.warning }, `[WARN] ${systemWarning}`)
+        React.createElement(Text, { color: THEME.text.warning }, `[${t('warning.badge')}] ${systemWarning}`)
       ),
       React.createElement(StatusBar, {
-        status: status,
+        statusKey: statusKey,
         tokenUsage: tokenUsage,
         approvalMode: approvalMode,
-        warningMessage: systemWarning,
-        isFocused: focusedPane === 'input'
+        systemWarning: systemWarning,
+        language: language
       }),
       React.createElement(Composer, { 
           onSend: handleSend, 

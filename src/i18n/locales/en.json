@@ -1,0 +1,93 @@
+{
+  "languages": {
+    "ko": "Korean",
+    "en": "English"
+  },
+  "header": {
+    "product": " ✦ UPSTAGE SOLAR-PRO ",
+    "sessionVersion": "  v1.0.0  ·  {session} "
+  },
+  "help": {
+    "text": "\n  ✦ UPSTAGE CLI SHORTCUTS & COMMANDS\n  \n  Shortcuts:\n  Tab    : Cycle Focus (Input/Chat/Sidebar)\n  Ctrl+S : Toggle Session Browser\n  Ctrl+T : Toggle Repository Map\n  Ctrl+X : Open External Editor\n  Esc    : Enter Navigation Mode (j/k to scroll)\n  Esc+Esc: Rewind Session (Undo last turn)\n  i      : Focus Input (Insert Mode)\n  \n  Slash Commands:\n  /new      : Start a fresh session\n  /sessions : Open session browser\n  /tree     : Open repository map\n  /help     : Show this help message\n  /lang ko  : Switch language to Korean\n  /lang en  : Switch language to English\n  /exit     : Exit the application\n"
+  },
+  "empty": {
+    "chat": "How can I help you today?"
+  },
+  "sidebar": {
+    "tabs": {
+      "plan": "PLAN",
+      "context": "CONTEXT",
+      "tools": "TOOLS"
+    },
+    "noActivePlan": "No active plan",
+    "repoMapEmpty": "Repository map empty",
+    "recentObservations": "Recent Observations:"
+  },
+  "steps": {
+    "plan": "Planning: {mode}",
+    "tool": "Using tool: {tool}",
+    "analyzing": "Analyzing..."
+  },
+  "status": {
+    "idle": "Idle",
+    "thinking": "Thinking...",
+    "warning": "Warning",
+    "error": "Error",
+    "sessionRewound": "Session rewound",
+    "newSessionStarted": "New session started",
+    "languageChanged": "Language changed"
+  },
+  "warning": {
+    "badge": "WARN",
+    "tokenContextHigh": "Session context usage exceeded 80% of Solar Pro2 token limit."
+  },
+  "errors": {
+    "prefix": "Error: {message}"
+  },
+  "commands": {
+    "langUsage": "Usage: /lang <ko|en>",
+    "langUnsupported": "Unsupported language: {language}. Use /lang <ko|en>.",
+    "langChanged": "Language switched to {language}.",
+    "langAlreadySet": "Language is already {language}."
+  },
+  "composer": {
+    "processing": "Processing...",
+    "askAnything": "Ask anything...",
+    "pressEnter": "Press Enter to send",
+    "typeForCommands": "Type / for commands",
+    "pressToFocus": "Press \"i\" to focus"
+  },
+  "statusBar": {
+    "status": "Status",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "warn": "WARN",
+    "language": "Lang",
+    "mode": {
+      "default": "DEFAULT",
+      "plan": "PLAN",
+      "auto": "AUTO"
+    }
+  },
+  "approval": {
+    "required": "⚠️ APPROVAL REQUIRED: ",
+    "allowAction": "Allow this action? ",
+    "yes": "(y)es ",
+    "no": "(n)o"
+  },
+  "sessionBrowser": {
+    "title": "✦ SESSION BROWSER ✦",
+    "noSessions": "No active sessions found.",
+    "unknown": "unknown",
+    "navigate": "↑↓: Navigate",
+    "selectCancel": "Enter: Select · Esc: Cancel"
+  },
+  "repoMap": {
+    "title": "📂 REPO MAP",
+    "noData": "No repository data found.",
+    "navigate": "↑↓: Navigate · Esc: Close"
+  },
+  "thinking": {
+    "default": "Thinking..."
+  }
+}

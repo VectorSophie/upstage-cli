@@ -2,6 +2,7 @@ import React from 'react';
 import { Box, Text, useInput } from 'ink';
 import TextInputImport from 'ink-text-input';
 import { THEME } from '../colors.js';
+import { t } from '../../i18n/index.js';
 
 const TextInput = TextInputImport.default || TextInputImport;
 
@@ -37,7 +38,7 @@ export const Composer = ({ onSend, isDisabled, isFocused, value, onChange }) => 
         React.createElement(TextInput, {
           value: query,
           onChange,
-          placeholder: isDisabled ? "Processing..." : "Ask anything...",
+          placeholder: isDisabled ? t('composer.processing') : t('composer.askAnything'),
           focus: isFocused && !isDisabled
         })
       )
@@ -48,7 +49,9 @@ export const Composer = ({ onSend, isDisabled, isFocused, value, onChange }) => 
       React.createElement(
         Text,
         { dimColor: true },
-        isFocused ? (query.length > 0 ? 'Press Enter to send' : 'Type / for commands') : 'Press "i" to focus'
+        isFocused
+          ? (query.length > 0 ? t('composer.pressEnter') : t('composer.typeForCommands'))
+          : t('composer.pressToFocus')
       )
     )
   );

@@ -1,63 +1,64 @@
 # upstage-cli
 
-upstage-cli is an agentic Terminal User Interface (TUI) powered by Upstage Solar Pro2. It provides a powerful, interactive environment for pair programming, codebase exploration, and automated task execution directly from your terminal.
+upstage-cli는 Upstage Solar Pro2를 기반으로 동작하는 에이전트형 터미널 UI(TUI)입니다. 터미널 안에서 코드 분석, 페어 프로그래밍, 자동화된 작업 수행을 일관된 흐름으로 지원합니다.
 
-## Installation
+## 설치
 
-To get started, clone the repository and install the dependencies:
+아래 명령으로 저장소를 준비하고 실행할 수 있습니다.
 
 ```bash
 npm install
 npm start
 ```
 
-## Environment Variables
+## 환경 변수
 
-The following environment variables are essential for the operation of upstage-cli:
+upstage-cli 실행에 중요한 환경 변수는 다음과 같습니다.
 
-*   `UPSTAGE_API_KEY`: Your Upstage API key. This is required to communicate with the Solar Pro2 model.
-*   `EDITOR`: The command used to open an external editor (e.g., `vim`, `nano`, `code --wait`). Defaults to `vim`.
-*   `SECURITY_OVERRIDE`: Set to `true` to disable path-scoped write protection. Use with caution.
+*   `UPSTAGE_API_KEY`: Solar Pro2 모델 연동에 필요한 Upstage API 키
+*   `EDITOR`: 외부 편집기 실행 명령 (예: `vim`, `nano`, `code --wait`), 기본값 `vim`
+*   `SECURITY_OVERRIDE`: `true`로 설정하면 경로 기반 쓰기 보호를 해제 (주의 필요)
 
-You can also create a `.env` file in the root directory to manage these variables.
+루트 디렉터리에 `.env` 파일을 두고 관리할 수 있습니다.
 
-## Dashboard Layout
+## 대시보드 구성
 
-The upstage-cli interface is divided into two main sections:
+upstage-cli 인터페이스는 두 영역으로 구성됩니다.
 
-1.  **Chat (Left Pane)**: This is where you interact with the agent. You can type your requests, see the agent's responses, and view diff previews of proposed changes.
-2.  **Sidebar (Right Pane)**: Provides real-time context and status:
-    *   **Plan**: Shows the agent's breakdown of the current task into atomic steps.
-    *   **Context**: Displays the repository map and relevant files currently in the agent's context.
-    *   **Tools**: Lists recent tool executions and observations.
+1.  **채팅(왼쪽 패널)**: 요청 입력, 에이전트 응답 확인, 패치/디프 미리보기
+2.  **사이드바(오른쪽 패널)**: 작업 맥락과 상태 정보
+    *   **Plan**: 현재 작업을 원자적 단계로 분해한 계획
+    *   **Context**: 저장소 맵과 현재 맥락에 포함된 파일
+    *   **Tools**: 최근 도구 실행 및 관찰 결과
 
-## Keyboard Shortcuts
+## 키보드 단축키
 
-| Shortcut | Action |
+| 단축키 | 동작 |
 | :--- | :--- |
-| `Tab` | Cycle focus between Input, Chat, and Sidebar |
-| `Ctrl+S` | Toggle Session Browser |
-| `Ctrl+T` | Toggle Repository Map |
-| `Ctrl+X` | Open current input in your external `EDITOR` |
-| `Esc` | Enter Navigation Mode (use `j`/`k` to scroll chat) |
-| `Esc` (Double Press) | Rewind session (undo last turn) |
-| `i` | Focus Input (Insert Mode) from Navigation Mode |
+| `Tab` | Input, Chat, Sidebar 간 포커스 순환 |
+| `Ctrl+S` | 세션 브라우저 토글 |
+| `Ctrl+T` | 저장소 맵 토글 |
+| `Ctrl+X` | 현재 입력을 외부 `EDITOR`에서 열기 |
+| `Esc` | 내비게이션 모드 진입 (`j`/`k` 스크롤) |
+| `Esc` (2회) | 세션 되돌리기 (직전 턴 취소) |
+| `i` | 내비게이션 모드에서 입력 포커스 이동 |
 
-## Plan Mode
+## Plan 모드
 
-Before executing complex tasks, the agent enters 'Plan Mode'. It analyzes your request and breaks it down into a series of logical steps. You can track the progress of these steps in the **Plan** tab of the Sidebar. This ensures transparency and allows you to see exactly how the agent intends to solve the problem.
+복잡한 요청은 실행 전에 Plan 모드를 거칩니다. 에이전트가 문제를 단계별로 분해하고, 사이드바의 **Plan** 탭에서 진행 상황을 추적할 수 있습니다. 이 흐름은 작업의 투명성과 예측 가능성을 높입니다.
 
-## Security Policy
+## 보안 정책
 
-upstage-cli implements a path-scoped write protection policy to ensure safety. By default, the agent is only allowed to write files within the current working directory (`process.cwd()`). 
+upstage-cli는 경로 범위 기반 쓰기 보호 정책을 적용합니다. 기본적으로 에이전트는 현재 작업 디렉터리(`process.cwd()`) 내부만 수정할 수 있습니다.
 
-*   **Restricted Writes**: Any attempt to write outside the trusted path will be blocked unless `SECURITY_OVERRIDE=true` is set.
-*   **Confirmations**: High-risk actions (like executing shell commands or writing files) require explicit user approval via an interactive dialog.
+*   **제한된 쓰기**: 신뢰 경로 밖 파일 수정은 차단되며, `SECURITY_OVERRIDE=true`일 때만 허용
+*   **확인 절차**: 셸 실행, 파일 쓰기 같은 고위험 작업은 상호작용 확인 절차를 통해 승인
 
-## Slash Commands
+## 슬래시 명령어
 
-*   `/new`: Start a fresh session.
-*   `/sessions`: Open the session browser.
-*   `/tree`: Open the repository map.
-*   `/help`: Show the in-app help message.
-*   `/exit`: Exit the application.
+*   `/new`: 새 세션 시작
+*   `/sessions`: 세션 브라우저 열기
+*   `/tree`: 저장소 맵 열기
+*   `/help`: 인앱 도움말 표시
+*   `/lang <ko|en>`: 실행 중 UI 언어 전환
+*   `/exit`: 애플리케이션 종료

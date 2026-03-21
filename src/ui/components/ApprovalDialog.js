@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { THEME } from '../colors.js';
 import { DiffPreview } from './DiffPreview.js';
+import { t } from '../../i18n/index.js';
 
 export const ApprovalDialog = ({ tool, params, onApprove, onDeny }) => {
   useInput((input, key) => {
@@ -28,7 +29,7 @@ export const ApprovalDialog = ({ tool, params, onApprove, onDeny }) => {
     React.createElement(
       Box,
       { marginBottom: 1 },
-      React.createElement(Text, { color: THEME.text.warning, bold: true }, "⚠️ APPROVAL REQUIRED: "),
+      React.createElement(Text, { color: THEME.text.warning, bold: true }, t('approval.required')),
       React.createElement(Text, { color: THEME.primary }, tool)
     ),
     isEdit && params.diff && React.createElement(DiffPreview, { diff: params.diff }),
@@ -40,9 +41,9 @@ export const ApprovalDialog = ({ tool, params, onApprove, onDeny }) => {
     React.createElement(
       Box,
       { marginTop: 1, justifyContent: "center" },
-      React.createElement(Text, { color: THEME.text.primary }, "Allow this action? "),
-      React.createElement(Text, { color: THEME.text.success, bold: true }, "(y)es "),
-      React.createElement(Text, { color: THEME.text.error, bold: true }, "(n)o")
+      React.createElement(Text, { color: THEME.text.primary }, t('approval.allowAction')),
+      React.createElement(Text, { color: THEME.text.success, bold: true }, t('approval.yes')),
+      React.createElement(Text, { color: THEME.text.error, bold: true }, t('approval.no'))
     )
   );
 };

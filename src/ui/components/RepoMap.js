@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { THEME } from '../colors.js';
+import { t } from '../../i18n/index.js';
 
 export const RepoMap = ({ data, onCancel }) => {
   const [index, setIndex] = useState(0);
@@ -31,10 +32,10 @@ export const RepoMap = ({ data, onCancel }) => {
     React.createElement(
       Box,
       { marginBottom: 1, justifyContent: "center" },
-      React.createElement(Text, { color: THEME.primary, bold: true }, "📂 REPO MAP")
+      React.createElement(Text, { color: THEME.primary, bold: true }, t('repoMap.title'))
     ),
     flatFiles.length === 0
-      ? React.createElement(Text, { color: THEME.dim }, "No repository data found.")
+      ? React.createElement(Text, { color: THEME.dim }, t('repoMap.noData'))
       : flatFiles.map((file, i) =>
           React.createElement(
             Box,
@@ -54,7 +55,7 @@ export const RepoMap = ({ data, onCancel }) => {
     React.createElement(
       Box,
       { marginTop: 1, justifyContent: "center" },
-      React.createElement(Text, { color: THEME.dim, size: "xs" }, "↑↓: Navigate · Esc: Close")
+      React.createElement(Text, { color: THEME.dim, size: "xs" }, t('repoMap.navigate'))
     )
   );
 };

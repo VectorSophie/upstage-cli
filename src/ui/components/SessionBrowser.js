@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
 import { THEME } from '../colors.js';
+import { t } from '../../i18n/index.js';
 
 export const SessionBrowser = ({ sessions = [], onSelect, onCancel }) => {
   const [index, setIndex] = useState(0);
@@ -28,10 +29,10 @@ export const SessionBrowser = ({ sessions = [], onSelect, onCancel }) => {
     React.createElement(
       Box,
       { marginBottom: 1, justifyContent: "center" },
-      React.createElement(Text, { color: THEME.primary, bold: true }, "✦ SESSION BROWSER ✦")
+      React.createElement(Text, { color: THEME.primary, bold: true }, t('sessionBrowser.title'))
     ),
     sessions.length === 0
-      ? React.createElement(Text, { color: THEME.dim }, "No active sessions found.")
+      ? React.createElement(Text, { color: THEME.dim }, t('sessionBrowser.noSessions'))
       : sessions.map((s, i) =>
           React.createElement(
             Box,
@@ -44,15 +45,15 @@ export const SessionBrowser = ({ sessions = [], onSelect, onCancel }) => {
             React.createElement(
               Text,
               { color: THEME.text.dim, dimColor: true },
-              ` (${s.workspace?.cwd?.split(/[\\/]/).pop() || 'unknown'})`
+              ` (${s.workspace?.cwd?.split(/[\\/]/).pop() || t('sessionBrowser.unknown')})`
             )
           )
         ),
     React.createElement(
       Box,
       { marginTop: 1, justifyContent: "space-between" },
-      React.createElement(Text, { color: THEME.dim, size: "xs" }, "↑↓: Navigate"),
-      React.createElement(Text, { color: THEME.dim, size: "xs" }, "Enter: Select · Esc: Cancel")
+      React.createElement(Text, { color: THEME.dim, size: "xs" }, t('sessionBrowser.navigate')),
+      React.createElement(Text, { color: THEME.dim, size: "xs" }, t('sessionBrowser.selectCancel'))
     )
   );
 };

@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
 import SpinnerImport from 'ink-spinner';
 import { THEME } from '../colors.js';
+import { t } from '../../i18n/index.js';
 
 const Spinner = SpinnerImport.default || SpinnerImport;
 
@@ -16,7 +17,7 @@ export const Thinking = ({ status, steps = [] }) => {
         Text,
         { color: THEME.accent },
         React.createElement(Spinner, { type: "dots" }),
-        ` ${status || 'Thinking...'}`
+        ` ${status || t('thinking.default')}`
       )
     ),
     steps.length > 0 && React.createElement(

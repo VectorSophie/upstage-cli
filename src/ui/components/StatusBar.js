@@ -1,13 +1,17 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { THEME } from '../colors.js';
+import { t } from '../../i18n/index.js';
 
-export const StatusBar = ({ status, tokenUsage, approvalMode, isFocused, systemWarning }) => {
+export const StatusBar = ({ statusKey, tokenUsage, approvalMode, systemWarning, language }) => {
   const getModeColor = () => {
     if (approvalMode === 'plan') return THEME.accent;
     if (approvalMode === 'auto') return THEME.secondary;
     return THEME.dim;
   };
+
+  const modeKey = approvalMode === 'plan' || approvalMode === 'auto' ? approvalMode : 'default';
+  const statusLabel = t(`status.${statusKey || 'idle'}`);
 
   return React.createElement(
     Box,
@@ -27,14 +31,14 @@ export const StatusBar = ({ status, tokenUsage, approvalMode, isFocused, systemW
         React.createElement(
           Text,
           { color: getModeColor(), bold: true },
-          ` ▶ ${approvalMode?.toUpperCase() || 'DEFAULT'} `
+          ` ▶ ${t(`statusBar.mode.${modeKey}`)} `
         )
       ),
-      React.createElement(Text, { dimColor: true }, "Status: "),
+      React.createElement(Text, { dimColor: true }, `${t('statusBar.status')}: `),
       React.createElement(
         Text,
-        { color: status === 'Idle' ? THEME.secondary : THEME.accent },
-        status
+        { color: statusKey === 'idle' ? THEME.secondary : THEME.accent },
+        statusLabel
       )
     ),
     React.createElement(
@@ -43,14 +47,13 @@ export const StatusBar = ({ status, tokenUsage, approvalMode, isFocused, systemW
       React.createElement(
         Text,
         { color: THEME.text.dim },
-        `Tokens: ${tokenUsage.total.toLocaleString()} | Cost: $${tokenUsage.cost.toFixed(4)}`
+        `${t('statusBar.tokens')}: ${tokenUsage.total.toLocaleString()} | ${t('statusBar.cost')}: $${tokenUsage.cost.toFixed(4)} | ${t('statusBar.language')}: ${String(language || '').toUpperCase()}`
       ),
       systemWarning ? React.createElement(
         Text,
         { color: THEME.text.warning },
-        " | WARN"
+        ` | ${t('statusBar.warn')}`
       ) : null
     )
   );
 };
-
