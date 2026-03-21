@@ -35,7 +35,7 @@ const LOGO_ART = `
                         :::::::------                        
                        ::::::-==------                       
                      ::::::-======------                     
-                :::::::--============--------                
+                :::::::::============--------                
         --------=============================--------      
                 --------============*********                
                      ------======*******                     
@@ -63,7 +63,7 @@ const renderLogo = () => {
         else if (char === '=') color = '#8596F2';
         else if (char === '*') color = '#3D6AF2';
         else if (char === '-') {
-          color = rowIndex < 10 ? '#ACBEF2' : '#E899F2';
+          color = rowIndex < 11 ? '#ACBEF2' : '#E899F2';
         }
         return React.createElement(Text, { key: charIndex, color }, char);
       })
@@ -153,7 +153,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     persistSessionLanguage(currentSession, getLanguage()).catch(() => {});
   }, [currentSession, persistSessionLanguage]);
 
-  const HEADER_HEIGHT = 26; 
+  const HEADER_HEIGHT = 24; 
   const FOOTER_HEIGHT = 4; 
   const CHAT_VISIBLE_HEIGHT = Math.max(5, terminalHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
 
