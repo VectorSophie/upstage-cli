@@ -99,11 +99,9 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   const [composerValue, setComposerValue] = useState('');
   const lastEscPress = useRef(0);
   const { exit } = useApp();
-  const terminalHeight = process.stdout.rows || 24;
 
   useEffect(() => {
     enterFullscreenTui();
-    process.stdout.write("\x1b[2J\x1b[H"); 
 
     const handleExit = () => {
       exitFullscreenTui();
@@ -119,6 +117,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       exitFullscreenTui();
     };
   }, []);
+
 
   useEffect(() => {
     return subscribeLanguage((nextLanguage) => {

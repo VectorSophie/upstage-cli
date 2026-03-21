@@ -31,15 +31,10 @@ export function canUseFullscreenTui() {
 }
 
 export function enterFullscreenTui() {
-  process.stdout.write("\x1b[0m\x1b[?25h");
-  process.stdout.write("\x1b[?1049h");
-  process.stdout.write("\x1b[0m");
-  process.stdout.write("\x1b[?25l");
-  process.stdout.write("\x1b[2J\x1b[H");
+  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
 }
 
 export function exitFullscreenTui() {
-  process.stdout.write("\x1b[0m\x1b[?25h");
   process.stdout.write("\x1b[?1049l");
 }
 
