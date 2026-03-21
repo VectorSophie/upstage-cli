@@ -26,26 +26,29 @@ import {
 } from '../i18n/index.js';
 
 const LOGO_ART = `
-                         :     -                         
-                         ::   --                         
-                        :::   ---                        
-                        :::   ---                        
-                        :::: ----                        
-                       ::::::-----                       
-                      :::::-=------                      
-                    ::::::=====------                    
-               :::::::-===========--------               
-        -------==================================        
-               --------===========********               
-                    ------=====******                    
-                      ------=*******                     
-                       -----=*****                       
-                        ---- ****                        
-                        ---   ***                        
-                        ---   ***                        
-                         --   **                         
-                         -     *
+                           :     -                           
+                           :     -                           
+                          :::   --                           
+                          :::   ---                          
+                          ::::  ---                          
+                         ::::: -----                         
+                        :::::::------                        
+                       ::::::-==------                       
+                     ::::::-======------                     
+                :::::::--============--------                
+        --------=============================--------      
+                --------============*********                
+                     ------======*******                     
+                       ------===******                       
+                        ------=******                        
+                         ----- *****                         
+                          ----  ***                          
+                          ---   ***                          
+                          ---   ***                          
+                           -     *                           
+                           -     *
 `;
+
 
 const renderLogo = () => {
   const lines = LOGO_ART.split('\n');
@@ -99,6 +102,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   const [composerValue, setComposerValue] = useState('');
   const lastEscPress = useRef(0);
   const { exit } = useApp();
+  const terminalHeight = process.stdout.rows || 24;
 
   useEffect(() => {
     enterFullscreenTui();
@@ -149,7 +153,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     persistSessionLanguage(currentSession, getLanguage()).catch(() => {});
   }, [currentSession, persistSessionLanguage]);
 
-  const HEADER_HEIGHT = 28; 
+  const HEADER_HEIGHT = 26; 
   const FOOTER_HEIGHT = 4; 
   const CHAT_VISIBLE_HEIGHT = Math.max(5, terminalHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
 
