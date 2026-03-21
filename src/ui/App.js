@@ -103,7 +103,19 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
 
   useEffect(() => {
     enterFullscreenTui();
+    process.stdout.write("\x1b[2J\x1b[H"); 
+
+    const handleExit = () => {
+      exitFullscreenTui();
+      process.exit(0);
+    };
+
+    process.on('SIGINT', handleExit);
+    process.on('SIGTERM', handleExit);
+
     return () => {
+      process.off('SIGINT', handleExit);
+      process.off('SIGTERM', handleExit);
       exitFullscreenTui();
     };
   }, []);
@@ -260,6 +272,11 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   }, [messages, currentSession]);
 
   useInput((input, key) => {
+    if (input === 'r' && key.ctrl) {
+        process.stdout.write("\x1b[2J\x1b[H");
+        return;
+    }
+
     if (key.tab) {
       setFocusedPane(prev => {
         if (prev === 'input') return 'chat';
@@ -346,6 +363,12 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       return;
     }
 
+    if (trimmedQuery === '/clear') {
+        process.stdout.write("\x1b[2J\x1b[H");
+        setMessages([]);
+        setStatusKey('idle');
+        return;
+    }
     if (trimmedQuery === '/exit') {
         process.exit(0);
         return;
@@ -530,7 +553,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
 
   return React.createElement(
     Box,
-    { flexDirection: "column", height: "100%", width: "100%" },
+    { flexDirection: "column", height: terminalHeight, width: "100%", overflow: "hidden" },
     showSessions && React.createElement(SessionBrowser, { 
         sessions: sessionList, 
         onSelect: handleSessionSelect, 
