@@ -25,30 +25,19 @@ export async function buildContext({
   const mapData = repoMap.ok ? repoMap.data : { totalFiles: 0, map: "" };
 
   const candidates = new Set();
-  for (const keyword of keywords) {
-    const symbolMatches = await registry.execute("find_symbol", { name: keyword }, { cwd, runtimeCache });
-    if (symbolMatches.ok && Array.isArray(symbolMatches.data.matches)) {
-      for (const item of symbolMatches.data.matches) {
-        if (item.file) {
-          candidates.add(item.file);
-        }
-        if (candidates.size >= maxFiles) {
-          break;
-        }
-      }
-    }
-    if (candidates.size >= maxFiles) {
-      break;
-    }
-  }
-
-  for (const keyword of keywords) {
-    const search = await registry.execute("search_code", { pattern: keyword, maxResults: 6 }, { cwd, runtimeCache });
-    if (!search.ok || !Array.isArray(search.data.matches)) {
+  const symbolResults = await Promise.all(
+    keywords.map((keyword) =>
+      registry.execute("find_symbol", { name: keyword }, { cwd, runtimeCache })
+    )
+  );
+  for (const symbolMatches of symbolResults) {
+    if (!symbolMatches.ok || !Array.isArray(symbolMatches.data.matches)) {
       continue;
     }
-    for (const match of search.data.matches) {
-      candidates.add(match.path);
+    for (const item of symbolMatches.data.matches) {
+      if (item.file) {
+        candidates.add(item.file);
+      }
       if (candidates.size >= maxFiles) {
         break;
       }
@@ -58,11 +47,38 @@ export async function buildContext({
     }
   }
 
-  const selectedFiles = Array.from(candidates).slice(0, maxFiles);
-  const snippets = [];
+  if (candidates.size < maxFiles) {
+    const searchResults = await Promise.all(
+      keywords.map((keyword) =>
+        registry.execute("search_code", { pattern: keyword, maxResults: 6 }, { cwd, runtimeCache })
+      )
+    );
+    for (const search of searchResults) {
+      if (!search.ok || !Array.isArray(search.data.matches)) {
+        continue;
+      }
+      for (const match of search.data.matches) {
+        candidates.add(match.path);
+        if (candidates.size >= maxFiles) {
+          break;
+        }
+      }
+      if (candidates.size >= maxFiles) {
+        break;
+      }
+    }
+  }
 
-  for (const relativePath of selectedFiles) {
-    const result = await registry.execute("read_file", { path: relativePath }, { cwd, runtimeCache });
+  const selectedFiles = Array.from(candidates).slice(0, maxFiles);
+  const snippetResults = await Promise.all(
+    selectedFiles.map((relativePath) =>
+      registry.execute("read_file", { path: relativePath }, { cwd, runtimeCache })
+    )
+  );
+  const snippets = [];
+  for (let i = 0; i < selectedFiles.length; i += 1) {
+    const relativePath = selectedFiles[i];
+    const result = snippetResults[i];
     if (!result.ok) {
       continue;
     }
@@ -73,12 +89,15 @@ export async function buildContext({
   }
 
   const retrievalQuery = keywords.join(" ") || input;
-  const retrieval = await retrieveRelevantChunks({
-    cwd,
-    query: retrievalQuery,
-    runtimeCache,
-    topK: 5
-  }).catch(() => ({ mode: "none", fromCache: false, chunks: [] }));
+  const [retrieval, modulesResult] = await Promise.all([
+    retrieveRelevantChunks({
+      cwd,
+      query: retrievalQuery,
+      runtimeCache,
+      topK: 5
+    }).catch(() => ({ mode: "none", fromCache: false, chunks: [] })),
+    registry.execute("list_modules", {}, { cwd, runtimeCache })
+  ]);
 
   return {
     keywords,
@@ -86,9 +105,7 @@ export async function buildContext({
       totalFiles: mapData.totalFiles,
       map: mapData.map || ""
     },
-    modules: await registry
-      .execute("list_modules", {}, { cwd, runtimeCache })
-      .then((res) => (res.ok ? res.data.modules.slice(0, 20) : [])),
+    modules: modulesResult.ok ? modulesResult.data.modules.slice(0, 20) : [],
     snippets,
     retrieval
   };

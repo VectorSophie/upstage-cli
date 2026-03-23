@@ -5,13 +5,25 @@ export const runVerificationTool = {
   inputSchema: {
     type: "object",
     properties: {
-      stopOnFailure: { type: "boolean" }
+      stopOnFailure: { type: "boolean" },
+      stages: {
+        type: "array",
+        items: {
+          type: "string",
+          enum: ["run_linter", "run_typecheck", "run_tests"]
+        }
+      }
     },
     additionalProperties: false
   },
   async execute(args, context) {
     const stopOnFailure = args.stopOnFailure !== false;
-    const stages = ["run_linter", "run_typecheck", "run_tests"];
+    const defaultStages = ["run_linter", "run_typecheck", "run_tests"];
+    const selectedStages =
+      Array.isArray(args.stages) && args.stages.length > 0
+        ? args.stages.filter((stage) => defaultStages.includes(stage))
+        : defaultStages;
+    const stages = selectedStages.length > 0 ? selectedStages : defaultStages;
     const results = [];
 
     for (const stage of stages) {

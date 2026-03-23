@@ -81,6 +81,67 @@ function sessionPath(id) {
   return join(sessionRoot(), `${id}.json`);
 }
 
+function sessionIndexPath() {
+  return join(sessionRoot(), "index.json");
+}
+
+function toSessionMeta(session) {
+  return {
+    id: session.id,
+    updatedAt: Number(session.updatedAt) || Date.now(),
+    workspace: session.workspace || { cwd: null }
+  };
+}
+
+function sortSessionMeta(items) {
+  return [...items].sort((a, b) => Number(b.updatedAt || 0) - Number(a.updatedAt || 0));
+}
+
+async function readSessionIndex() {
+  try {
+    const raw = await readFile(sessionIndexPath(), "utf8");
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed?.sessions)) {
+      return null;
+    }
+    const normalized = parsed.sessions
+      .filter((item) => item && typeof item.id === "string" && item.id.length > 0)
+      .map((item) => ({
+        id: item.id,
+        updatedAt: Number(item.updatedAt) || 0,
+        workspace: item.workspace || { cwd: null }
+      }));
+    return sortSessionMeta(normalized);
+  } catch {
+    return null;
+  }
+}
+
+async function writeSessionIndex(sessions) {
+  const payload = {
+    version: 1,
+    updatedAt: Date.now(),
+    sessions: sortSessionMeta(sessions)
+  };
+  await writeFile(sessionIndexPath(), JSON.stringify(payload, null, 2), "utf8");
+}
+
+async function upsertSessionIndex(meta) {
+  const existing = (await readSessionIndex()) || [];
+  const next = existing.filter((item) => item.id !== meta.id);
+  next.push(meta);
+  await writeSessionIndex(next);
+}
+
+async function removeSessionFromIndex(sessionId) {
+  const existing = await readSessionIndex();
+  if (!existing) {
+    return;
+  }
+  const next = existing.filter((item) => item.id !== sessionId);
+  await writeSessionIndex(next);
+}
+
 export function createSession(cwd) {
   const id = crypto.randomUUID();
   return {
@@ -133,6 +194,7 @@ export function appendRuntimeEvent(session, event) {
 export async function saveSession(session) {
   await mkdir(sessionRoot(), { recursive: true });
   await writeFile(sessionPath(session.id), JSON.stringify(session, null, 2), "utf8");
+  await upsertSessionIndex(toSessionMeta(session));
 }
 
 export async function loadSession(id) {
@@ -142,21 +204,27 @@ export async function loadSession(id) {
 
 export async function listSessions() {
   await mkdir(sessionRoot(), { recursive: true });
+  const indexed = await readSessionIndex();
+  if (indexed && indexed.length > 0) {
+    return indexed;
+  }
+
   const entries = await readdir(sessionRoot(), { withFileTypes: true });
   const sessions = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.endsWith(".json")) {
+    if (!entry.isFile() || !entry.name.endsWith(".json") || entry.name === "index.json") {
       continue;
     }
     const id = entry.name.replace(/\.json$/, "");
     try {
       const session = await loadSession(id);
-      sessions.push({ id: session.id, updatedAt: session.updatedAt, workspace: session.workspace });
+      sessions.push(toSessionMeta(session));
     } catch {
     }
   }
-  sessions.sort((a, b) => b.updatedAt - a.updatedAt);
-  return sessions;
+  const sorted = sortSessionMeta(sessions);
+  await writeSessionIndex(sorted);
+  return sorted;
 }
 
 export async function loadLatestSession(cwd) {
@@ -173,4 +241,5 @@ export async function loadLatestSession(cwd) {
 
 export async function resetSession(id) {
   await rm(sessionPath(id), { force: true });
+  await removeSessionFromIndex(id);
 }

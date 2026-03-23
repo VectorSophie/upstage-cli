@@ -18,8 +18,96 @@ The following environment variables are essential for the operation of upstage-c
 *   `UPSTAGE_API_KEY`: Your Upstage API key. This is required to communicate with the Solar Pro2 model.
 *   `EDITOR`: The command used to open an external editor (e.g., `vim`, `nano`, `code --wait`). Defaults to `vim`.
 *   `SECURITY_OVERRIDE`: Set to `true` to disable path-scoped write protection. Use with caution.
+*   `UPSTAGE_VERIFY_STAGES`: Optional comma-separated verification order. Default is `run_linter,run_typecheck,run_tests`.
+*   `UPSTAGE_DISCOVERY_COMMAND`: Optional command that returns discovered tool specs as JSON array.
+*   `UPSTAGE_DISCOVERY_INVOKE_COMMAND`: Optional command used to invoke discovered tools. If not set, `UPSTAGE_DISCOVERY_COMMAND` is reused.
+*   `UPSTAGE_MCP_SERVERS_MODULE`: Optional module path (absolute or workspace-relative) exporting MCP servers as `default` or `mcpServers`.
 
 You can also create a `.env` file in the root directory to manage these variables.
+
+### Verification stage override
+
+Set `UPSTAGE_VERIFY_STAGES` to control verification order for patch apply checks:
+
+```bash
+UPSTAGE_VERIFY_STAGES=run_linter,run_tests
+```
+
+Allowed stages: `run_linter`, `run_typecheck`, `run_tests`.
+
+### Runtime extension loading
+
+You can load discovered tools and MCP tools at startup.
+
+1) Discovery tool spec command:
+
+```bash
+UPSTAGE_DISCOVERY_COMMAND="node tools/discovery-bridge.mjs discover"
+UPSTAGE_DISCOVERY_INVOKE_COMMAND="node tools/discovery-bridge.mjs invoke"
+```
+
+`discover` command must print a JSON array of tool specs:
+
+```json
+[
+  {
+    "name": "project_lint",
+    "description": "Run project lint",
+    "risk": "medium",
+    "actionClass": "exec",
+    "inputSchema": {
+      "type": "object",
+      "properties": {},
+      "additionalProperties": false
+    }
+  }
+]
+```
+
+2) MCP server module:
+
+```bash
+UPSTAGE_MCP_SERVERS_MODULE=./tools/mcp-servers.mjs
+```
+
+Example module export:
+
+```js
+export default [
+  {
+    name: "repo",
+    client: {
+      async listTools() {
+        return [];
+      },
+      async callTool(toolName, args, context) {
+        return { toolName, args, context };
+      }
+    }
+  }
+];
+```
+
+## CLI Usage
+
+```bash
+upstage
+upstage chat
+upstage ask -p "Analyze this repository"
+upstage ask -p "Fix issue #123" --confirm-patches
+```
+
+Supported options:
+
+*   `-h`, `--help`
+*   `-p`, `--prompt <text>`
+*   `--no-stream`
+*   `--model <model-name>`
+*   `--session <session-id>`
+*   `--new-session`
+*   `--reset-session`
+*   `--confirm-patches`
+*   `--bridge-json`
 
 ## Dashboard Layout
 

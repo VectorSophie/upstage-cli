@@ -1,5 +1,50 @@
 import { COLOR, c } from "./colors.js";
 
+function supportsBracketedPasteMode() {
+  return process.platform !== "win32";
+}
+
+export function isFullscreenTuiSupported({
+  stdinIsTTY = process.stdin?.isTTY,
+  stdoutIsTTY = process.stdout?.isTTY,
+  env = process.env,
+  platform = process.platform
+} = {}) {
+  if (!stdinIsTTY || !stdoutIsTTY) {
+    return false;
+  }
+
+  if (env.TERM === "dumb") {
+    return false;
+  }
+
+  if (platform !== "win32") {
+    return true;
+  }
+
+  if (env.WT_SESSION || env.TERM_PROGRAM === "vscode") {
+    return true;
+  }
+
+  const term = String(env.TERM || "").toLowerCase();
+  if (term.includes("xterm") || term.includes("vt100") || term.includes("ansi")) {
+    return true;
+  }
+
+  if (env.ANSICON || env.ConEmuANSI === "ON") {
+    return true;
+  }
+
+  return false;
+}
+
+const ENTER_FULLSCREEN_SEQUENCE = supportsBracketedPasteMode()
+  ? "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l\x1b[?2004h"
+  : "\x1b[?1049h\x1b[2J\x1b[H\x1b[?25l";
+const EXIT_FULLSCREEN_SEQUENCE = supportsBracketedPasteMode()
+  ? "\x1b[?2004l\x1b[?25h\x1b[0m\x1b[?1049l\r\n"
+  : "\x1b[?25h\x1b[0m\x1b[?1049l\r\n";
+
 function normalizeThoughtLines(thought) {
   const subject = (thought.subject || "").trim();
   const description = (thought.description || "").trim();
@@ -27,15 +72,29 @@ export function renderThinking(thought) {
 }
 
 export function canUseFullscreenTui() {
-  return Boolean(process.stdin.isTTY && process.stdout.isTTY && process.env.TERM !== "dumb");
+  return isFullscreenTuiSupported();
 }
 
 export function enterFullscreenTui() {
-  process.stdout.write("\x1b[?1049h\x1b[2J\x1b[H");
+  process.stdout.write(ENTER_FULLSCREEN_SEQUENCE);
 }
 
 export function exitFullscreenTui() {
-  process.stdout.write("\x1b[?1049l");
+  if (process.stdin && typeof process.stdin.setRawMode === "function") {
+    try {
+      process.stdin.setRawMode(false);
+    } catch (error) {
+      void error;
+    }
+  }
+  process.stdout.write(EXIT_FULLSCREEN_SEQUENCE);
+}
+
+export function getFullscreenSequences() {
+  return {
+    enter: ENTER_FULLSCREEN_SEQUENCE,
+    exit: EXIT_FULLSCREEN_SEQUENCE
+  };
 }
 
 const BANNER = [
@@ -78,7 +137,6 @@ export function renderHelpKorean() {
   process.stdout.write("  upstage ask -p \"파일 구조 분석해줘\"\n");
   process.stdout.write("  upstage ask -p \"이슈 #142 고쳐줘\" --confirm-patches\n");
   process.stdout.write("  upstage tui\n");
-  process.stdout.write("  upstage chat --go-tui\n");
   process.stdout.write("  /palette test\n");
   process.stdout.write("\n");
   process.stdout.write(c(COLOR.bold, "옵션\n"));
@@ -88,7 +146,6 @@ export function renderHelpKorean() {
   process.stdout.write("  --new-session         새 세션 시작\n");
   process.stdout.write("  --reset-session       현재 세션 초기화\n");
   process.stdout.write("  --confirm-patches     고위험 도구 실행 전 확인\n");
-  process.stdout.write("  --go-tui              Go Bubble Tea TUI 실행\n");
   process.stdout.write("\n");
   process.stdout.write(c(COLOR.bold, "단축키(오픈코드 스타일)\n"));
   process.stdout.write("  ctrl+l logs   ctrl+s sessions   ctrl+k commands\n");

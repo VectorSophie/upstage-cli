@@ -11,7 +11,12 @@ require("@babel/register")({
 
 import readline from "node:readline";
 import process from "node:process";
-import { createRegistry } from "../tools/create-registry.js";
+import { isAbsolute, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
+import {
+  createDiscoveredToolInvoker,
+  createRegistryWithExtensions
+} from "../tools/create-registry.js";
 import { runAgentLoop } from "../agent/loop.js";
 import { DEFAULT_POLICY } from "../config/defaults.js";
 import { loadProjectEnv } from "../config/load-env.js";
@@ -54,7 +59,6 @@ function parseArgs(argv) {
     newSession: false,
     resetSession: false,
     confirmPatches: false,
-    goTui: false,
     bridgeJson: false
   };
 
@@ -101,10 +105,6 @@ function parseArgs(argv) {
       args.confirmPatches = true;
       continue;
     }
-    if (token === "--go-tui") {
-      args.goTui = true;
-      continue;
-    }
     if (token === "--bridge-json") {
       args.bridgeJson = true;
       continue;
@@ -118,6 +118,70 @@ function parseArgs(argv) {
 
 function printHelp() {
   renderHelpKorean();
+}
+
+function parseVerifyStages(rawValue) {
+  if (typeof rawValue !== "string" || rawValue.trim().length === 0) {
+    return null;
+  }
+  const stages = rawValue
+    .split(",")
+    .map((stage) => stage.trim())
+    .filter((stage) => stage.length > 0);
+  return stages.length > 0 ? stages : null;
+}
+
+function toAbsolutePath(baseDir, rawPath) {
+  if (typeof rawPath !== "string" || rawPath.trim().length === 0) {
+    return null;
+  }
+  return isAbsolute(rawPath) ? rawPath : resolve(baseDir, rawPath);
+}
+
+async function loadMcpServersFromEnv(cwd) {
+  const modulePath = toAbsolutePath(cwd, process.env.UPSTAGE_MCP_SERVERS_MODULE);
+  if (!modulePath) {
+    return [];
+  }
+
+  const loaded = await import(pathToFileURL(modulePath).href);
+  const candidate = loaded?.default ?? loaded?.mcpServers;
+  if (!Array.isArray(candidate)) {
+    throw new Error("UPSTAGE_MCP_SERVERS_MODULE must export an array as default or mcpServers");
+  }
+
+  return candidate;
+}
+
+function createDiscoveryConfigFromEnv(cwd) {
+  const discoverCommand = process.env.UPSTAGE_DISCOVERY_COMMAND;
+  if (typeof discoverCommand !== "string" || discoverCommand.trim().length === 0) {
+    return null;
+  }
+
+  const invokeCommand =
+    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND &&
+    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND.trim().length > 0
+      ? process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND
+      : discoverCommand;
+
+  const onLog = (payload) => {
+    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+    if (!text) {
+      return;
+    }
+    process.stderr.write(`[discovery:${payload.stage || "log"}:${payload.channel || "out"}] ${text}\n`);
+  };
+
+  return {
+    command: discoverCommand,
+    onLog,
+    invoke: createDiscoveredToolInvoker({
+      command: invokeCommand,
+      cwd,
+      onLog
+    })
+  };
 }
 
 async function loadOrCreateSession(args, cwd) {
@@ -308,18 +372,22 @@ async function main() {
     requireConfirmationForHighRisk: args.confirmPatches
   };
 
-  const registry = createRegistry(policy);
+  const cwd = process.cwd();
+  const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
+  const discovery = createDiscoveryConfigFromEnv(cwd);
+  const mcpServers = await loadMcpServersFromEnv(cwd);
+  const runtimeCache = {
+    verifyStages
+  };
+  const registry = await createRegistryWithExtensions({
+    policy,
+    cwd,
+    discovery,
+    mcpServers
+  });
   const adapter = new UpstageAdapter({ model: args.model || undefined });
-  const runtimeCache = {};
   const session = await loadOrCreateSession(args, process.cwd());
   await saveSession(session);
-
-  if (args.command === "tui" || (args.command === "chat" && args.goTui)) {
-    console.log("TUI mode is currently disabled.");
-    process.off("uncaughtException", onFatal);
-    process.off("unhandledRejection", onFatal);
-    return;
-  }
 
   if (args.command === "ask" || args.prompt) {
     const prompt = args.prompt || "";

@@ -25,6 +25,68 @@ import { McpClientManager } from "./mcp/client-manager.js";
 import { createMcpTool } from "./mcp/mcp-tool.js";
 import { createDiscoveredTool } from "./discovery/discovered-tool.js";
 import { discoverToolSpecsFromCommand } from "./discovery/loader.js";
+import { runSandboxedProcess } from "../sandbox/exec.js";
+
+function parseCommand(command) {
+  if (typeof command !== "string" || command.trim().length === 0) {
+    return null;
+  }
+  const parts = command.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return null;
+  }
+  return {
+    binary: parts[0],
+    args: parts.slice(1)
+  };
+}
+
+export function createDiscoveredToolInvoker({ command, cwd, onLog }) {
+  const parsed = parseCommand(command);
+  if (!parsed) {
+    throw new Error("discovery invoke command is required");
+  }
+
+  return async (toolName, args, context = {}) => {
+    const payload = {
+      tool: toolName,
+      args: args || {},
+      context: {
+        cwd: context.cwd || cwd,
+        sessionId: context.session?.id || null
+      }
+    };
+    const payloadBase64 = Buffer.from(JSON.stringify(payload), "utf8").toString("base64");
+
+    const result = await runSandboxedProcess(
+      parsed.binary,
+      [...parsed.args, toolName, payloadBase64],
+      {
+        cwd: context.cwd || cwd,
+        timeoutMs: 120000,
+        outputLimit: 120000,
+        networkBlocked: false,
+        onStdout: (text) => onLog?.({ stage: "discover-invoke", channel: "stdout", text }),
+        onStderr: (text) => onLog?.({ stage: "discover-invoke", channel: "stderr", text })
+      }
+    );
+
+    if (!result.ok) {
+      throw new Error(result.stderr || result.stdout || `discovered tool failed: ${toolName}`);
+    }
+
+    const output = String(result.stdout || "").trim();
+    if (!output) {
+      return {};
+    }
+
+    try {
+      return JSON.parse(output);
+    } catch {
+      return { output };
+    }
+  };
+}
 
 export function createRegistry(policy) {
   const registry = new ToolRegistry(policy);

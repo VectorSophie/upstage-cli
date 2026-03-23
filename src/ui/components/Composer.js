@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Text, useInput } from 'ink';
+import { Box, Text } from 'ink';
 import TextInputImport from 'ink-text-input';
 import { THEME } from '../colors.js';
 import { t } from '../../i18n/index.js';
@@ -9,12 +9,13 @@ const TextInput = TextInputImport.default || TextInputImport;
 export const Composer = ({ onSend, isDisabled, isFocused, value, onChange }) => {
   const query = typeof value === 'string' ? value : '';
 
-  useInput((input, key) => {
-    if (isFocused && key.return && !isDisabled && query.trim()) {
-      onSend(query);
-      onChange('');
+  const handleSubmit = () => {
+    if (!isFocused || isDisabled || !query.trim()) {
+      return;
     }
-  });
+    onSend(query);
+    onChange('');
+  };
 
   return React.createElement(
     Box,
@@ -38,6 +39,7 @@ export const Composer = ({ onSend, isDisabled, isFocused, value, onChange }) => 
         React.createElement(TextInput, {
           value: query,
           onChange,
+          onSubmit: handleSubmit,
           placeholder: isDisabled ? t('composer.processing') : t('composer.askAnything'),
           focus: isFocused && !isDisabled
         })

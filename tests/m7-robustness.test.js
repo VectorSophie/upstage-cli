@@ -176,8 +176,113 @@ test("agent loop emits SYSTEM_WARNING after crossing token budget threshold", as
   assert.equal(tokenEvents.length, 2);
   assert.equal(warningEvents.length, 1);
   assert.equal(warningEvents[0].code, "TOKEN_CONTEXT_HIGH");
-  assert.ok(warningEvents[0].usage.totalTokens > 800000);
+  assert.ok(warningEvents[0].usage.totalTokens > warningEvents[0].usage.threshold);
 
   const runtimeWarning = session.runtimeEvents.find((event) => event.type === "SYSTEM_WARNING");
   assert.ok(runtimeWarning);
+});
+
+test("agent loop retries once with compacted context on context_length_exceeded", async () => {
+  const registry = new ToolRegistry({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: false
+  });
+
+  const session = createSession(process.cwd());
+  let callCount = 0;
+  const adapter = {
+    model: "solar-pro2",
+    isConfigured() {
+      return true;
+    },
+    async complete() {
+      callCount += 1;
+      if (callCount === 1) {
+        throw new Error(
+          "Upstage API error (400): {\"error\": {\"code\": \"context_length_exceeded\", \"message\": \"maximum context length exceeded\"}}"
+        );
+      }
+      return {
+        content: "retry-success",
+        toolCalls: [],
+        usage: {
+          totalTokens: 1200
+        }
+      };
+    }
+  };
+
+  const events = [];
+  const result = await runAgentLoop({
+    input: "large request",
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {},
+    onEvent: (event) => events.push(event)
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.response, "retry-success");
+  assert.equal(callCount, 2);
+  assert.ok(events.some((event) => event.type === "SYSTEM_WARNING" && event.code === "CONTEXT_COMPACT_RETRY"));
+});
+
+test("agent loop drops dangling assistant tool_calls from prior history before model call", async () => {
+  const registry = new ToolRegistry({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: false
+  });
+
+  const session = createSession(process.cwd());
+  session.history.push({
+    at: Date.now(),
+    role: "assistant",
+    content: "pending tool",
+    tool_calls: [
+      {
+        id: "stale-tool-id",
+        type: "function",
+        function: { name: "echo", arguments: "{}" }
+      }
+    ]
+  });
+
+  const adapter = {
+    model: "solar-pro2",
+    isConfigured() {
+      return true;
+    },
+    async complete({ messages }) {
+      const danglingAssistant = messages.find(
+        (message) =>
+          message.role === "assistant" &&
+          Array.isArray(message.tool_calls) &&
+          message.tool_calls.some((call) => call.id === "stale-tool-id")
+      );
+      assert.equal(danglingAssistant, undefined);
+      return {
+        content: "ok",
+        toolCalls: [],
+        usage: {
+          totalTokens: 400
+        }
+      };
+    }
+  };
+
+  const result = await runAgentLoop({
+    input: "hello",
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {}
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.response, "ok");
 });

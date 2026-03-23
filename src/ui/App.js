@@ -13,7 +13,8 @@ import { ApprovalDialog } from './components/ApprovalDialog.js';
 import { Sidebar } from './components/Sidebar.js';
 import { StatusBar } from './components/StatusBar.js';
 import { THEME } from './colors.js';
-import { enterFullscreenTui, exitFullscreenTui } from './tui.js';
+import { canUseFullscreenTui, enterFullscreenTui, exitFullscreenTui } from './tui.js';
+import { shouldRoutePrintableToComposer } from './input-routing.js';
 import { runAgentLoop } from '../agent/loop.js';
 import { createSession, listSessions, loadSession, saveSession } from '../runtime/session.js';
 import {
@@ -25,45 +26,42 @@ import {
   t
 } from '../i18n/index.js';
 
-const LOGO_ART = `
-                           :     -                           
-                           :     -                           
-                          :::   --                           
-                          :::   ---                          
-                          ::::  ---                          
-                         ::::: -----                         
-                        :::::::------                        
-                       ::::::-==------                       
-                     ::::::-======------                     
-                :::::::::============--------                
-        --------=============================--------      
-                --------============*********                
-                     ------======*******                     
-                       ------===******                       
-                        ------=******                        
-                         ----- *****                         
-                          ----  ***                          
-                          ---   ***                          
-                          ---   ***                          
-                           -     *                           
-                           -     *
-`;
+const LOGO_LINES = [
+  '                        :    -                        ',
+  '                        :    -                        ',
+  '                       :::  ---                       ',
+  '                       :::  ---                       ',
+  '                       :::  ---                       ',
+  '                      :::::-----                      ',
+  '                     :::::-------                     ',
+  '                   :::::-====------                   ',
+  '                ::::::==========------                ',
+  '       :::::::=================================       ',
+  '                ------==========******                ',
+  '                   ------====******                   ',
+  '                     -----=******                     ',
+  '                      -----*****                      ',
+  '                       ---  ***                       ',
+  '                       ---  ***                       ',
+  '                       ---  ***                       ',
+  '                        -    *                        ',
+  '                        -    *                        '
+];
 
 
 const renderLogo = () => {
-  const lines = LOGO_ART.split('\n');
-  return lines.map((line, rowIndex) => {
+  return LOGO_LINES.map((line, rowIndex) => {
     const chars = line.split('');
     return React.createElement(
       Box,
       { key: rowIndex },
       chars.map((char, charIndex) => {
         let color = '#FFFFFF';
-        if (char === ':') color = '#CCCFDB';
-        else if (char === '=') color = '#8596F2';
+        if (char === ':') color = '#D8DCEC';
+        else if (char === '=') color = '#7E9CFF';
         else if (char === '*') color = '#3D6AF2';
         else if (char === '-') {
-          color = rowIndex < 11 ? '#ACBEF2' : '#E899F2';
+          color = rowIndex < 10 ? '#ACC0F4' : '#E8A0F2';
         }
         return React.createElement(Text, { key: charIndex, color }, char);
       })
@@ -101,26 +99,36 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
 
   const [composerValue, setComposerValue] = useState('');
   const lastEscPress = useRef(0);
+  const exitRequested = useRef(false);
+  const fullscreenEnabled = useRef(false);
   const { exit } = useApp();
   const terminalHeight = process.stdout.rows || 24;
 
   useEffect(() => {
-    enterFullscreenTui();
+    fullscreenEnabled.current = canUseFullscreenTui();
+    if (fullscreenEnabled.current) {
+      enterFullscreenTui();
+    }
 
-    const handleExit = () => {
-      exitFullscreenTui();
-      process.exit(0);
+    const handleExitSignal = () => {
+      if (exitRequested.current) {
+        return;
+      }
+      exitRequested.current = true;
+      exit();
     };
 
-    process.on('SIGINT', handleExit);
-    process.on('SIGTERM', handleExit);
+    process.on('SIGINT', handleExitSignal);
+    process.on('SIGTERM', handleExitSignal);
 
     return () => {
-      process.off('SIGINT', handleExit);
-      process.off('SIGTERM', handleExit);
-      exitFullscreenTui();
+      process.off('SIGINT', handleExitSignal);
+      process.off('SIGTERM', handleExitSignal);
+      if (fullscreenEnabled.current) {
+        exitFullscreenTui();
+      }
     };
-  }, []);
+  }, [exit]);
 
 
   useEffect(() => {
@@ -153,7 +161,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     persistSessionLanguage(currentSession, getLanguage()).catch(() => {});
   }, [currentSession, persistSessionLanguage]);
 
-  const HEADER_HEIGHT = 24; 
+  const HEADER_HEIGHT = LOGO_LINES.length + 3; 
   const FOOTER_HEIGHT = 4; 
   const CHAT_VISIBLE_HEIGHT = Math.max(5, terminalHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
 
@@ -275,6 +283,19 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
   }, [messages, currentSession]);
 
   useInput((input, key) => {
+    if (shouldRoutePrintableToComposer({
+      focusedPane,
+      input,
+      key,
+      isProcessing,
+      showSessions,
+      hasApproval: !!approval
+    })) {
+      setFocusedPane('input');
+      setComposerValue((prev) => `${prev}${input}`);
+      return;
+    }
+
     if (input === 'r' && key.ctrl) {
         process.stdout.write("\x1b[2J\x1b[H");
         return;
@@ -574,7 +595,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         paddingY: 0,
         overflow: "hidden"
       },
-      React.createElement(Box, { flexDirection: "column", marginBottom: 1 }, renderLogo()),
+      React.createElement(Box, { flexDirection: "column", marginBottom: 0 }, renderLogo()),
       React.createElement(
         Box,
         { paddingX: 1 },
