@@ -1,15 +1,15 @@
 {
   "name": "upstage-cli",
-  "version": "0.1.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "bin": {
-    "upstage": "src/cli/index.js"
+    "upstage": "src/cli/index.mjs"
   },
   "scripts": {
-    "dev": "node src/cli/index.js",
-    "start": "node src/cli/index.js",
-    "check": "node --check src/cli/index.js",
+"dev": "node src/cli/index.mjs",
+"start": "node src/cli/index.mjs",
+"check": "node --check src/cli/index.mjs",
     "test": "node --test",
     "go:tui": "go run ./cmd/upstage-tui"
   },
@@ -28,11 +28,5 @@
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
     "web-tree-sitter": "^0.26.7"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.29.0",
-    "@babel/preset-env": "^7.29.2",
-    "@babel/preset-react": "^7.28.5",
-    "@babel/register": "^7.28.6"
-  }
+}
 }
