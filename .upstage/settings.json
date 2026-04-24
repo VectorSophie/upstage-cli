@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "defaultMode": "default"
+  },
+  "model": "solar-pro2",
+  "language": "ko",
+  "stream": true,
+  "autoCompactEnabled": true,
+  "compactThreshold": 0.8,
+  "maxContextTokens": 65536,
+  "maxOutputTokens": 4096,
+  "showTokenUsage": true
+}

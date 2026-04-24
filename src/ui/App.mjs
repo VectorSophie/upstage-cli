@@ -69,7 +69,7 @@ const renderLogo = () => {
   });
 };
 
-const App = ({ sessionId: initialSessionId, registry, adapter, args, session: initialSession, runtimeCache }) => {
+const App = ({ sessionId: initialSessionId, registry, adapter, args, session: initialSession, runtimeCache, settings }) => {
   const [sessionId, setSessionId] = useState(initialSessionId);
   const [currentSession, setCurrentSession] = useState(initialSession);
   const [messages, setMessages] = useState([]);
@@ -474,25 +474,28 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       let assistantResponse = '';
       let lastDiff = null;
 
-      const gen = runAgentLoop({
-        input: trimmedQuery,
-        registry,
-        cwd: process.cwd(),
-        adapter,
-        stream: true,
-        session: currentSession,
-        runtimeCache,
-        confirm: async (tool, params) => {
-          return new Promise((resolve) => {
-            setApproval({
-              tool,
-              params,
-              onApprove: () => { setApproval(null); resolve(true); },
-              onDeny: () => { setApproval(null); resolve(false); }
-            });
+    const gen = runAgentLoop({
+      input: trimmedQuery,
+      registry,
+      cwd: process.cwd(),
+      adapter,
+      stream: true,
+      session: currentSession,
+      runtimeCache,
+      settings,
+      systemPromptOverride: args?.systemPrompt || null,
+      addDirs: args?.addDirs || [],
+      confirm: async (tool, params) => {
+        return new Promise((resolve) => {
+          setApproval({
+            tool,
+            params,
+            onApprove: () => { setApproval(null); resolve(true); },
+            onDeny: () => { setApproval(null); resolve(false); }
           });
-        }
-      });
+        });
+      }
+    });
 
       let result;
       while (true) {

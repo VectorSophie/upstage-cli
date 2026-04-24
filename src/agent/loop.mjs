@@ -2,6 +2,7 @@ import { AgentState, StopReason } from "../protocol/messages.mjs";
 import { DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { buildContext, formatContextForModel } from "./context-builder.mjs";
 import { planNextAction } from "../model/mock-planner.mjs";
+import { buildSystemPrompt } from "../core/system-prompt.mjs";
 import {
   appendAppliedPatch,
   appendHistory,
@@ -682,7 +683,10 @@ export async function* runAgentLoop({
   confirm,
   session,
   runtimeCache,
-  budget = DEFAULT_LOOP_BUDGET
+  budget = DEFAULT_LOOP_BUDGET,
+  settings,
+  systemPromptOverride,
+  addDirs
 }) {
   if (!session) {
     session = {
@@ -723,8 +727,12 @@ export async function* runAgentLoop({
 
   const conversation = createConversationFromSession(session);
 
-  const systemPrompt =
-    "You are upstage-cli coding agent. Use tools for repository inspection and safe patch workflows. Always verify after apply_patch.";
+  const { staticPrefix: systemPrompt } = buildSystemPrompt({
+    cwd,
+    tools: registry?.toModelTools ? registry.toModelTools() : [],
+    override: systemPromptOverride,
+    addDirs
+  });
 
   appendHistory(session, { role: "user", content: input });
   conversation.push({ role: "user", content: input });

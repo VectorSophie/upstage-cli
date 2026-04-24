@@ -10,6 +10,8 @@ import {
 import { runAgentLoop } from "../agent/loop.mjs";
 import { DEFAULT_POLICY } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
+import { loadSettings } from "../config/settings.mjs";
+import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
 import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import {
   createInteractiveApprovalHandler,
@@ -39,75 +41,31 @@ import {
 import { getDefaultCommands, rankCommands } from "../ui/command-palette.mjs";
 
 function parseArgs(argv) {
-  const args = {
-    command: "chat",
-    help: false,
-    prompt: null,
-    stream: true,
-    model: null,
-    sessionId: null,
-    newSession: false,
-    resetSession: false,
-    confirmPatches: false,
-    bridgeJson: false
+  const result = parseCliArgs(argv);
+  const compat = {
+    command: result.command,
+    help: result.help,
+    prompt: result.prompt,
+    stream: result.stream,
+    model: result.model,
+    sessionId: result.sessionId,
+    newSession: result.newSession,
+    resetSession: result.resetSession,
+    confirmPatches: result.confirmPatches,
+    bridgeJson: result.bridgeJson,
   };
-
-  let i = 0;
-  if (argv[0] === "chat" || argv[0] === "ask" || argv[0] === "tui") {
-    args.command = argv[0];
-    i = 1;
-  }
-
-  for (; i < argv.length; i += 1) {
-    const token = argv[i];
-    if (token === "-h" || token === "--help") {
-      args.help = true;
-      continue;
-    }
-    if (token === "-p" || token === "--prompt") {
-      args.prompt = argv[i + 1] || "";
-      i += 1;
-      continue;
-    }
-    if (token === "--no-stream") {
-      args.stream = false;
-      continue;
-    }
-    if (token === "--model") {
-      args.model = argv[i + 1] || null;
-      i += 1;
-      continue;
-    }
-    if (token === "--session") {
-      args.sessionId = argv[i + 1] || null;
-      i += 1;
-      continue;
-    }
-    if (token === "--new-session") {
-      args.newSession = true;
-      continue;
-    }
-    if (token === "--reset-session") {
-      args.resetSession = true;
-      continue;
-    }
-    if (token === "--confirm-patches") {
-      args.confirmPatches = true;
-      continue;
-    }
-    if (token === "--bridge-json") {
-      args.bridgeJson = true;
-      continue;
-    }
-    if (!args.prompt && !token.startsWith("-")) {
-      args.prompt = token;
-    }
-  }
-  return args;
+  if (result.permissionMode) compat.permissionMode = result.permissionMode;
+  if (result.systemPrompt) compat.systemPrompt = result.systemPrompt;
+  if (result.addDirs?.length) compat.addDirs = result.addDirs;
+  if (result.maxTurns) compat.maxTurns = result.maxTurns;
+  if (result.language) compat.language = result.language;
+  if (result.verbose) compat.verbose = result.verbose;
+  if (result.debug) compat.debug = result.debug;
+  return compat;
 }
 
 function printHelp() {
-  renderHelpKorean();
+  console.log(getUsageText());
 }
 
 function parseVerifyStages(rawValue) {
@@ -190,7 +148,7 @@ async function loadOrCreateSession(args, cwd) {
   return existing || createSession(cwd);
 }
 
-async function executePrompt({ prompt, registry, adapter, stream, session, args, runtimeCache, rl }) {
+async function executePrompt({ prompt, registry, adapter, stream, session, args, runtimeCache, rl, settings }) {
   const screen = args.__screen || null;
   const bridgeJson = args.bridgeJson === true;
   let streamedAnyToken = false;
@@ -357,7 +315,10 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
     stream,
     confirm: approvalHandler,
     session,
-    runtimeCache
+    runtimeCache,
+    settings,
+    systemPromptOverride: args.systemPrompt || null,
+    addDirs: args.addDirs || []
   });
 
   while (true) {
@@ -412,14 +373,15 @@ import React from "react";
 import { render } from "ink";
 import App from "../ui/App.mjs";
 
-async function runInteractive(registry, adapter, args, session, runtimeCache) {
-  const { waitUntilExit } = render(React.createElement(App, { 
+async function runInteractive(registry, adapter, args, session, runtimeCache, settings) {
+  const { waitUntilExit } = render(React.createElement(App, {
     sessionId: session.id,
     registry,
     adapter,
     args,
     session,
-    runtimeCache
+    runtimeCache,
+    settings
   }));
   await waitUntilExit();
 }
@@ -428,6 +390,18 @@ async function main() {
   await loadProjectEnv(process.cwd());
 
   const args = parseArgs(process.argv.slice(2));
+  const settings = await loadSettings({ cwd: process.cwd() });
+
+  if (args.model) {
+    settings.model = args.model;
+  }
+  if (args.language) {
+    settings.language = args.language;
+  }
+  if (args.debug) {
+    settings.debugMode = true;
+  }
+
   let restored = false;
   const restoreTerminal = () => {
     if (restored) {
@@ -495,14 +469,15 @@ async function main() {
       session,
       args,
       runtimeCache,
-      rl: null
+      rl: null,
+      settings
     });
     process.off("uncaughtException", onFatal);
     process.off("unhandledRejection", onFatal);
     return;
   }
 
-  await runInteractive(registry, adapter, args, session, runtimeCache);
+  await runInteractive(registry, adapter, args, session, runtimeCache, settings);
   process.off("uncaughtException", onFatal);
   process.off("unhandledRejection", onFatal);
 }
