@@ -1,4 +1,4 @@
-﻿import { runAgentLoop } from "../../agent/loop.mjs";
+import { runAgentLoop, collectAgentLoop } from "../../agent/loop.mjs";
 import { createSession } from "../../runtime/session.mjs";
 import { createDefaultAgentRoleRegistry } from "../../agent/registry/index.mjs";
 
@@ -77,7 +77,7 @@ export const runSubagentTool = {
     subSession.parentSessionId = context.session?.id || null;
     subSession.role = role.name;
 
-    const subResult = await runAgentLoop({
+    const { result: subResult } = await collectAgentLoop(runAgentLoop({
       input: args.task,
       registry: scopedRegistry,
       cwd: context.cwd,
@@ -90,7 +90,7 @@ export const runSubagentTool = {
         maxToolCalls: 6,
         maxWallTimeMs: 15000
       }
-    });
+    }));
 
     return {
       role: role.name,

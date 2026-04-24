@@ -1,4 +1,4 @@
-﻿import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
 import fs from 'fs';
 import path from 'path';
@@ -473,8 +473,8 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     try {
       let assistantResponse = '';
       let lastDiff = null;
-      
-      const result = await runAgentLoop({
+
+      const gen = runAgentLoop({
         input: trimmedQuery,
         registry,
         cwd: process.cwd(),
@@ -482,8 +482,29 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         stream: true,
         session: currentSession,
         runtimeCache,
-        onToken: (token) => {
-          assistantResponse += token;
+        confirm: async (tool, params) => {
+          return new Promise((resolve) => {
+            setApproval({
+              tool,
+              params,
+              onApprove: () => { setApproval(null); resolve(true); },
+              onDeny: () => { setApproval(null); resolve(false); }
+            });
+          });
+        }
+      });
+
+      let result;
+      while (true) {
+        const next = await gen.next();
+        if (next.done) {
+          result = next.value;
+          break;
+        }
+        const event = next.value;
+
+        if (event.type === 'stream_token') {
+          assistantResponse += (event.text || '');
           setMessages(prev => {
             const last = prev[prev.length - 1];
             if (last && last.role === 'assistant') {
@@ -491,64 +512,51 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
             }
             return [...prev, { role: 'assistant', content: assistantResponse, diff: lastDiff }];
           });
-        },
-        onEvent: (event) => {
-          if (event.type === 'PLAN') {
-            setSteps(prev => [...prev, {
-              type: 'plan',
-              labelKey: 'steps.plan',
-              labelParams: { mode: event.mode },
-              done: true
-            }]);
-          } else if (event.type === 'TOOL') {
-            setSteps(prev => [...prev, {
-              type: 'tool',
-              tool: event.tool,
-              labelKey: 'steps.tool',
-              labelParams: { tool: event.tool },
-              done: false
-            }]);
-          } else if (event.type === 'OBSERVATION') {
-            setSteps(prev => {
-              const last = prev[prev.length - 1];
-              if (last && last.type === 'tool' && last.tool === event.tool) {
-                return [...prev.slice(0, -1), { ...last, done: true }];
-              }
-              return prev;
-            });
-          } else if (event.type === 'THINKING') {
-            setCurrentThought(event.thought?.subject || t('steps.analyzing'));
-          } else if (event.type === 'PATCH_PREVIEW') {
-            lastDiff = event.patch?.unifiedDiff;
-            setMessages(prev => {
-                const last = prev[prev.length - 1];
-                if (last && last.role === 'assistant') {
-                    return [...prev.slice(0, -1), { ...last, diff: lastDiff }];
-                }
-                return prev;
-            });
-          } else if (event.type === 'TOKEN_USAGE') {
-              setTokenUsage(prev => ({
-                  total: prev.total + (event.usage?.totalTokens || 0),
-                  cost: prev.cost + (event.usage?.cost || 0)
-              }));
-          } else if (event.type === 'SYSTEM_WARNING') {
-              const warningMessage = event.message || t('warning.tokenContextHigh');
-              setSystemWarning(warningMessage);
-              setStatusKey('warning');
-          }
-        },
-        confirm: async (tool, params) => {
-            return new Promise((resolve) => {
-                setApproval({
-                    tool,
-                    params,
-                    onApprove: () => { setApproval(null); resolve(true); },
-                    onDeny: () => { setApproval(null); resolve(false); }
-                });
-            });
+        } else if (event.type === 'plan') {
+          setSteps(prev => [...prev, {
+            type: 'plan',
+            labelKey: 'steps.plan',
+            labelParams: { mode: event.mode },
+            done: true
+          }]);
+        } else if (event.type === 'tool_start') {
+          setSteps(prev => [...prev, {
+            type: 'tool',
+            tool: event.tool,
+            labelKey: 'steps.tool',
+            labelParams: { tool: event.tool },
+            done: false
+          }]);
+        } else if (event.type === 'tool_result') {
+          setSteps(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.type === 'tool' && last.tool === event.tool) {
+              return [...prev.slice(0, -1), { ...last, done: true }];
+            }
+            return prev;
+          });
+        } else if (event.type === 'thinking') {
+          setCurrentThought(event.thought?.subject || t('steps.analyzing'));
+        } else if (event.type === 'patch_preview') {
+          lastDiff = event.patch?.unifiedDiff;
+          setMessages(prev => {
+            const last = prev[prev.length - 1];
+            if (last && last.role === 'assistant') {
+              return [...prev.slice(0, -1), { ...last, diff: lastDiff }];
+            }
+            return prev;
+          });
+        } else if (event.type === 'token_usage') {
+          setTokenUsage(prev => ({
+            total: prev.total + (event.usage?.totalTokens || 0),
+            cost: prev.cost + (event.usage?.cost || 0)
+          }));
+        } else if (event.type === 'system_warning') {
+          const warningMessage = event.message || t('warning.tokenContextHigh');
+          setSystemWarning(warningMessage);
+          setStatusKey('warning');
         }
-      });
+      }
 
       if (!assistantResponse && result.response) {
         setMessages(prev => [...prev, { role: 'assistant', content: result.response, diff: lastDiff }]);
@@ -560,7 +568,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       } else if (currentSession) {
         await saveSession(currentSession);
       }
-      
+
       setStatusKey('idle');
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);

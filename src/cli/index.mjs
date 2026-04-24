@@ -219,54 +219,155 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
           }
         })
       : args.confirmPatches
-      ? createNonInteractiveApprovalHandler({
-          mode: "deny",
-          onEvent: (event) => {
-            if (bridgeJson) {
-              emitBridge({ type: "event", event });
-            } else if (screen) {
-              screen.onEvent(event);
-              screen.redraw();
-            } else {
-              renderEvent(event);
+        ? createNonInteractiveApprovalHandler({
+            mode: "deny",
+            onEvent: (event) => {
+              if (bridgeJson) {
+                emitBridge({ type: "event", event });
+              } else if (screen) {
+                screen.onEvent(event);
+                screen.redraw();
+              } else {
+                renderEvent(event);
+              }
             }
-          }
-        })
-      : undefined;
+          })
+        : undefined;
 
-  const result = await runAgentLoop({
+  const handleEvent = (event) => {
+    if (event.type === "stream_token" && stream) {
+      const token = event.text || "";
+      if (token) {
+        streamedAnyToken = true;
+        if (bridgeJson) {
+          emitBridge({ type: "token", token });
+        } else if (screen) {
+          screen.appendAssistantToken(token);
+          screen.redraw();
+        } else {
+          process.stdout.write(token);
+        }
+      }
+      return;
+    }
+    if (event.type === "tool_start") {
+      const legacyEvent = { type: "TOOL", tool: event.tool, args: event.args };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "tool_result") {
+      const legacyEvent = { type: "OBSERVATION", tool: event.tool, ok: event.ok, result: event.result };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "thinking") {
+      const legacyEvent = { type: "THINKING", thought: event.thought };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "plan") {
+      const legacyEvent = { type: "PLAN", mode: event.mode, contextSummary: event.contextSummary, keywords: event.keywords };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "patch_preview") {
+      const legacyEvent = { type: "PATCH_PREVIEW", patch: event.patch };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "token_usage") {
+      const legacyEvent = { type: "TOKEN_USAGE", usage: event.usage, model: event.model, source: event.source };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "system_warning") {
+      const legacyEvent = { type: "SYSTEM_WARNING", level: event.level, code: event.code, message: event.message, usage: event.usage };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+    if (event.type === "verify_start" || event.type === "verify_end") {
+      const legacyEvent = { type: "VERIFY_RESULT", stage: event.type === "verify_start" ? "start" : "end" };
+      if (bridgeJson) {
+        emitBridge({ type: "event", event: legacyEvent });
+      } else if (screen) {
+        screen.onEvent(legacyEvent);
+        screen.redraw();
+      } else {
+        renderEvent(legacyEvent);
+      }
+      return;
+    }
+  };
+
+  let result;
+  const gen = runAgentLoop({
     input: prompt,
     registry,
     cwd: process.cwd(),
     adapter,
     stream,
-        onToken: stream
-      ? (token) => {
-          streamedAnyToken = true;
-          if (bridgeJson) {
-            emitBridge({ type: "token", token });
-          } else if (screen) {
-            screen.appendAssistantToken(token);
-            screen.redraw();
-          } else {
-            process.stdout.write(token);
-          }
-        }
-      : undefined,
-    onEvent: (event) => {
-      if (bridgeJson) {
-        emitBridge({ type: "event", event });
-      } else if (screen) {
-        screen.onEvent(event);
-        screen.redraw();
-      } else {
-        renderEvent(event);
-      }
-    },
     confirm: approvalHandler,
     session,
     runtimeCache
   });
+
+  while (true) {
+    const next = await gen.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    handleEvent(next.value);
+  }
 
   if (stream && streamedAnyToken) {
     if (!screen && !bridgeJson) {

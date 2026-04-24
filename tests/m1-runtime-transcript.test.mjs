@@ -1,7 +1,7 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 
-import { runAgentLoop } from "../src/agent/loop.mjs";
+import { runAgentLoop, collectAgentLoop } from "../src/agent/loop.mjs";
 import { createSession } from "../src/runtime/session.mjs";
 import { ToolRegistry } from "../src/tools/registry.mjs";
 
@@ -77,19 +77,19 @@ test("agent loop records runtime event transcript with start and end lifecycle",
 
   const session = createSession(process.cwd());
 
-  const result = await runAgentLoop({
-    input: "echo hello",
-    registry,
-    cwd: process.cwd(),
-    adapter: null,
-    stream: false,
-    session,
-    runtimeCache: {}
-  });
+const { result } = await collectAgentLoop(runAgentLoop({
+  input: "echo hello",
+  registry,
+  cwd: process.cwd(),
+  adapter: null,
+  stream: false,
+  session,
+  runtimeCache: {}
+}));
 
-  assert.equal(result.ok, true);
-  assert.equal(result.stopReason, "done");
-  assert.ok(Array.isArray(result.session.runtimeEvents));
+assert.equal(result.ok, true);
+assert.equal(result.stopReason, "done");
+assert.ok(Array.isArray(result.session.runtimeEvents));
 
   const lifecycleStart = result.session.runtimeEvents.find(
     (event) => event.type === "AGENT_LIFECYCLE" && event.stage === "start"
@@ -154,18 +154,18 @@ test("agent loop completes after a tool result without replaying the user prompt
     }
   };
 
-  const session = createSession(process.cwd());
-  const result = await runAgentLoop({
-    input: "echo hello",
-    registry,
-    cwd: process.cwd(),
-    adapter,
-    stream: false,
-    session,
-    runtimeCache: {}
-  });
+const session = createSession(process.cwd());
+const { result } = await collectAgentLoop(runAgentLoop({
+  input: "echo hello",
+  registry,
+  cwd: process.cwd(),
+  adapter,
+  stream: false,
+  session,
+  runtimeCache: {}
+}));
 
-  assert.equal(result.ok, true);
-  assert.equal(result.stopReason, "done");
-  assert.equal(result.response, "done after tool");
+assert.equal(result.ok, true);
+assert.equal(result.stopReason, "done");
+assert.equal(result.response, "done after tool");
 });

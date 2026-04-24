@@ -1,4 +1,4 @@
-﻿import { AgentState, StopReason } from "../protocol/messages.mjs";
+import { AgentState, StopReason } from "../protocol/messages.mjs";
 import { DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { buildContext, formatContextForModel } from "./context-builder.mjs";
 import { planNextAction } from "../model/mock-planner.mjs";
@@ -8,6 +8,12 @@ import {
   appendRuntimeEvent,
   appendToolResult
 } from "../runtime/session.mjs";
+import {
+  AgentEventType,
+  LifecycleStage,
+  createEvent,
+  createLifecycleEvent
+} from "../protocol/events.mjs";
 
 function resolveTokenLimit() {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
@@ -32,12 +38,6 @@ function safeJsonParse(value) {
 
 function toToolMessage(result) {
   return JSON.stringify(result.ok ? result.data : { error: result.error });
-}
-
-function emit(onEvent, event) {
-  if (typeof onEvent === "function") {
-    onEvent(event);
-  }
 }
 
 function emitRuntime(registry, session, type, payload) {
@@ -259,7 +259,7 @@ function createCompactContextBlock(context) {
   if (snippets.length > 0) {
     lines.push("- key snippets:");
     for (const snippet of snippets) {
-      lines.push(`  - ${snippet.path}`);
+      lines.push(` - ${snippet.path}`);
       lines.push("```text");
       lines.push(String(snippet.content || "").slice(0, 500));
       lines.push("```");
@@ -335,7 +335,8 @@ async function requestModelCompletion({ adapter, messages, registry, stream, onT
   }
 }
 
-function emitTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, session, onEvent }) {
+function yieldTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, session }) {
+  const events = [];
   const tokenBudgetUpdate = tokenBudgeter.consume(completion?.usage);
   if (tokenBudgetUpdate?.usage) {
     const usagePayload = {
@@ -344,16 +345,18 @@ function emitTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, se
       source: "model"
     };
     emitRuntime(registry, session, "TOKEN_USAGE", usagePayload);
-    emit(onEvent, { type: "TOKEN_USAGE", ...usagePayload });
+    events.push(createEvent(AgentEventType.TOKEN_USAGE, usagePayload));
   }
 
   if (tokenBudgetUpdate?.warning) {
     emitRuntime(registry, session, "SYSTEM_WARNING", tokenBudgetUpdate.warning);
-    emit(onEvent, { type: "SYSTEM_WARNING", ...tokenBudgetUpdate.warning });
+    events.push(createEvent(AgentEventType.SYSTEM_WARNING, tokenBudgetUpdate.warning));
   }
+
+  return events;
 }
 
-async function executeToolCallsPhase({
+async function* executeToolCallsPhase({
   toolCallList,
   toolCalls,
   trace,
@@ -363,7 +366,6 @@ async function executeToolCallsPhase({
   session,
   adapter,
   confirm,
-  onEvent,
   conversation
 }) {
   let nextState = AgentState.ACTING;
@@ -373,14 +375,15 @@ async function executeToolCallsPhase({
     const toolName = toolCall.function?.name;
     const args = safeJsonParse(toolCall.function?.arguments || "{}");
     trace.push({ state: nextState, tool: toolName, args });
-    emit(onEvent, {
-      type: "THINKING",
+
+    yield createEvent(AgentEventType.THINKING, {
       thought: {
         subject: `Executing tool: ${toolName || "unknown"}`,
         description: "Running tool and collecting observation"
       }
     });
-    emit(onEvent, { type: "TOOL", tool: toolName, args });
+
+    yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
 
     const result = await registry.execute(toolName, args, {
       cwd,
@@ -388,14 +391,22 @@ async function executeToolCallsPhase({
       session,
       adapter,
       confirm,
-      onLog: (payload) => emit(onEvent, { type: "TOOL_LOG", tool: toolName, ...payload })
+      onLog: (payload) => {
+        emitRuntime(registry, session, "TOOL_LOG", { tool: toolName, ...payload });
+      }
     });
 
     nextToolCalls += 1;
     nextState = AgentState.OBSERVING;
     trace.push({ state: nextState, tool: toolName, result });
     appendToolResult(session, { tool: toolName, args, result });
-    emit(onEvent, { type: "OBSERVATION", tool: toolName, ok: result.ok, result: result.ok ? result.data : result.error });
+
+    yield createEvent(AgentEventType.TOOL_RESULT, {
+      tool: toolName,
+      ok: result.ok,
+      result: result.ok ? result.data : result.error
+    });
+
     emitRuntime(registry, session, "AGENT_OBSERVATION", {
       tool: toolName,
       ok: result.ok,
@@ -423,12 +434,23 @@ async function executeToolCallsPhase({
     }
 
     if (toolName === "create_patch" && result.data?.patch) {
-      emit(onEvent, { type: "PATCH_PREVIEW", patch: result.data.patch });
+      yield createEvent(AgentEventType.PATCH_PREVIEW, { patch: result.data.patch });
     }
 
     if (toolName === "apply_patch") {
       nextState = AgentState.VERIFYING;
-      const verify = await runVerification(registry, cwd, onEvent, session, runtimeCache);
+      yield* runVerificationGenerator(registry, cwd, session, runtimeCache);
+      const verify = await registry.execute(
+        "run_verification",
+        {
+          stopOnFailure: true,
+          stages: Array.isArray(runtimeCache?.verifyStages) ? runtimeCache.verifyStages : undefined
+        },
+        {
+          cwd,
+          session
+        }
+      );
       if (!verify.ok || !verify.data?.ok) {
         if (result.data?.rollbackPatch) {
           await registry.execute("apply_patch", { patch: result.data.rollbackPatch }, { cwd, runtimeCache, session });
@@ -461,40 +483,20 @@ async function executeToolCallsPhase({
   };
 }
 
-async function runVerification(registry, cwd, onEvent, session, runtimeCache) {
+async function* runVerificationGenerator(registry, cwd, session, runtimeCache) {
   emitRuntime(registry, session, "VERIFY_RESULT", { stage: "start" });
-  emit(onEvent, { type: "VERIFY_RESULT", stage: "start" });
-  emit(onEvent, {
-    type: "THINKING",
+  yield createEvent(AgentEventType.VERIFY_START, {});
+  yield createEvent(AgentEventType.THINKING, {
     thought: {
       subject: "Running verification",
       description: "Executing linter, typecheck, and tests"
     }
   });
-  const verification = await registry.execute(
-    "run_verification",
-    {
-      stopOnFailure: true,
-      stages: Array.isArray(runtimeCache?.verifyStages) ? runtimeCache.verifyStages : undefined
-    },
-    {
-      cwd,
-      session,
-      onLog: (payload) => emit(onEvent, { type: "VERIFY_LOG", ...payload })
-    }
-  );
-  emitRuntime(registry, session, "VERIFY_RESULT", {
-    stage: "end",
-    ok: verification.ok,
-    result: verification.ok ? verification.data : verification.error
-  });
-  emit(onEvent, { type: "VERIFY_RESULT", stage: "end", result: verification });
-  return verification;
 }
 
-async function runFallback({ input, registry, cwd, adapter, trace, session, onEvent, confirm, runtimeCache }) {
+async function* runFallbackGenerator({ input, registry, cwd, adapter, trace, session, confirm, runtimeCache }) {
   const action = planNextAction(input, { registry, cwd, trace });
-  emit(onEvent, { type: "PLAN", mode: "fallback", action });
+  yield createEvent(AgentEventType.PLAN, { mode: "fallback", action });
 
   if (action.type === "respond") {
     appendHistory(session, { role: "assistant", content: action.response });
@@ -520,16 +522,24 @@ async function runFallback({ input, registry, cwd, adapter, trace, session, onEv
   }
 
   if (action.type === "tool_call") {
-    emit(onEvent, { type: "TOOL", tool: action.toolName, args: action.args });
+    yield createEvent(AgentEventType.TOOL_START, { tool: action.toolName, args: action.args });
     const result = await registry.execute(action.toolName, action.args, {
       cwd,
       runtimeCache,
       session,
       adapter,
       confirm,
-      onLog: (payload) => emit(onEvent, { type: "TOOL_LOG", tool: action.toolName, ...payload })
+      onLog: (payload) => {
+        emitRuntime(registry, session, "TOOL_LOG", { tool: action.toolName, ...payload });
+      }
     });
     appendToolResult(session, { tool: action.toolName, args: action.args, result });
+
+    yield createEvent(AgentEventType.TOOL_RESULT, {
+      tool: action.toolName,
+      ok: result.ok,
+      result: result.ok ? result.data : result.error
+    });
 
     if (!result.ok) {
       const stopReason =
@@ -547,11 +557,16 @@ async function runFallback({ input, registry, cwd, adapter, trace, session, onEv
     }
 
     if (action.toolName === "create_patch") {
-      emit(onEvent, { type: "PATCH_PREVIEW", patch: result.data.patch });
+      yield createEvent(AgentEventType.PATCH_PREVIEW, { patch: result.data.patch });
     }
 
     if (action.toolName === "apply_patch") {
-      const verify = await runVerification(registry, cwd, onEvent, session, runtimeCache);
+      yield* runVerificationGenerator(registry, cwd, session, runtimeCache);
+      const verify = await registry.execute(
+        "run_verification",
+        { stopOnFailure: true },
+        { cwd, session, runtimeCache }
+      );
       if (!verify.ok || !verify.data?.ok) {
         if (result.data?.rollbackPatch) {
           await registry.execute("apply_patch", { patch: result.data.rollbackPatch }, { cwd, runtimeCache, session });
@@ -560,7 +575,7 @@ async function runFallback({ input, registry, cwd, adapter, trace, session, onEv
           ok: false,
           state: AgentState.FAIL,
           stopReason: StopReason.TOOL_ERROR,
-          response: `Verification failed after patch apply. Rollback completed.`,
+          response: "Verification failed after patch apply. Rollback completed.",
           trace,
           session,
           verification: verify
@@ -588,14 +603,82 @@ async function runFallback({ input, registry, cwd, adapter, trace, session, onEv
   };
 }
 
-export async function runAgentLoop({
+async function* processCompletionWithTools({
+  completion,
+  conversation,
+  session,
+  toolCallList,
+  toolCalls,
+  budget,
+  trace,
+  registry,
+  cwd,
+  runtimeCache,
+  adapter,
+  confirm,
+  tokenBudgeter
+}) {
+  const usageEvents = yieldTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, session });
+  for (const evt of usageEvents) {
+    yield evt;
+  }
+
+  if (toolCallList.length === 0) {
+    appendHistory(session, { role: "assistant", content: completion.content || "No content returned." });
+    return {
+      terminal: {
+        ok: true,
+        state: AgentState.DONE,
+        stopReason: StopReason.DONE,
+        response: completion.content || "No content returned.",
+        trace,
+        session
+      },
+      state: AgentState.DONE,
+      toolCalls
+    };
+  }
+
+  if (toolCalls + toolCallList.length > budget.maxToolCalls) {
+    return {
+      ok: false,
+      state: AgentState.FAIL,
+      stopReason: StopReason.BUDGET_EXHAUSTED,
+      response: "Stopped: tool-call budget exhausted.",
+      trace,
+      session
+    };
+  }
+
+  conversation.push({
+    role: "assistant",
+    content: completion.content || "",
+    tool_calls: toolCallList
+  });
+  appendHistory(session, { role: "assistant", content: completion.content || "", tool_calls: toolCallList });
+
+  const toolPhaseResult = yield* executeToolCallsPhase({
+    toolCallList,
+    toolCalls,
+    trace,
+    registry,
+    cwd,
+    runtimeCache,
+    session,
+    adapter,
+    confirm,
+    conversation
+  });
+
+  return toolPhaseResult;
+}
+
+export async function* runAgentLoop({
   input,
   registry,
   cwd,
   adapter,
   stream = true,
-  onToken,
-  onEvent,
   confirm,
   session,
   runtimeCache,
@@ -626,13 +709,18 @@ export async function runAgentLoop({
       appendRuntimeEvent(session, event);
     });
   }
+
   emitRuntime(registry, session, "AGENT_LIFECYCLE", {
     stage: "start",
     cwd,
     hasAdapter: !!adapter,
     stream
   });
+
+  yield createLifecycleEvent(LifecycleStage.AGENT_START, { cwd, hasAdapter: !!adapter, stream });
+
   await fireBeforeAgentHook(registry, input, cwd, session.id);
+
   const conversation = createConversationFromSession(session);
 
   const systemPrompt =
@@ -643,31 +731,33 @@ export async function runAgentLoop({
 
   try {
     while (steps < budget.maxSteps) {
-    if (Date.now() - startedAt > budget.maxWallTimeMs) {
-      return {
-        ok: false,
-        state: AgentState.FAIL,
-        stopReason: StopReason.BUDGET_EXHAUSTED,
-        response: "Stopped: wall-time budget exhausted.",
-        trace,
-        session
-      };
-    }
+      if (Date.now() - startedAt > budget.maxWallTimeMs) {
+        return {
+          ok: false,
+          state: AgentState.FAIL,
+          stopReason: StopReason.BUDGET_EXHAUSTED,
+          response: "Stopped: wall-time budget exhausted.",
+          trace,
+          session
+        };
+      }
 
       state = AgentState.PLANNING;
       trace.push({ state, step: steps + 1 });
-      emit(onEvent, {
-        type: "THINKING",
+
+      yield createEvent(AgentEventType.THINKING, {
         thought: {
           subject: `Planning step ${steps + 1}`,
           description: "Collecting context and deciding next action"
         }
       });
+
       emitRuntime(registry, session, "AGENT_PLAN", {
         stage: "step_start",
         step: steps + 1,
         toolCalls
       });
+
       await fireBeforeToolSelectionHook(registry, session, {
         step: steps + 1,
         input,
@@ -676,27 +766,30 @@ export async function runAgentLoop({
       });
 
       if (!adapter || !adapter.isConfigured()) {
-        const fallback = await runFallback({
-        input,
-        registry,
-        cwd,
-        adapter,
-        trace,
-        session,
-        onEvent,
-        confirm,
-        runtimeCache
-      });
-        if (fallback.ok && fallback.response && fallback.response.startsWith("{")) {
-          fallback.response =
-            "UPSTAGE_API_KEY is not configured. Running fallback planner.\n" + fallback.response;
+        const fallbackGen = runFallbackGenerator({
+          input, registry, cwd, adapter, trace, session, confirm, runtimeCache
+        });
+        let fallbackResult;
+        while (true) {
+          const next = await fallbackGen.next();
+          if (next.done) {
+            fallbackResult = next.value;
+            break;
+          }
+          yield next.value;
         }
-        return fallback;
+        if (fallbackResult.ok && fallbackResult.response && typeof fallbackResult.response === "string" && fallbackResult.response.startsWith("{")) {
+          fallbackResult.response =
+            "UPSTAGE_API_KEY is not configured. Running fallback planner.\n" + fallbackResult.response;
+        }
+        return fallbackResult;
       }
 
       const context = await buildContext({ input, registry, cwd, runtimeCache });
       const contextBlock = formatContextForModel(context);
-      emit(onEvent, { type: "PLAN", mode: "model", contextSummary: context.repoSummary, keywords: context.keywords });
+
+      yield createEvent(AgentEventType.PLAN, { mode: "model", contextSummary: context.repoSummary, keywords: context.keywords });
+
       emitRuntime(registry, session, "AGENT_PLAN", {
         stage: "context_ready",
         contextSummary: context.repoSummary,
@@ -710,13 +803,21 @@ export async function runAgentLoop({
         maxConversationMessages: runtimeCache?.maxConversationMessages || DEFAULT_MAX_CONVERSATION_MESSAGES
       });
 
-      emit(onEvent, {
-        type: "THINKING",
+      yield createEvent(AgentEventType.THINKING, {
         thought: {
           subject: "Calling model",
           description: "Waiting for response and possible tool requests"
         }
       });
+
+      yield createEvent(AgentEventType.STREAM_START, { turn: steps + 1 });
+
+      let collectedContent = "";
+      const onToken = stream
+        ? (token) => {
+            collectedContent += token;
+          }
+        : undefined;
 
       const completionResult = await requestModelCompletion({
         adapter,
@@ -727,6 +828,13 @@ export async function runAgentLoop({
         trace,
         session
       });
+
+      if (stream && collectedContent) {
+        yield createEvent(AgentEventType.STREAM_TOKEN, { text: collectedContent });
+      }
+
+      yield createEvent(AgentEventType.STREAM_END, { turn: steps + 1 });
+
       if (!completionResult.ok) {
         if (completionResult.isContextLengthExceeded) {
           const compactedMessages = buildModelMessages({
@@ -736,13 +844,16 @@ export async function runAgentLoop({
             maxConversationMessages:
               runtimeCache?.contextExceededRetryMessages || CONTEXT_EXCEEDED_RETRY_MESSAGES
           });
+
+          yield createEvent(AgentEventType.COMPACTION, { reason: "context_length_exceeded" });
+
           emitRuntime(registry, session, "SYSTEM_WARNING", {
             level: "warning",
             code: "CONTEXT_COMPACT_RETRY",
             message: "Model context limit exceeded. Retrying with compacted context."
           });
-          emit(onEvent, {
-            type: "SYSTEM_WARNING",
+
+          yield createEvent(AgentEventType.SYSTEM_WARNING, {
             level: "warning",
             code: "CONTEXT_COMPACT_RETRY",
             message: "Model context limit exceeded. Retrying with compacted context."
@@ -761,127 +872,72 @@ export async function runAgentLoop({
             return retryCompletion.terminal;
           }
           const completion = retryCompletion.completion;
-          emitTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, session, onEvent });
 
           const toolCallList = Array.isArray(completion.toolCalls) ? completion.toolCalls : [];
-          if (toolCallList.length === 0) {
-            appendHistory(session, { role: "assistant", content: completion.content || "No content returned." });
-            return {
-              ok: true,
-              state: AgentState.DONE,
-              stopReason: StopReason.DONE,
-              response: completion.content || "No content returned.",
-              trace,
-              session
-            };
-          }
 
-          if (toolCalls + toolCallList.length > budget.maxToolCalls) {
-            return {
-              ok: false,
-              state: AgentState.FAIL,
-              stopReason: StopReason.BUDGET_EXHAUSTED,
-              response: "Stopped: tool-call budget exhausted.",
-              trace,
-              session
-            };
-          }
-
-          conversation.push({
-            role: "assistant",
-            content: completion.content || "",
-            tool_calls: toolCallList
-          });
-          appendHistory(session, { role: "assistant", content: completion.content || "", tool_calls: toolCallList });
-
-          const toolPhase = await executeToolCallsPhase({
+          const phaseResult = yield* processCompletionWithTools({
+            completion,
+            conversation,
+            session,
             toolCallList,
             toolCalls,
+            budget,
             trace,
             registry,
             cwd,
             runtimeCache,
-            session,
             adapter,
             confirm,
-            onEvent,
-            conversation
+            tokenBudgeter
           });
-          toolCalls = toolPhase.toolCalls;
-          state = toolPhase.state;
-          if (toolPhase.terminal) {
-            return toolPhase.terminal;
+
+          if (phaseResult.terminal) {
+            return phaseResult.terminal;
           }
 
+          toolCalls = phaseResult.toolCalls;
+          state = phaseResult.state;
           steps += 1;
           continue;
         }
         return completionResult.terminal;
       }
+
       const completion = completionResult.completion;
-
-      emitTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, session, onEvent });
-
       const toolCallList = Array.isArray(completion.toolCalls) ? completion.toolCalls : [];
-      if (toolCallList.length === 0) {
-      appendHistory(session, { role: "assistant", content: completion.content || "No content returned." });
-        return {
-        ok: true,
-        state: AgentState.DONE,
-        stopReason: StopReason.DONE,
-        response: completion.content || "No content returned.",
-        trace,
-        session
-        };
-      }
 
-      if (toolCalls + toolCallList.length > budget.maxToolCalls) {
-        return {
-        ok: false,
-        state: AgentState.FAIL,
-        stopReason: StopReason.BUDGET_EXHAUSTED,
-        response: "Stopped: tool-call budget exhausted.",
-        trace,
-        session
-        };
-      }
-
-      conversation.push({
-      role: "assistant",
-      content: completion.content || "",
-      tool_calls: toolCallList
-    });
-      appendHistory(session, { role: "assistant", content: completion.content || "", tool_calls: toolCallList });
-
-      const toolPhase = await executeToolCallsPhase({
+      const phaseResult = yield* processCompletionWithTools({
+        completion,
+        conversation,
+        session,
         toolCallList,
         toolCalls,
+        budget,
         trace,
         registry,
         cwd,
         runtimeCache,
-        session,
         adapter,
         confirm,
-        onEvent,
-        conversation
+        tokenBudgeter
       });
-      toolCalls = toolPhase.toolCalls;
-      state = toolPhase.state;
-      if (toolPhase.terminal) {
-        return toolPhase.terminal;
+
+      if (phaseResult.terminal) {
+        return phaseResult.terminal;
       }
 
+      toolCalls = phaseResult.toolCalls;
+      state = phaseResult.state;
       steps += 1;
     }
 
     return {
-    ok: false,
-    state: AgentState.FAIL,
-    stopReason: StopReason.BUDGET_EXHAUSTED,
-    response: "Stopped: step budget exhausted.",
-    trace,
-    session
+      ok: false,
+      state: AgentState.FAIL,
+      stopReason: StopReason.BUDGET_EXHAUSTED,
+      response: "Stopped: step budget exhausted.",
+      trace,
+      session
     };
   } finally {
     emitRuntime(registry, session, "AGENT_LIFECYCLE", {
@@ -890,6 +946,8 @@ export async function runAgentLoop({
       steps,
       toolCalls
     });
+    yield createLifecycleEvent(LifecycleStage.AGENT_END, { state, steps, toolCalls });
+
     if (registry?.hookSystem) {
       emitRuntime(registry, session, "HOOK_LIFECYCLE", {
         hook: "AfterAgent",
@@ -912,4 +970,18 @@ export async function runAgentLoop({
       offRuntimeEvent();
     }
   }
+}
+
+export async function collectAgentLoop(gen) {
+  const events = [];
+  let result;
+  while (true) {
+    const next = await gen.next();
+    if (next.done) {
+      result = next.value;
+      break;
+    }
+    events.push(next.value);
+  }
+  return { result, events };
 }

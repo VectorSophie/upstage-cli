@@ -1,8 +1,8 @@
-﻿import test from "node:test";
+import test from "node:test";
 import assert from "node:assert/strict";
 
 import { UpstageAdapter } from "../src/model/upstage-adapter.mjs";
-import { runAgentLoop } from "../src/agent/loop.mjs";
+import { runAgentLoop, collectAgentLoop } from "../src/agent/loop.mjs";
 import { createSession } from "../src/runtime/session.mjs";
 import { ToolRegistry } from "../src/tools/registry.mjs";
 
@@ -151,27 +151,30 @@ test("agent loop emits SYSTEM_WARNING after crossing token budget threshold", as
     }
   };
 
-  const events = [];
-  const runOnce = (input) =>
-    runAgentLoop({
-      input,
-      registry,
-      cwd: process.cwd(),
-      adapter,
-      stream: false,
-      session,
-      runtimeCache: {},
-      onEvent: (event) => events.push(event)
-    });
+const events = [];
+const runOnce = async (input) => {
+  const gen = runAgentLoop({
+    input,
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {}
+  });
+  const collected = await collectAgentLoop(gen);
+  events.push(...collected.events);
+  return collected.result;
+};
 
-  const first = await runOnce("first turn");
-  const second = await runOnce("second turn");
+const first = await runOnce("first turn");
+const second = await runOnce("second turn");
 
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
 
-  const tokenEvents = events.filter((event) => event.type === "TOKEN_USAGE");
-  const warningEvents = events.filter((event) => event.type === "SYSTEM_WARNING");
+const tokenEvents = events.filter((event) => event.type === "token_usage");
+const warningEvents = events.filter((event) => event.type === "system_warning");
 
   assert.equal(tokenEvents.length, 2);
   assert.equal(warningEvents.length, 1);
@@ -212,22 +215,21 @@ test("agent loop retries once with compacted context on context_length_exceeded"
     }
   };
 
-  const events = [];
-  const result = await runAgentLoop({
-    input: "large request",
-    registry,
-    cwd: process.cwd(),
-    adapter,
-    stream: false,
-    session,
-    runtimeCache: {},
-    onEvent: (event) => events.push(event)
-  });
+const gen = runAgentLoop({
+  input: "large request",
+  registry,
+  cwd: process.cwd(),
+  adapter,
+  stream: false,
+  session,
+  runtimeCache: {}
+});
+const { result, events: collectedEvents } = await collectAgentLoop(gen);
 
-  assert.equal(result.ok, true);
-  assert.equal(result.response, "retry-success");
-  assert.equal(callCount, 2);
-  assert.ok(events.some((event) => event.type === "SYSTEM_WARNING" && event.code === "CONTEXT_COMPACT_RETRY"));
+assert.equal(result.ok, true);
+assert.equal(result.response, "retry-success");
+assert.equal(callCount, 2);
+assert.ok(collectedEvents.some((event) => event.type === "system_warning" && event.code === "CONTEXT_COMPACT_RETRY"));
 });
 
 test("agent loop drops dangling assistant tool_calls from prior history before model call", async () => {
@@ -273,16 +275,16 @@ test("agent loop drops dangling assistant tool_calls from prior history before m
     }
   };
 
-  const result = await runAgentLoop({
-    input: "hello",
-    registry,
-    cwd: process.cwd(),
-    adapter,
-    stream: false,
-    session,
-    runtimeCache: {}
-  });
+const { result } = await collectAgentLoop(runAgentLoop({
+  input: "hello",
+  registry,
+  cwd: process.cwd(),
+  adapter,
+  stream: false,
+  session,
+  runtimeCache: {}
+}));
 
-  assert.equal(result.ok, true);
-  assert.equal(result.response, "ok");
+assert.equal(result.ok, true);
+assert.equal(result.response, "ok");
 });
