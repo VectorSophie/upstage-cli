@@ -1,6 +1,7 @@
-﻿import { RuntimeEventBus } from "../core/events/bus.mjs";
+import { RuntimeEventBus } from "../core/events/bus.mjs";
 import { HookSystem } from "../core/hooks/lifecycle.mjs";
 import { PolicyEngine } from "../core/policy/engine.mjs";
+import { createPermissionChecker } from "../permissions/checker.mjs";
 
 function emitEvent(eventBus, type, payload) {
   if (!eventBus || typeof eventBus.emit !== "function") {
@@ -82,6 +83,9 @@ export class ToolRegistry {
         allowHighRiskTools: this.policy.allowHighRiskTools,
         requireConfirmationForHighRisk: this.policy.requireConfirmationForHighRisk
       });
+    this.permissionChecker =
+      config.permissionChecker ||
+      createPermissionChecker({ mode: config.permissionMode || "default" });
     this.tools = new Map();
   }
 
@@ -196,6 +200,29 @@ export class ToolRegistry {
       args,
       context
     });
+
+    const permissionAllowed = await this.permissionChecker.check(name, args);
+    if (!permissionAllowed) {
+      emitEvent(eventBus, "PERMISSION_DENIED", {
+        tool: name,
+        mode: this.permissionChecker.mode,
+        args: summarizeResult(args)
+      });
+      await fireHook(this.hookSystem, eventBus, "AfterTool", {
+        tool: name,
+        args,
+        result: null,
+        error: "permission_denied",
+        context
+      });
+      return {
+        ok: false,
+        error: {
+          code: "PERMISSION_DENIED",
+          message: `Tool denied by permission checker (${this.permissionChecker.mode} mode): ${name}`
+        }
+      };
+    }
 
     const policyDecision = this.policyEngine.evaluate(tool, args, context);
     emitEvent(eventBus, "POLICY_DECISION", {

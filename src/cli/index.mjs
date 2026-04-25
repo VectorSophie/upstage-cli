@@ -17,6 +17,7 @@ import {
   createInteractiveApprovalHandler,
   createNonInteractiveApprovalHandler
 } from "../core/policy/approvals.mjs";
+import { createPermissionChecker } from "../permissions/checker.mjs";
 import {
   createSession,
   listSessions,
@@ -437,6 +438,9 @@ async function main() {
     requireConfirmationForHighRisk: args.confirmPatches
   };
 
+  const permissionMode = args.permissionMode || settings.permissions?.defaultMode || "default";
+  const permissionChecker = createPermissionChecker({ mode: permissionMode });
+
   const cwd = process.cwd();
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
   const discovery = createDiscoveryConfigFromEnv(cwd);
@@ -448,7 +452,9 @@ async function main() {
     policy,
     cwd,
     discovery,
-    mcpServers
+    mcpServers,
+    permissionMode,
+    permissionChecker
   });
   const adapter = new UpstageAdapter({ model: args.model || undefined });
   const session = await loadOrCreateSession(args, process.cwd());

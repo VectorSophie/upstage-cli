@@ -1,4 +1,5 @@
-﻿import { ToolRegistry } from "./registry.mjs";
+import { ToolRegistry } from "./registry.mjs";
+import { createPermissionChecker } from "../permissions/checker.mjs";
 import { echoTool } from "./builtin/echo.mjs";
 import { listFilesTool } from "./builtin/list-files.mjs";
 import { readFileTool } from "./builtin/read-file.mjs";
@@ -90,6 +91,12 @@ export function createDiscoveredToolInvoker({ command, cwd, onLog }) {
 
 export function createRegistry(policy) {
   const registry = new ToolRegistry(policy);
+  if (policy.permissionMode) {
+    registry.permissionChecker = createPermissionChecker({ mode: policy.permissionMode });
+  }
+  if (policy.permissionChecker) {
+    registry.permissionChecker = policy.permissionChecker;
+  }
   registry.register(echoTool);
   registry.register(listFilesTool);
   registry.register(readFileTool);
@@ -139,8 +146,8 @@ export async function registerMcpServerTools(registry, manager, serverName) {
   }
 }
 
-export async function createRegistryWithExtensions({ policy = {}, cwd, discovery, mcpServers = [] } = {}) {
-  const registry = createRegistry(policy);
+export async function createRegistryWithExtensions({ policy = {}, cwd, discovery, mcpServers = [], permissionMode, permissionChecker } = {}) {
+  const registry = createRegistry({ ...policy, permissionMode, permissionChecker });
 
   if (discovery?.command && typeof discovery.invoke === "function") {
     const specs = await discoverToolSpecsFromCommand({
