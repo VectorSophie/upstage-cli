@@ -219,7 +219,8 @@ export async function listSessions() {
     try {
       const session = await loadSession(id);
       sessions.push(toSessionMeta(session));
-    } catch {
+    } catch (_e) {
+      // skip unreadable session files
     }
   }
   const sorted = sortSessionMeta(sessions);

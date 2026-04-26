@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install *)",
+      "Bash(npm run *)",
+      "Bash(npm test *)",
+      "Bash(node_modules/.bin/eslint src/ui/App.mjs)",
+      "Bash(node_modules/.bin/eslint src/)",
+      "Bash(node_modules/.bin/eslint src/ --format=unix)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)"
+    ]
+  }
+}

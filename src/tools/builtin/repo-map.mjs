@@ -32,7 +32,8 @@ export const repoMapTool = {
         const content = await readFile(filePath, "utf8");
         const parseResult = await parseSourceFile({ filePath, relativePath: relPath, content });
         symbols = parseResult.symbols || [];
-      } catch (e) {
+      } catch (_e) {
+        // skip unparseable files
       }
 
       repoStructure.push({

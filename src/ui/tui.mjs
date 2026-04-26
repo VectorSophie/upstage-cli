@@ -253,7 +253,7 @@ export function renderDiff(diffContent) {
     }
 
     let prefix = "  ";
-    let content = line.substring(1);
+    const content = line.substring(1);
     let color = COLOR.text.primary;
     let bgColor = "";
 
@@ -349,6 +349,7 @@ export function renderSolarMessage(text, width) {
 }
 
 function visibleLength(value) {
+  // eslint-disable-next-line no-control-regex
   return String(value || "").replace(/\x1b\[[0-9;]*m/g, "").length;
 }
 

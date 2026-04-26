@@ -1,6 +1,6 @@
 const DANGEROUS_PATTERNS = [
   { pattern: /;\s*rm\s+-rf\s+\//, label: "rm -rf /" },
-  { pattern: /\brm\s+-rf\s+[\/\\]\s*$/, label: "rm -rf root" },
+  { pattern: /\brm\s+-rf\s+[/\\]\s*$/, label: "rm -rf root" },
   { pattern: /\|\s*sh\b/, label: "pipe to sh" },
   { pattern: /\|\s*bash\b/, label: "pipe to bash" },
   { pattern: /`[^`]+`/, label: "backtick execution" },

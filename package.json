@@ -7,10 +7,13 @@
     "upstage": "src/cli/index.mjs"
   },
   "scripts": {
-"dev": "node src/cli/index.mjs",
-"start": "node src/cli/index.mjs",
-"check": "node --check src/cli/index.mjs",
+    "dev": "node src/cli/index.mjs",
+    "start": "node src/cli/index.mjs",
+    "check": "node --check src/cli/index.mjs",
     "test": "node --test",
+    "lint": "eslint src/ tests/ scripts/",
+    "smoke": "node scripts/smoke.mjs",
+    "ci": "npm run check && npm run lint && npm test && npm run smoke",
     "go:tui": "go run ./cmd/upstage-tui"
   },
   "dependencies": {
@@ -28,5 +31,10 @@
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
     "web-tree-sitter": "^0.26.7"
-}
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0"
+  }
 }

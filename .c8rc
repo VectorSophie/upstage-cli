@@ -1,0 +1,6 @@
+{
+  "reporter": ["text", "lcov"],
+  "include": ["src/**/*.mjs"],
+  "exclude": ["src/ui/**", "src/model/mock-planner.mjs"],
+  "all": false
+}
