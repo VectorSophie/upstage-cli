@@ -446,7 +446,10 @@ async function main() {
   const discovery = createDiscoveryConfigFromEnv(cwd);
   const mcpServers = await loadMcpServersFromEnv(cwd);
   const runtimeCache = {
-    verifyStages
+    verifyStages,
+    agentLoader: null,   // populated in Phase 6
+    skillsLoader: null,  // populated in Phase 6
+    // checkpointManager is attached by runAgentLoop when fileCheckpointingEnabled
   };
   const registry = await createRegistryWithExtensions({
     policy,

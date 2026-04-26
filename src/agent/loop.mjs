@@ -15,6 +15,8 @@ import {
   createEvent,
   createLifecycleEvent
 } from "../protocol/events.mjs";
+import { ContextManager } from "../core/context-manager.mjs";
+import { CheckpointManager } from "../core/checkpoints.mjs";
 
 function resolveTokenLimit() {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
@@ -386,6 +388,14 @@ async function* executeToolCallsPhase({
 
     yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
 
+    // Checkpoint before destructive file operations
+    const WRITE_TOOLS = new Set(["write_file", "edit_file", "apply_patch"]);
+    if (WRITE_TOOLS.has(toolName) && runtimeCache?.checkpointManager && args?.path) {
+      const { resolve: resolvePath } = await import("node:path");
+      const absPath = resolvePath(cwd, args.path);
+      await runtimeCache.checkpointManager.save(absPath).catch(() => {});
+    }
+
     const result = await registry.execute(toolName, args, {
       cwd,
       runtimeCache,
@@ -702,6 +712,17 @@ export async function* runAgentLoop({
 
   const tokenBudgeter = createTokenBudgeter(session);
 
+  const contextManager = new ContextManager(
+    settings?.maxContextTokens || SOLAR_PRO2_TOKEN_LIMIT,
+    settings?.compactThreshold || 0.8
+  );
+
+  if (settings?.fileCheckpointingEnabled !== false) {
+    const checkpointManager = new CheckpointManager();
+    if (!runtimeCache) runtimeCache = {};
+    runtimeCache.checkpointManager = checkpointManager;
+  }
+
   const startedAt = Date.now();
   let state = AgentState.IDLE;
   let steps = 0;
@@ -725,7 +746,7 @@ export async function* runAgentLoop({
 
   await fireBeforeAgentHook(registry, input, cwd, session.id);
 
-  const conversation = createConversationFromSession(session);
+  let conversation = createConversationFromSession(session);
 
   const { staticPrefix: systemPrompt } = buildSystemPrompt({
     cwd,
@@ -804,6 +825,15 @@ export async function* runAgentLoop({
         keywords: context.keywords
       });
 
+      // Proactive context compaction before each model call
+      if (contextManager.shouldCompact(conversation)) {
+        conversation = contextManager.compact(conversation);
+        yield createEvent(AgentEventType.COMPACTION, {
+          reason: "auto_threshold",
+          ...contextManager.getStats()
+        });
+      }
+
       const messages = buildModelMessages({
         systemPrompt,
         contextBlock,
@@ -845,15 +875,13 @@ export async function* runAgentLoop({
 
       if (!completionResult.ok) {
         if (completionResult.isContextLengthExceeded) {
-          const compactedMessages = buildModelMessages({
-            systemPrompt,
-            contextBlock: createCompactContextBlock(context),
-            conversation,
-            maxConversationMessages:
-              runtimeCache?.contextExceededRetryMessages || CONTEXT_EXCEEDED_RETRY_MESSAGES
-          });
+          // Route through ContextManager for consistent compaction logic
+          conversation = contextManager.compact(conversation, 4);
 
-          yield createEvent(AgentEventType.COMPACTION, { reason: "context_length_exceeded" });
+          yield createEvent(AgentEventType.COMPACTION, {
+            reason: "context_length_exceeded",
+            ...contextManager.getStats()
+          });
 
           emitRuntime(registry, session, "SYSTEM_WARNING", {
             level: "warning",
@@ -865,6 +893,14 @@ export async function* runAgentLoop({
             level: "warning",
             code: "CONTEXT_COMPACT_RETRY",
             message: "Model context limit exceeded. Retrying with compacted context."
+          });
+
+          const compactedMessages = buildModelMessages({
+            systemPrompt,
+            contextBlock: createCompactContextBlock(context),
+            conversation,
+            maxConversationMessages:
+              runtimeCache?.contextExceededRetryMessages || CONTEXT_EXCEEDED_RETRY_MESSAGES
           });
 
           const retryCompletion = await requestModelCompletion({

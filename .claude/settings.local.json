@@ -8,7 +8,8 @@
       "Bash(node_modules/.bin/eslint src/)",
       "Bash(node_modules/.bin/eslint src/ --format=unix)",
       "Bash(git add *)",
-      "Bash(git commit -m ' *)"
+      "Bash(git commit -m ' *)",
+      "Bash(node --test tests/m12-compaction-checkpoints.test.mjs)"
     ]
   }
 }
