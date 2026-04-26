@@ -13,6 +13,16 @@ import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
 import { UpstageAdapter } from "../model/upstage-adapter.mjs";
+import { OpenAIAdapter } from "../model/openai-adapter.mjs";
+import { GeminiAdapter } from "../model/gemini-adapter.mjs";
+import { getProvider } from "../core/providers.mjs";
+
+function createAdapter({ model } = {}) {
+  const provider = getProvider(model);
+  if (provider.id === "openai") return new OpenAIAdapter({ model });
+  if (provider.id === "gemini") return new GeminiAdapter({ model });
+  return new UpstageAdapter({ model: model || undefined });
+}
 import {
   createInteractiveApprovalHandler,
   createNonInteractiveApprovalHandler
@@ -466,7 +476,7 @@ async function main() {
     permissionMode,
     permissionChecker
   });
-  const adapter = new UpstageAdapter({ model: args.model || undefined });
+  const adapter = createAdapter({ model: args.model || settings.model || undefined });
   const session = await loadOrCreateSession(args, process.cwd());
   await saveSession(session);
 

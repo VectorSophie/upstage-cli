@@ -1,8 +1,7 @@
 import { fetchWithRetry, normalizeUsage } from "./fetch-utils.mjs";
 import { streamResponse, accumulateStream } from "../core/streaming.mjs";
 
-const DEFAULT_BASE_URL = process.env.UPSTAGE_API_BASE_URL || "https://api.upstage.ai/v1";
-const DEFAULT_MODEL = process.env.UPSTAGE_MODEL || "solar-pro2";
+const DEFAULT_MODEL = "gpt-4o";
 
 async function readJsonResponse(response) {
   const data = await response.json();
@@ -15,11 +14,11 @@ async function readJsonResponse(response) {
   };
 }
 
-export class UpstageAdapter {
+export class OpenAIAdapter {
   constructor(options = {}) {
-    this.baseUrl = options.baseUrl || DEFAULT_BASE_URL;
     this.model = options.model || DEFAULT_MODEL;
-    this.apiKey = options.apiKey || process.env.UPSTAGE_API_KEY || "";
+    this.apiKey = options.apiKey || process.env.OPENAI_API_KEY || "";
+    this.baseUrl = options.baseUrl || "https://api.openai.com/v1";
     this.temperature = typeof options.temperature === "number" ? options.temperature : 0.1;
   }
 
@@ -29,17 +28,19 @@ export class UpstageAdapter {
 
   async complete({ messages, tools = [], stream = true, onToken }) {
     if (!this.isConfigured()) {
-      throw new Error("UPSTAGE_API_KEY is not configured");
+      throw new Error("OPENAI_API_KEY is not configured");
     }
 
     const payload = {
       model: this.model,
       messages,
-      tools,
-      tool_choice: "auto",
       temperature: this.temperature,
       stream
     };
+    if (tools.length > 0) {
+      payload.tools = tools;
+      payload.tool_choice = "auto";
+    }
 
     const response = await fetchWithRetry(() =>
       fetch(`${this.baseUrl}/chat/completions`, {
@@ -54,7 +55,7 @@ export class UpstageAdapter {
 
     if (!response.ok) {
       const bodyText = await response.text();
-      throw new Error(`Upstage API error (${response.status}): ${bodyText}`);
+      throw new Error(`OpenAI API error (${response.status}): ${bodyText}`);
     }
 
     if (stream) {
