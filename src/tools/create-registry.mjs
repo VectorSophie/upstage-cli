@@ -90,7 +90,7 @@ export function createDiscoveredToolInvoker({ command, cwd, onLog }) {
 }
 
 export function createRegistry(policy) {
-  const registry = new ToolRegistry(policy);
+  const registry = new ToolRegistry({ ...policy, hookEngine: policy.hookEngine });
   if (policy.permissionMode) {
     registry.permissionChecker = createPermissionChecker({ mode: policy.permissionMode });
   }
@@ -146,8 +146,8 @@ export async function registerMcpServerTools(registry, manager, serverName) {
   }
 }
 
-export async function createRegistryWithExtensions({ policy = {}, cwd, discovery, mcpServers = [], permissionMode, permissionChecker } = {}) {
-  const registry = createRegistry({ ...policy, permissionMode, permissionChecker });
+export async function createRegistryWithExtensions({ policy = {}, cwd, discovery, mcpServers = [], permissionMode, permissionChecker, hookEngine } = {}) {
+  const registry = createRegistry({ ...policy, permissionMode, permissionChecker, hookEngine });
 
   if (discovery?.command && typeof discovery.invoke === "function") {
     const specs = await discoverToolSpecsFromCommand({

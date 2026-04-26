@@ -1,5 +1,6 @@
 import { RuntimeEventBus } from "../core/events/bus.mjs";
 import { HookSystem } from "../core/hooks/lifecycle.mjs";
+import { HookEngine } from "../hooks/engine.mjs";
 import { PolicyEngine } from "../core/policy/engine.mjs";
 import { createPermissionChecker } from "../permissions/checker.mjs";
 
@@ -77,6 +78,7 @@ export class ToolRegistry {
     };
     this.eventBus = config.eventBus || new RuntimeEventBus();
     this.hookSystem = config.hookSystem || new HookSystem();
+    this.hookEngine = config.hookEngine ?? config.hookSystem ?? new HookEngine();
     this.policyEngine =
       config.policyEngine ||
       new PolicyEngine({
@@ -195,11 +197,23 @@ export class ToolRegistry {
       };
     }
 
-    await fireHook(this.hookSystem, eventBus, "BeforeTool", {
-      tool: name,
-      args,
-      context
-    });
+    emitEvent(eventBus, "HOOK_LIFECYCLE", { hook: "BeforeTool", stage: "start", tool: name });
+    const preHookResult = await this.hookEngine.runPreToolUse(name, args);
+    emitEvent(eventBus, "HOOK_LIFECYCLE", { hook: "BeforeTool", stage: "end", tool: name });
+    if (!preHookResult.allow) {
+      emitEvent(eventBus, "PERMISSION_DENIED", {
+        tool: name,
+        mode: "hook_denied",
+        message: preHookResult.message
+      });
+      return {
+        ok: false,
+        error: {
+          code: "HOOK_DENIED",
+          message: preHookResult.message || `Tool denied by hook: ${name}`
+        }
+      };
+    }
 
     const permissionAllowed = await this.permissionChecker.check(name, args);
     if (!permissionAllowed) {
@@ -208,13 +222,7 @@ export class ToolRegistry {
         mode: this.permissionChecker.mode,
         args: summarizeResult(args)
       });
-      await fireHook(this.hookSystem, eventBus, "AfterTool", {
-        tool: name,
-        args,
-        result: null,
-        error: "permission_denied",
-        context
-      });
+      await this.hookEngine.fire("AfterTool", { tool: name, args, result: null, error: "permission_denied", context });
       return {
         ok: false,
         error: {
@@ -235,13 +243,7 @@ export class ToolRegistry {
     });
 
     if (!policyDecision.allowed) {
-      await fireHook(this.hookSystem, eventBus, "AfterTool", {
-        tool: name,
-        args,
-        result: null,
-        error: policyDecision.reason,
-        context
-      });
+      await this.hookEngine.fire("AfterTool", { tool: name, args, result: null, error: policyDecision.reason, context });
       return {
         ok: false,
         error: {
@@ -260,13 +262,7 @@ export class ToolRegistry {
         actionClass: policyDecision.actionClass
       });
       if (!approved) {
-        await fireHook(this.hookSystem, eventBus, "AfterTool", {
-          tool: name,
-          args,
-          result: null,
-          error: "confirmation_denied",
-          context
-        });
+        await this.hookEngine.fire("AfterTool", { tool: name, args, result: null, error: "confirmation_denied", context });
         return {
           ok: false,
           error: {
@@ -298,14 +294,8 @@ export class ToolRegistry {
         ok: true,
         result: summarizeResult(data)
       });
-      await fireHook(this.hookSystem, eventBus, "AfterTool", {
-        tool: name,
-        args,
-        result: data,
-        error: null,
-        context
-      });
-      return { ok: true, data };
+      const finalData = await this.hookEngine.runPostToolUse(name, data);
+      return { ok: true, data: finalData };
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown tool error";
       const errorCode =
@@ -318,13 +308,7 @@ export class ToolRegistry {
         ok: false,
         error: errorMessage
       });
-      await fireHook(this.hookSystem, eventBus, "AfterTool", {
-        tool: name,
-        args,
-        result: null,
-        error: errorMessage,
-        context
-      });
+      await this.hookEngine.fire("AfterTool", { tool: name, args, result: null, error: errorMessage, context });
       return {
         ok: false,
         error: {

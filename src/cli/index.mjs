@@ -52,6 +52,7 @@ import {
 import { getDefaultCommands, rankCommands } from "../ui/command-palette.mjs";
 import { AgentLoader } from "../agents/loader.mjs";
 import { SkillsLoader } from "../skills/loader.mjs";
+import { HookEngine } from "../hooks/engine.mjs";
 
 function parseArgs(argv) {
   const result = parseCliArgs(argv);
@@ -462,6 +463,8 @@ async function main() {
   const skillsLoader = new SkillsLoader();
   await skillsLoader.load(cwd);
 
+  const hookEngine = new HookEngine(settings.hooks || {});
+
   const runtimeCache = {
     verifyStages,
     agentLoader,
@@ -474,11 +477,13 @@ async function main() {
     discovery,
     mcpServers,
     permissionMode,
-    permissionChecker
+    permissionChecker,
+    hookEngine
   });
   const adapter = createAdapter({ model: args.model || settings.model || undefined });
   const session = await loadOrCreateSession(args, process.cwd());
   await saveSession(session);
+  hookEngine.runSessionStart(session.id || "");
 
   if (args.command === "ask" || args.prompt) {
     const prompt = args.prompt || "";

@@ -1,3 +1,5 @@
+export { HookEngine } from "../../hooks/engine.mjs";
+
 const HOOK_NAMES = new Set([
   "BeforeAgent",
   "BeforeToolSelection",
