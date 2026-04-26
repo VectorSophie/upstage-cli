@@ -49,6 +49,7 @@ export const runSubagentTool = {
     type: "object",
     properties: {
       task: { type: "string" },
+      agentName: { type: "string" },
       role: { type: "string" },
       allowedTools: {
         type: "array",
@@ -64,13 +65,19 @@ export const runSubagentTool = {
       throw new Error("task is required");
     }
 
+    const agentDef = args.agentName
+      ? context.runtimeCache?.agentLoader?.get(args.agentName) ?? null
+      : null;
+
     const roleRegistry = createDefaultAgentRoleRegistry();
     const role = roleRegistry.get(args.role || "explorer") || roleRegistry.get("explorer");
 
     const allowedTools =
-      Array.isArray(args.allowedTools) && args.allowedTools.length > 0
-        ? args.allowedTools
-        : DEFAULT_ALLOWED_TOOLS;
+      agentDef?.tools?.length > 0
+        ? agentDef.tools
+        : Array.isArray(args.allowedTools) && args.allowedTools.length > 0
+          ? args.allowedTools
+          : DEFAULT_ALLOWED_TOOLS;
 
     const scopedRegistry = createScopedRegistry(context.registry, allowedTools);
     const subSession = createSession(context.cwd);
@@ -85,6 +92,7 @@ export const runSubagentTool = {
       stream: false,
       session: subSession,
       runtimeCache: context.runtimeCache || {},
+      systemPromptOverride: agentDef?.prompt || null,
       budget: {
         maxSteps: Number.isInteger(args.maxSteps) ? args.maxSteps : 4,
         maxToolCalls: 6,

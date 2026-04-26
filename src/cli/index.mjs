@@ -40,6 +40,8 @@ import {
   renderToolList
 } from "../ui/tui.mjs";
 import { getDefaultCommands, rankCommands } from "../ui/command-palette.mjs";
+import { AgentLoader } from "../agents/loader.mjs";
+import { SkillsLoader } from "../skills/loader.mjs";
 
 function parseArgs(argv) {
   const result = parseCliArgs(argv);
@@ -445,10 +447,15 @@ async function main() {
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
   const discovery = createDiscoveryConfigFromEnv(cwd);
   const mcpServers = await loadMcpServersFromEnv(cwd);
+  const agentLoader = new AgentLoader();
+  await agentLoader.load(cwd);
+  const skillsLoader = new SkillsLoader();
+  await skillsLoader.load(cwd);
+
   const runtimeCache = {
     verifyStages,
-    agentLoader: null,   // populated in Phase 6
-    skillsLoader: null,  // populated in Phase 6
+    agentLoader,
+    skillsLoader,
     // checkpointManager is attached by runAgentLoop when fileCheckpointingEnabled
   };
   const registry = await createRegistryWithExtensions({
