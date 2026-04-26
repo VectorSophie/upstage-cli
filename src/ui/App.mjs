@@ -4,6 +4,8 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { spawnSync } from 'child_process';
+import { executeCommand } from "./commands.mjs";
+import { renderMarkdown } from "./markdown.mjs";
 import { Composer } from "./components/Composer.mjs";
 import { Thinking } from "./components/Thinking.mjs";
 import { DiffPreview } from "./components/DiffPreview.mjs";
@@ -26,47 +28,16 @@ import {
   t
 } from "../i18n/index.mjs";
 
-const LOGO_LINES = [
-  '                        :    -                        ',
-  '                        :    -                        ',
-  '                       :::  ---                       ',
-  '                       :::  ---                       ',
-  '                       :::  ---                       ',
-  '                      :::::-----                      ',
-  '                     :::::-------                     ',
-  '                   :::::-====------                   ',
-  '                ::::::==========------                ',
-  '       :::::::=================================       ',
-  '                ------==========******                ',
-  '                   ------====******                   ',
-  '                     -----=******                     ',
-  '                      -----*****                      ',
-  '                       ---  ***                       ',
-  '                       ---  ***                       ',
-  '                       ---  ***                       ',
-  '                        -    *                        ',
-  '                        -    *                        '
-];
-
-
-const renderLogo = () => {
-  return LOGO_LINES.map((line, rowIndex) => {
-    const chars = line.split('');
-    return React.createElement(
-      Box,
-      { key: rowIndex },
-      chars.map((char, charIndex) => {
-        let color = '#FFFFFF';
-        if (char === ':') color = '#D8DCEC';
-        else if (char === '=') color = '#7E9CFF';
-        else if (char === '*') color = '#3D6AF2';
-        else if (char === '-') {
-          color = rowIndex < 10 ? '#ACC0F4' : '#E8A0F2';
-        }
-        return React.createElement(Text, { key: charIndex, color }, char);
-      })
-    );
-  });
+// Compact wordmark — replaces the 19-line ASCII logo
+const renderWordmark = (sessionId, model, language) => {
+  return React.createElement(
+    Box,
+    { flexDirection: "row", paddingX: 1, paddingY: 0 },
+    React.createElement(Text, { color: '#E899F2', bold: true }, '◉ solar'),
+    React.createElement(Text, { color: '#3D6AF2', bold: true }, '  '),
+    React.createElement(Text, { color: '#ACBEF2' }, `${model || 'solar-pro2'}  ·  `),
+    React.createElement(Text, { color: '#7C8DB2' }, `${sessionId?.slice(0, 8) || '--------'}  ·  ${(language || 'ko').toUpperCase()}`)
+  );
 };
 
 const App = ({ sessionId: initialSessionId, registry, adapter, args, session: initialSession, runtimeCache, settings }) => {
@@ -161,8 +132,8 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     persistSessionLanguage(currentSession, getLanguage()).catch(() => {});
   }, [currentSession, persistSessionLanguage]);
 
-  const HEADER_HEIGHT = LOGO_LINES.length + 3; 
-  const FOOTER_HEIGHT = 4; 
+  const HEADER_HEIGHT = 3;  // compact wordmark bar
+  const FOOTER_HEIGHT = 5;  // status bar + composer
   const CHAT_VISIBLE_HEIGHT = Math.max(5, terminalHeight - HEADER_HEIGHT - FOOTER_HEIGHT);
 
   const visibleMessages = useMemo(() => {
@@ -173,7 +144,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     return messages.slice(scrollIndex, scrollIndex + CHAT_VISIBLE_HEIGHT);
   }, [messages, scrollIndex, autoFollow, CHAT_VISIBLE_HEIGHT]);
 
-  const helpText = useMemo(() => t('help.text'), [language]);
+  // helpText removed — /help now handled by commands.mjs
 
   const tabs = useMemo(() => [
     { 
@@ -387,25 +358,55 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       return;
     }
 
-    if (trimmedQuery === '/clear') {
+    // Slash command dispatch
+    if (trimmedQuery.startsWith('/')) {
+      setMessages(prev => [...prev, { role: 'user', content: trimmedQuery }]);
+
+      const cmdState = {
+        messages,
+        turnCount: messages.length / 2,
+        tokenUsage,
+        model: settings?.model || 'solar-pro2',
+        tools: registry?.list?.() || [],
+        _contextManager: runtimeCache?.contextManager || null,
+        _checkpointManager: runtimeCache?.checkpointManager || null,
+        _permissionMode: approvalMode,
+        _session: currentSession,
+        _settings: settings,
+        _registry: registry,
+        _agentLoader: runtimeCache?.agentLoader || null,
+        _skillsLoader: runtimeCache?.skillsLoader || null,
+      };
+
+      const result = await executeCommand(trimmedQuery, cmdState);
+
+      if (result.clearMessages) {
         process.stdout.write("\x1b[2J\x1b[H");
         setMessages([]);
         setStatusKey('idle');
         return;
-    }
-    if (trimmedQuery === '/exit') {
-        process.exit(0);
+      }
+      if (result.exit) {
+        exit();
         return;
-    }
-    if (trimmedQuery === '/new') {
+      }
+      if (result.showSessions) {
+        setShowSessions(true);
+        setFocusedPane('chat');
+        setMessages(prev => prev.slice(0, -1)); // remove the /sessions user message
+        return;
+      }
+      if (result.showTree) {
+        setShowRepoMap(true);
+        setFocusedPane('sidebar');
+        setMessages(prev => prev.slice(0, -1));
+        return;
+      }
+      if (result.newSession) {
         const newSess = createSession(process.cwd());
         const activeLanguage = getLanguage();
-        newSess.preferences = {
-          ...(newSess.preferences || {}),
-          language: activeLanguage
-        };
+        newSess.preferences = { ...(newSess.preferences || {}), language: activeLanguage };
         await saveSession(newSess);
-
         setSessionId(newSess.id);
         setCurrentSession(newSess);
         setMessages([]);
@@ -413,55 +414,23 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         setSystemWarning('');
         setStatusKey('newSessionStarted');
         return;
-    }
-    if (trimmedQuery === '/help') {
-        setMessages(prev => [...prev, { role: 'user', content: '/help' }, { role: 'assistant', content: helpText }]);
-        return;
-    }
-    const [commandName, requestedLanguage] = trimmedQuery.split(/\s+/);
-    if (commandName === '/lang') {
-        setMessages(prev => [...prev, { role: 'user', content: trimmedQuery }]);
+      }
+      if (result.changeLang) {
+        const normalizedLanguage = result.changeLang.toLowerCase();
+        if (isSupportedLanguage(normalizedLanguage)) {
+          setI18nLanguage(normalizedLanguage);
+          if (currentSession) await persistSessionLanguage(currentSession, normalizedLanguage);
+          setStatusKey('languageChanged');
+        }
+      }
+      if (result.updatedMessages) {
+        setMessages(result.updatedMessages);
+      }
 
-        if (!requestedLanguage) {
-          setMessages(prev => [...prev, { role: 'assistant', content: t('commands.langUsage') }]);
-          return;
-        }
-        const normalizedLanguage = requestedLanguage.toLowerCase();
-        if (!isSupportedLanguage(normalizedLanguage)) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: t('commands.langUnsupported', { language: requestedLanguage })
-          }]);
-          return;
-        }
-        if (normalizedLanguage === getLanguage()) {
-          setMessages(prev => [...prev, {
-            role: 'assistant',
-            content: t('commands.langAlreadySet', { language: t(`languages.${normalizedLanguage}`) })
-          }]);
-          return;
-        }
-
-        setI18nLanguage(normalizedLanguage);
-        if (currentSession) {
-          await persistSessionLanguage(currentSession, normalizedLanguage);
-        }
-        setStatusKey('languageChanged');
-        setMessages(prev => [...prev, {
-          role: 'assistant',
-          content: t('commands.langChanged', { language: t(`languages.${normalizedLanguage}`) })
-        }]);
-        return;
-    }
-    if (trimmedQuery === '/sessions') {
-        setShowSessions(true);
-        setFocusedPane('chat');
-        return;
-    }
-    if (trimmedQuery === '/tree') {
-        setShowRepoMap(true);
-        setFocusedPane('sidebar');
-        return;
+      if (result.response && !result.response.startsWith('__')) {
+        setMessages(prev => [...prev, { role: 'assistant', content: result.response }]);
+      }
+      return;
     }
 
     setIsProcessing(true);
@@ -584,75 +553,93 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       setIsProcessing(false);
       setCurrentThought(null);
     }
-  }, [registry, adapter, currentSession, runtimeCache, helpText, persistSessionLanguage]);
+  }, [registry, adapter, currentSession, runtimeCache, persistSessionLanguage]);
 
   return React.createElement(
     Box,
     { flexDirection: "column", height: terminalHeight, width: "100%", overflow: "hidden" },
-    showSessions && React.createElement(SessionBrowser, { 
-        sessions: sessionList, 
-        onSelect: handleSessionSelect, 
-        onCancel: () => setShowSessions(false) 
+
+    // ── Overlays (session browser, approval) ──────────────────────────────
+    showSessions && React.createElement(SessionBrowser, {
+      sessions: sessionList,
+      onSelect: handleSessionSelect,
+      onCancel: () => setShowSessions(false)
     }),
     approval && React.createElement(ApprovalDialog, approval),
-    
+
+    // ── Compact header bar ────────────────────────────────────────────────
     React.createElement(
       Box,
-      { 
-        flexDirection: "column", 
-        alignItems: "center", 
-        borderStyle: "single", 
-        borderColor: THEME.dim, 
+      {
+        flexDirection: "row",
+        borderStyle: "single",
+        borderColor: THEME.dim,
         paddingY: 0,
-        overflow: "hidden"
+        justifyContent: "space-between",
       },
-      React.createElement(Box, { flexDirection: "column", marginBottom: 0 }, renderLogo()),
+      renderWordmark(sessionId, settings?.model, language),
       React.createElement(
         Box,
         { paddingX: 1 },
-        React.createElement(Text, { color: THEME.primary, bold: true }, t('header.product')),
-        React.createElement(Text, { color: THEME.dim }, t('header.sessionVersion', { session: sessionId.slice(0, 8) }))
+        React.createElement(Text, { color: THEME.text.dim, dimColor: true },
+          'Tab:포커스  /help:명령어  Esc×2:되돌리기'
+        )
       )
     ),
 
+    // ── Main body: chat + sidebar ─────────────────────────────────────────
     React.createElement(
       Box,
       { flexGrow: 1, flexDirection: "row" },
-      
+
+      // Chat pane
       React.createElement(
         Box,
-        { 
-          flexGrow: 1, 
-          flexDirection: "column", 
-          borderStyle: "round", 
+        {
+          flexGrow: 1,
+          flexDirection: "column",
+          borderStyle: "round",
           borderColor: focusedPane === 'chat' ? THEME.primary : THEME.dim,
           paddingX: 1,
           height: CHAT_VISIBLE_HEIGHT,
           overflow: "hidden"
         },
-
-          visibleMessages.length === 0
-            ? React.createElement(
+        visibleMessages.length === 0
+          ? React.createElement(
+              Box,
+              { justifyContent: "center", paddingY: 2 },
+              React.createElement(Text, { dimColor: true }, t('empty.chat'))
+            )
+          : visibleMessages.map((m, i) =>
+              React.createElement(
                 Box,
-                { justifyContent: "center", paddingY: 2 },
-                React.createElement(Text, { dimColor: true }, t('empty.chat'))
-              )
-            : visibleMessages.map((m, i) =>
+                { key: i, flexDirection: "column", marginBottom: 1 },
+                // Role label
                 React.createElement(
                   Box,
-                  { key: i, flexDirection: "column", marginBottom: 1 },
+                  { flexDirection: "row" },
                   React.createElement(
                     Text,
-                    { color: m.role === 'user' ? THEME.secondary : THEME.primary },
-                    `${m.role === 'user' ? '> ' : '✦ '}${m.content}`
-                  ),
-                  m.diff && React.createElement(DiffPreview, { diff: m.diff })
-                )
-              ),
-          isProcessing && React.createElement(Thinking, { status: currentThought, steps: steps })
-        ),
+                    { color: m.role === 'user' ? THEME.secondary : THEME.primary, bold: true },
+                    m.role === 'user' ? '  you › ' : '  ✦ solar '
+                  )
+                ),
+                // Message content — markdown for assistant, plain for user
+                React.createElement(
+                  Box,
+                  { paddingLeft: 2 },
+                  m.role === 'assistant'
+                    ? React.createElement(Text, { wrap: "wrap" }, renderMarkdown(m.content || ''))
+                    : React.createElement(Text, { color: THEME.text.primary, wrap: "wrap" }, m.content || '')
+                ),
+                // Diff preview
+                m.diff && React.createElement(DiffPreview, { diff: m.diff })
+              )
+            ),
+        isProcessing && React.createElement(Thinking, { status: currentThought, steps: steps })
+      ),
 
-
+      // Sidebar
       React.createElement(Sidebar, {
         activeTab: activeSidebarTab,
         tabs: tabs,
@@ -662,13 +649,14 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
       })
     ),
 
+    // ── Footer: warnings + status + composer ──────────────────────────────
     React.createElement(
       Box,
       { flexDirection: "column" },
       systemWarning && React.createElement(
         Box,
         { borderStyle: "single", borderColor: THEME.text.warning, paddingX: 1 },
-        React.createElement(Text, { color: THEME.text.warning }, `[${t('warning.badge')}] ${systemWarning}`)
+        React.createElement(Text, { color: THEME.text.warning }, `⚠  ${systemWarning}`)
       ),
       React.createElement(StatusBar, {
         statusKey: statusKey,
@@ -677,12 +665,12 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         systemWarning: systemWarning,
         language: language
       }),
-      React.createElement(Composer, { 
-          onSend: handleSend, 
-          isDisabled: isProcessing, 
-          isFocused: focusedPane === 'input' && !showSessions && !approval,
-          value: composerValue,
-          onChange: setComposerValue
+      React.createElement(Composer, {
+        onSend: handleSend,
+        isDisabled: isProcessing,
+        isFocused: focusedPane === 'input' && !showSessions && !approval,
+        value: composerValue,
+        onChange: setComposerValue
       })
     )
   );

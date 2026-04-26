@@ -9,7 +9,11 @@
       "Bash(node_modules/.bin/eslint src/ --format=unix)",
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
-      "Bash(node --test tests/m12-compaction-checkpoints.test.mjs)"
+      "Bash(node --test tests/m12-compaction-checkpoints.test.mjs)",
+      "Bash(git tag *)",
+      "Bash(node --test tests/m13-commands-markdown.test.mjs)",
+      "Bash(node -e \"import\\('chalk'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
+      "Bash(node -e ' *)"
     ]
   }
 }
