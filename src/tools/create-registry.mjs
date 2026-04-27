@@ -29,6 +29,7 @@ import { grepTool } from "./builtin/grep.mjs";
 import { multiEditTool } from "./builtin/multi-edit.mjs";
 import { webFetchTool } from "./builtin/web-fetch.mjs";
 import { webSearchTool } from "./builtin/web-search.mjs";
+import { todoWriteTool, todoReadTool } from "./builtin/todo.mjs";
 import { McpClientManager } from "./mcp/client-manager.mjs";
 import { createMcpTool } from "./mcp/mcp-tool.mjs";
 import { createDiscoveredTool } from "./discovery/discovered-tool.mjs";
@@ -134,6 +135,8 @@ export function createRegistry(policy) {
   registry.register(multiEditTool);
   registry.register(webFetchTool);
   registry.register(webSearchTool);
+  registry.register(todoWriteTool);
+  registry.register(todoReadTool);
   return registry;
 }
 

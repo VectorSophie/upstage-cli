@@ -1,18 +1,42 @@
 import { spawn } from "node:child_process";
 
 const DEFAULT_ALLOWED = new Set([
-  "npm",
-  "node",
-  "npx",
-  "pnpm",
-  "yarn",
-  "bun",
-  "python",
-  "pytest",
+  // JavaScript / Node
+  "node", "npm", "npx", "pnpm", "yarn", "bun",
+  // TypeScript
+  "tsc",
+  // Test runners
+  "jest", "vitest", "mocha", "ava", "tap",
+  // Linters / formatters
+  "eslint", "prettier", "biome",
+  // Python
+  "python", "python3", "pip", "pip3", "uv", "poetry", "pytest",
+  "ruff", "black", "mypy", "flake8", "pylint", "isort",
+  // Go
   "go",
-  "cargo",
-  "git",
-  "gh"
+  // Rust
+  "cargo", "rustc", "rustfmt",
+  // Ruby
+  "ruby", "gem", "bundle", "rake",
+  // Java / JVM
+  "java", "javac", "mvn", "gradle",
+  // Build tools
+  "make", "cmake",
+  // Git & GitHub
+  "git", "gh",
+  // Docker
+  "docker", "docker-compose",
+  // File operations (injection check already blocks rm -rf /)
+  "ls", "find", "cat", "head", "tail", "wc",
+  "mkdir", "cp", "mv", "rm", "touch", "diff", "patch",
+  // Search
+  "grep", "rg", "ag",
+  // Archives
+  "tar", "zip", "unzip", "gzip", "gunzip",
+  // Environment inspection
+  "which", "env", "echo", "pwd", "printenv",
+  // Network (gated by networkBlocked flag)
+  "curl", "wget"
 ]);
 
 const NETWORK_COMMANDS = new Set(["curl", "wget", "nc", "telnet", "ssh"]);

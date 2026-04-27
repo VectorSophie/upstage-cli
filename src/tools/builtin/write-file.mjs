@@ -1,4 +1,4 @@
-﻿import { mkdir, writeFile } from "node:fs/promises";
+﻿import { mkdir, writeFile, readFile } from "node:fs/promises";
 import { dirname, relative, resolve } from "node:path";
 import { PolicyEngine } from "../../core/policy/engine.mjs";
 
@@ -63,6 +63,17 @@ export const writeFileTool = {
     }
     await mkdir(dirname(absolutePath), { recursive: true });
     await writeFile(absolutePath, args.content, "utf8");
-    return { path: relative(workspaceCwd, absolutePath), bytesWritten: Buffer.byteLength(args.content, "utf8") };
+
+    // Post-write verification: re-read to confirm content landed correctly
+    const written = await readFile(absolutePath, "utf8");
+    const lines = written.split(/\r?\n/);
+    const preview = lines.slice(0, 6).join("\n") + (lines.length > 6 ? `\n… (${lines.length} lines total)` : "");
+
+    return {
+      path: relative(workspaceCwd, absolutePath),
+      bytesWritten: Buffer.byteLength(written, "utf8"),
+      totalLines: lines.length,
+      preview
+    };
   }
 };
