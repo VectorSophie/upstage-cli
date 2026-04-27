@@ -5,7 +5,7 @@ An agentic coding assistant powered by **Upstage Solar Pro2** — runs entirely 
 ## Installation
 
 ```bash
-npm install -g @vectorsophie/upstage-cli
+npm install -g @jackochesstern/upstage-cli
 ```
 
 Requires **Node.js ≥ 20**.

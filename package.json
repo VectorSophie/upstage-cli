@@ -1,5 +1,5 @@
 {
-  "name": "@vectorsophie/upstage-cli",
+  "name": "@jackochesstern/upstage-cli",
   "version": "2.5.0",
   "description": "Agentic coding assistant powered by Upstage Solar Pro2 — TUI, 30 built-in tools, MCP support, evaluation harness",
   "license": "MIT",
