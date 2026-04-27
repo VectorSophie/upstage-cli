@@ -1,0 +1,25 @@
+{
+  "name": "@upstage/harness",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "harness": "bin/harness.mjs"
+  },
+  "scripts": {
+    "check": "node --check src/cli/index.mjs",
+    "lint": "eslint src/ tests/",
+    "test": "node --test tests/h1*.test.mjs tests/h2*.test.mjs tests/h3*.test.mjs tests/h4*.test.mjs",
+    "smoke": "node bin/harness.mjs run tasks/fix-flaky-test.yaml --agent mock",
+    "ci": "npm run check && npm run lint && npm test && npm run smoke"
+  },
+  "dependencies": {
+    "chalk": "^4.1.2",
+    "js-yaml": "^4.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.2.1",
+    "globals": "^17.5.0"
+  }
+}

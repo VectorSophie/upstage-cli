@@ -1,0 +1,54 @@
+id: fix-flaky-test
+version: 1
+description: "Add missing await to the async test — it receives a Promise instead of the resolved value"
+
+repo: ../fixtures/flaky-test
+branch: main
+
+prompt: |
+  The test in tests/fetcher.test.mjs fails because it is missing an await before the fetchData() call.
+  Fix it. Do not modify the source file fetcher.mjs.
+
+context:
+  strategy: default
+  maxFiles: 5
+  includeTests: true
+
+sandbox:
+  type: native
+  network: none
+  timeout: 30
+
+agent:
+  permissions: acceptEdits
+  maxTurns: 3
+  maxTokens: 8192
+  tools:
+    allow: [read_file, write_file]
+    deny: []
+
+checks:
+  fail_to_pass:
+    - id: test-data-fetch
+      command: node --test --test-name-pattern "test_data_fetch" tests/fetcher.test.mjs
+      timeout: 15
+      weight: 0.7
+  pass_to_pass:
+    - id: test-config-parse
+      command: node --test --test-name-pattern "test_config|test_parse" tests/fetcher.test.mjs
+      timeout: 15
+      weight: 0.3
+
+scoring:
+  weights:
+    checks: 0.70
+    patchMinimality: 0.20
+    toolCallCount: 0.05
+    costUsd: 0.03
+    speedMs: 0.02
+  costBudgetUsd: 0.25
+
+tags: [javascript, async, test, easy]
+difficulty: easy
+expectedPatchScope: [tests/fetcher.test.mjs]
+expectedMaxLines: 2

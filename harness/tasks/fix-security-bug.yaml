@@ -1,0 +1,58 @@
+id: fix-security-bug
+version: 1
+description: "Fix SQL injection vulnerability in search_users() — replace f-string with parameterised query"
+
+repo: ../fixtures/security-bug
+branch: main
+
+prompt: |
+  The search_users() function in db.py is vulnerable to SQL injection.
+  Fix it using a parameterised query. Do not modify any test files.
+
+context:
+  strategy: default
+  maxFiles: 10
+  includeTests: true
+
+sandbox:
+  type: native
+  network: none
+  timeout: 60
+
+agent:
+  permissions: acceptEdits
+  maxTurns: 4
+  maxTokens: 16384
+  tools:
+    allow: [read_file, write_file, search_code]
+    deny: []
+
+checks:
+  fail_to_pass:
+    - id: test-search-injection
+      command: pytest tests/test_db.py::test_search_injection -x -q
+      timeout: 30
+      weight: 0.7
+  pass_to_pass:
+    - id: test-search-normal
+      command: pytest tests/test_db.py::test_search_normal -x -q
+      timeout: 30
+      weight: 0.15
+    - id: test-auth
+      command: pytest tests/test_db.py::test_auth -x -q
+      timeout: 30
+      weight: 0.15
+
+scoring:
+  weights:
+    checks: 0.60
+    patchMinimality: 0.20
+    toolCallCount: 0.10
+    costUsd: 0.05
+    speedMs: 0.05
+  costBudgetUsd: 0.50
+
+tags: [python, sqlite, security, sql-injection, easy]
+difficulty: easy
+expectedPatchScope: [db.py]
+expectedMaxLines: 5

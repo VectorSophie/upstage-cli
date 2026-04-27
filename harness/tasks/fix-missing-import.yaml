@@ -1,0 +1,58 @@
+id: fix-missing-import
+version: 1
+description: "Add the missing import that causes NameError on /items/<id>"
+
+repo: ../fixtures/missing-import
+branch: main
+
+prompt: |
+  The Flask application fails with a NameError when GET /items/<id> is called.
+  Fix it. Do not modify any test files.
+
+context:
+  strategy: default
+  maxFiles: 10
+  includeTests: true
+
+sandbox:
+  type: native
+  network: none
+  timeout: 60
+
+agent:
+  permissions: acceptEdits
+  maxTurns: 4
+  maxTokens: 16384
+  tools:
+    allow: [read_file, write_file, search_code, repo_map]
+    deny: []
+
+checks:
+  fail_to_pass:
+    - id: test-startup
+      command: pytest tests/test_app.py::test_startup -x -q
+      timeout: 30
+      weight: 0.7
+  pass_to_pass:
+    - id: test-health
+      command: pytest tests/test_app.py::test_health -x -q
+      timeout: 30
+      weight: 0.15
+    - id: test-list
+      command: pytest tests/test_app.py::test_list -x -q
+      timeout: 30
+      weight: 0.15
+
+scoring:
+  weights:
+    checks: 0.60
+    patchMinimality: 0.20
+    toolCallCount: 0.10
+    costUsd: 0.05
+    speedMs: 0.05
+  costBudgetUsd: 0.50
+
+tags: [python, flask, import, easy]
+difficulty: easy
+expectedPatchScope: [app.py]
+expectedMaxLines: 3
