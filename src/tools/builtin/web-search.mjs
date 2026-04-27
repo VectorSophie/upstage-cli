@@ -1,78 +1,84 @@
 import { request } from "node:https";
 
-const BRAVE_API_URL = "api.search.brave.com";
-const BRAVE_API_PATH = "/res/v1/web/search";
+const TAVILY_HOST = "api.tavily.com";
 const MAX_RESULTS = 10;
 
-function braveSearch(query, count, apiKey) {
+function tavilySearch(query, maxResults, apiKey, searchDepth) {
+  const body = JSON.stringify({ api_key: apiKey, query, max_results: maxResults, search_depth: searchDepth });
   return new Promise((resolve, reject) => {
-    const qs = new URLSearchParams({ q: query, count: String(count), text_decorations: "false" });
-    const options = {
-      hostname: BRAVE_API_URL,
-      path: `${BRAVE_API_PATH}?${qs}`,
-      method: "GET",
-      headers: {
-        "Accept": "application/json",
-        "Accept-Encoding": "gzip",
-        "X-Subscription-Token": apiKey
+    const req = request(
+      {
+        hostname: TAVILY_HOST,
+        path: "/search",
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body)
+        },
+        timeout: 20000
       },
-      timeout: 15000
-    };
-    const req = request(options, (res) => {
-      const chunks = [];
-      res.on("data", (c) => chunks.push(c));
-      res.on("end", () => {
-        try {
-          const body = Buffer.concat(chunks).toString("utf8");
-          if (res.statusCode !== 200) return reject(new Error(`Brave API ${res.statusCode}: ${body.slice(0, 200)}`));
-          resolve(JSON.parse(body));
-        } catch (e) { reject(e); }
-      });
-      res.on("error", reject);
-    });
+      (res) => {
+        const chunks = [];
+        res.on("data", (c) => chunks.push(c));
+        res.on("end", () => {
+          try {
+            const text = Buffer.concat(chunks).toString("utf8");
+            if (res.statusCode !== 200) return reject(new Error(`Tavily API ${res.statusCode}: ${text.slice(0, 300)}`));
+            resolve(JSON.parse(text));
+          } catch (e) { reject(e); }
+        });
+        res.on("error", reject);
+      }
+    );
     req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("Brave API request timed out")); });
+    req.on("timeout", () => { req.destroy(); reject(new Error("Tavily API request timed out")); });
+    req.write(body);
     req.end();
   });
 }
 
 export const webSearchTool = {
   name: "web_search",
-  description: "Search the web via Brave Search API. Requires BRAVE_API_KEY env var.",
+  description: "Search the web via Tavily. Requires TAVILY_API_KEY env var.",
   risk: "low",
   inputSchema: {
     type: "object",
     properties: {
-      query:   { type: "string" },
-      count:   { type: "number", description: "Number of results (default: 5, max: 10)" }
+      query:       { type: "string" },
+      count:       { type: "number",  description: "Number of results (default: 5, max: 10)" },
+      deep:        { type: "boolean", description: "Use advanced search depth (slower, more thorough)" }
     },
     required: ["query"],
     additionalProperties: false
   },
   async execute(args) {
-    const apiKey = process.env.BRAVE_API_KEY;
+    const apiKey = process.env.TAVILY_API_KEY;
     if (!apiKey) {
       throw new Error(
-        "BRAVE_API_KEY environment variable is not set. " +
-        "Get a free key at https://api.search.brave.com/app/keys"
+        "TAVILY_API_KEY environment variable is not set. " +
+        "Get a free key at https://app.tavily.com"
       );
     }
     if (typeof args.query !== "string" || !args.query.trim()) {
       throw new Error("query is required");
     }
 
-    const count = Math.min(typeof args.count === "number" ? args.count : 5, MAX_RESULTS);
-    const data = await braveSearch(args.query.trim(), count, apiKey);
+    const count       = Math.min(typeof args.count === "number" ? args.count : 5, MAX_RESULTS);
+    const searchDepth = args.deep ? "advanced" : "basic";
+    const data        = await tavilySearch(args.query.trim(), count, apiKey, searchDepth);
 
-    const results = (data.web?.results || []).map((r) => ({
-      title:       r.title,
-      url:         r.url,
-      description: r.description || ""
+    const results = (data.results || []).map((r) => ({
+      title:   r.title,
+      url:     r.url,
+      content: r.content || "",
+      score:   r.score ?? null
     }));
 
     return {
-      query: args.query,
-      count: results.length,
+      query:       args.query,
+      searchDepth,
+      answer:      data.answer || null,
+      count:       results.length,
       results
     };
   }
