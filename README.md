@@ -1,8 +1,27 @@
-# upstage-cli
+# ✦✧ upstage-cli
 
-upstage-cli는 Upstage Solar Pro2를 기반으로 동작하는 에이전트형 터미널 UI(TUI)입니다. 터미널 안에서 코드 분석, 페어 프로그래밍, 자동화된 작업 수행을 일관된 흐름으로 지원합니다.
+> **English docs:** [README.en.md](./README.en.md)
+
+upstage-cli는 **Upstage Solar Pro2** 기반 에이전트형 터미널 UI(TUI)입니다. 코드 분석, 페어 프로그래밍, 자동화 작업을 터미널 안에서 일관된 흐름으로 지원합니다. 도구 30개, MCP 서버 연동, 평가 하네스(harness) 포함.
 
 ## 설치
+
+```bash
+npm install -g @vectorsophie/upstage-cli
+```
+
+Node.js **20 이상** 필요.
+
+## 빠른 시작
+
+```bash
+export UPSTAGE_API_KEY=your_key
+
+upstage                            # 대화형 TUI 실행
+upstage -p "실패하는 테스트 고쳐줘"  # 단발 프롬프트 후 종료
+```
+
+## 기존 설치
 
 아래 명령으로 저장소를 준비하고 실행할 수 있습니다.
 

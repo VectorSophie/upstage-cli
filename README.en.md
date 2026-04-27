@@ -1,152 +1,211 @@
-# upstage-cli
+# ✦✧ upstage-cli
 
-upstage-cli is an agentic Terminal User Interface (TUI) powered by Upstage Solar Pro2. It provides a powerful, interactive environment for pair programming, codebase exploration, and automated task execution directly from your terminal.
+An agentic coding assistant powered by **Upstage Solar Pro2** — runs entirely in your terminal with a full TUI, 30 built-in tools, MCP server support, and an evaluation harness for benchmarking agents on real coding tasks.
 
 ## Installation
 
-To get started, clone the repository and install the dependencies:
+```bash
+npm install -g @vectorsophie/upstage-cli
+```
+
+Requires **Node.js ≥ 20**.
+
+## Quick start
 
 ```bash
-npm install
-npm start
+export UPSTAGE_API_KEY=your_key   # get one at console.upstage.ai
+
+upstage                            # open the interactive TUI
+upstage -p "fix the failing test"  # one-shot prompt and exit
+upstage ask "summarize package.json"
 ```
 
-## Environment Variables
+## Environment variables
 
-The following environment variables are essential for the operation of upstage-cli:
+| Variable | Required | Description |
+|---|---|---|
+| `UPSTAGE_API_KEY` | Yes | Upstage API key — get one at [console.upstage.ai](https://console.upstage.ai) |
+| `TAVILY_API_KEY` | No | Enables `web_search` — free key at [app.tavily.com](https://app.tavily.com) |
+| `EDITOR` | No | External editor for `Ctrl+X` (default: `vim`) |
+| `SECURITY_OVERRIDE` | No | Set `true` to bypass write-path restrictions (dev only) |
+| `UPSTAGE_VERIFY_STAGES` | No | Comma-separated verification order, e.g. `run_linter,run_tests` |
+| `UPSTAGE_DISCOVERY_COMMAND` | No | Command that prints discovered tool specs as JSON |
+| `UPSTAGE_DISCOVERY_INVOKE_COMMAND` | No | Command to invoke discovered tools |
+| `UPSTAGE_MCP_SERVERS_MODULE` | No | Path to a module exporting MCP server configs |
 
-*   `UPSTAGE_API_KEY`: Your Upstage API key. This is required to communicate with the Solar Pro2 model.
-*   `EDITOR`: The command used to open an external editor (e.g., `vim`, `nano`, `code --wait`). Defaults to `vim`.
-*   `SECURITY_OVERRIDE`: Set to `true` to disable path-scoped write protection. Use with caution.
-*   `UPSTAGE_VERIFY_STAGES`: Optional comma-separated verification order. Default is `run_linter,run_typecheck,run_tests`.
-*   `UPSTAGE_DISCOVERY_COMMAND`: Optional command that returns discovered tool specs as JSON array.
-*   `UPSTAGE_DISCOVERY_INVOKE_COMMAND`: Optional command used to invoke discovered tools. If not set, `UPSTAGE_DISCOVERY_COMMAND` is reused.
-*   `UPSTAGE_MCP_SERVERS_MODULE`: Optional module path (absolute or workspace-relative) exporting MCP servers as `default` or `mcpServers`.
+## CLI options
 
-You can also create a `.env` file in the root directory to manage these variables.
+```
+upstage [command] [options] [prompt]
 
-### Verification stage override
+Commands:
+  chat              Interactive TUI (default)
+  ask               One-shot prompt mode
 
-Set `UPSTAGE_VERIFY_STAGES` to control verification order for patch apply checks:
-
-```bash
-UPSTAGE_VERIFY_STAGES=run_linter,run_tests
+Options:
+  -p, --prompt      Run prompt and exit
+  -m, --model       Model to use (default: solar-pro2)
+  --session         Resume session by ID
+  --new-session     Start a fresh session
+  --reset-session   Reset and start fresh
+  --permission-mode default|bypassPermissions|acceptEdits|auto|dontAsk|plan
+  --confirm-patches Require confirmation before applying patches
+  --lang            Response language: ko|en
+  --max-turns       Max agent turns per prompt
+  --allowedTools    Comma-separated allow-list
+  --disallowedTools Comma-separated deny-list
+  -v, --verbose     Verbose output
+  -d, --debug       Debug mode
 ```
 
-Allowed stages: `run_linter`, `run_typecheck`, `run_tests`.
+## TUI layout
 
-### Runtime extension loading
-
-You can load discovered tools and MCP tools at startup.
-
-1) Discovery tool spec command:
-
-```bash
-UPSTAGE_DISCOVERY_COMMAND="node tools/discovery-bridge.mjs discover"
-UPSTAGE_DISCOVERY_INVOKE_COMMAND="node tools/discovery-bridge.mjs invoke"
+```
+┌─ Chat (left) ──────────────────┐┌─ Sidebar (right) ──────────────┐
+│                                ││ [ PLAN ] [ CONTEXT ] [ TOOLS ] │
+│  Agent responses and diffs     ││                                 │
+│  appear here in real time      ││ Active plan, repo map, tool log │
+└────────────────────────────────┘└─────────────────────────────────┘
+┌─ Status bar ───────────────────────────────────────────────────────┐
+│  ✦✧  solar-pro2 · session-id · Tokens: N | Cost: $N | Lang: EN    │
+└────────────────────────────────────────────────────────────────────┘
 ```
 
-`discover` command must print a JSON array of tool specs:
+## Keyboard shortcuts
 
-```json
-[
-  {
-    "name": "project_lint",
-    "description": "Run project lint",
-    "risk": "medium",
-    "actionClass": "exec",
-    "inputSchema": {
-      "type": "object",
-      "properties": {},
-      "additionalProperties": false
-    }
-  }
-]
-```
+| Key | Action |
+|-----|--------|
+| `Tab` | Cycle focus: input → chat → sidebar |
+| `←` / `→` | Switch sidebar tabs (PLAN / CONTEXT / TOOLS) |
+| `Ctrl+X` | Open current input in `$EDITOR` |
+| `Esc` | Navigation mode — scroll with `j`/`k` |
+| `Esc` × 2 | Rewind — undo last agent turn |
+| `i` | Back to insert mode |
 
-2) MCP server module:
+## Slash commands
 
+| Command | Description |
+|---------|-------------|
+| `/help` | List all commands |
+| `/tools` | Show all 30 registered tools |
+| `/status` | Session state |
+| `/cost` | Token usage + estimated cost |
+| `/repo-map` | Trigger repo map |
+| `/mode` | Current permission mode |
+| `/lang en\|ko` | Switch response language |
+| `/agents` | List custom agents |
+| `/skills` | List skills |
+| `/mcp` | MCP server status |
+| `/hooks` | Configured hooks |
+| `/forget N` | Drop last N messages |
+| `/compact` | Manually compact context |
+| `/new-session` | Start fresh |
+| `/clear` | Clear display |
+| `/quit` | Exit |
+
+## Built-in tools (30)
+
+### File I/O
+| Tool | Description |
+|------|-------------|
+| `read_file` | Read a file; `offset`+`limit` params for large files |
+| `write_file` | Create or overwrite a file |
+| `edit_file` | Replace `oldText` with `newText` |
+| `multi_edit` | Multiple replacements in one file, one call |
+| `delete_file` | Delete a file |
+| `rename_file` | Move or rename a file |
+| `create_patch` / `apply_patch` | Diff-style patch workflow |
+
+### Search & navigation
+| Tool | Description |
+|------|-------------|
+| `glob` | Find files by pattern — `**/*.ts`, `src/**/*.mjs` |
+| `grep` | Regex search (ripgrep if installed, JS fallback) |
+| `search_code` | Keyword search across the repo |
+| `list_files` | List a directory |
+| `repo_map` | Concise repo overview with key symbols |
+
+### Intelligence (tree-sitter)
+| Tool | Description |
+|------|-------------|
+| `find_symbol` | Find a symbol by name |
+| `find_references` | Find all references to a symbol |
+| `list_modules` | List modules in the workspace |
+| `index_health` | Report tree-sitter index status |
+
+### Execution
+| Tool | Description |
+|------|-------------|
+| `run_shell` | Run an allowlisted shell command |
+| `run_tests` | Run the project test suite |
+| `run_linter` | Run the project linter |
+| `run_typecheck` | Run type checking |
+| `run_verification` | Linter + typecheck + tests in sequence |
+
+### Web
+| Tool | Description |
+|------|-------------|
+| `web_fetch` | Fetch a URL and return plain text |
+| `web_search` | Search the web via Tavily (`TAVILY_API_KEY` required) |
+
+### GitHub
+| Tool | Description |
+|------|-------------|
+| `gh_issue_read` | Read a GitHub issue |
+| `gh_issue_comment` | Comment on a GitHub issue |
+| `gh_pr_create` | Create a pull request |
+| `gh_pr_review` | Review a pull request |
+
+### Meta
+| Tool | Description |
+|------|-------------|
+| `run_subagent` | Spawn a scoped subagent |
+| `echo` | Echo text |
+
+## Permission modes
+
+| Mode | Behaviour |
+|------|-----------|
+| `default` | Confirms high-risk actions interactively |
+| `acceptEdits` | Auto-approves file edits, confirms shell |
+| `auto` | Fully autonomous within workspace |
+| `bypassPermissions` | No prompts (use with caution) |
+| `dontAsk` | Never ask; deny anything not pre-approved |
+| `plan` | Read-only — all writes blocked |
+
+## Runtime extensions
+
+### MCP servers
 ```bash
 UPSTAGE_MCP_SERVERS_MODULE=./tools/mcp-servers.mjs
 ```
-
-Example module export:
-
 ```js
 export default [
-  {
-    name: "repo",
-    client: {
-      async listTools() {
-        return [];
-      },
-      async callTool(toolName, args, context) {
-        return { toolName, args, context };
-      }
-    }
-  }
+  { name: "my-server", client: { async listTools() { return []; }, async callTool(name, args) { return {}; } } }
 ];
 ```
 
-## CLI Usage
-
+### Discovered tools
 ```bash
-upstage
-upstage chat
-upstage ask -p "Analyze this repository"
-upstage ask -p "Fix issue #123" --confirm-patches
+UPSTAGE_DISCOVERY_COMMAND="node tools/bridge.mjs discover"
+UPSTAGE_DISCOVERY_INVOKE_COMMAND="node tools/bridge.mjs invoke"
+```
+The `discover` command must print a JSON array of tool specs:
+```json
+[{ "name": "my_tool", "description": "...", "risk": "low", "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false } }]
 ```
 
-Supported options:
+## Project context files
 
-*   `-h`, `--help`
-*   `-p`, `--prompt <text>`
-*   `--no-stream`
-*   `--model <model-name>`
-*   `--session <session-id>`
-*   `--new-session`
-*   `--reset-session`
-*   `--confirm-patches`
-*   `--bridge-json`
+Place an `UPSTAGE.md` in any directory — it is automatically merged into the system prompt when the agent runs there or in a subdirectory (analogous to Claude's `CLAUDE.md`).
 
-## Dashboard Layout
+## Security
 
-The upstage-cli interface is divided into two main sections:
+- Writes are restricted to `process.cwd()` by default
+- Shell injection patterns are detected and blocked
+- High-risk actions require explicit confirmation in `default` mode
+- `SECURITY_OVERRIDE=true` relaxes path restrictions for development
 
-1.  **Chat (Left Pane)**: This is where you interact with the agent. You can type your requests, see the agent's responses, and view diff previews of proposed changes.
-2.  **Sidebar (Right Pane)**: Provides real-time context and status:
-    *   **Plan**: Shows the agent's breakdown of the current task into atomic steps.
-    *   **Context**: Displays the repository map and relevant files currently in the agent's context.
-    *   **Tools**: Lists recent tool executions and observations.
+## License
 
-## Keyboard Shortcuts
-
-| Shortcut | Action |
-| :--- | :--- |
-| `Tab` | Cycle focus between Input, Chat, and Sidebar |
-| `Ctrl+S` | Toggle Session Browser |
-| `Ctrl+T` | Toggle Repository Map |
-| `Ctrl+X` | Open current input in your external `EDITOR` |
-| `Esc` | Enter Navigation Mode (use `j`/`k` to scroll chat) |
-| `Esc` (Double Press) | Rewind session (undo last turn) |
-| `i` | Focus Input (Insert Mode) from Navigation Mode |
-
-## Plan Mode
-
-Before executing complex tasks, the agent enters 'Plan Mode'. It analyzes your request and breaks it down into a series of logical steps. You can track the progress of these steps in the **Plan** tab of the Sidebar. This ensures transparency and allows you to see exactly how the agent intends to solve the problem.
-
-## Security Policy
-
-upstage-cli implements a path-scoped write protection policy to ensure safety. By default, the agent is only allowed to write files within the current working directory (`process.cwd()`). 
-
-*   **Restricted Writes**: Any attempt to write outside the trusted path will be blocked unless `SECURITY_OVERRIDE=true` is set.
-*   **Confirmations**: High-risk actions (like executing shell commands or writing files) require explicit user approval via an interactive dialog.
-
-## Slash Commands
-
-*   `/new`: Start a fresh session.
-*   `/sessions`: Open the session browser.
-*   `/tree`: Open the repository map.
-*   `/help`: Show the in-app help message.
-*   `/lang <ko|en>`: Switch UI language at runtime.
-*   `/exit`: Exit the application.
+MIT © VectorSophie

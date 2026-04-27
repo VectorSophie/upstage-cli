@@ -1,0 +1,26 @@
+# Development and CI
+.github/
+.claude/
+scripts/
+tests/
+harness/
+cmd/
+
+# Fixtures and test artifacts
+fixtures/
+runs/
+predictions/
+
+# Config files
+.eslintrc*
+eslint.config*
+.env*
+*.local.json
+
+# Editor
+.cursor/
+.vscode/
+
+# Misc
+*.log
+coverage/
