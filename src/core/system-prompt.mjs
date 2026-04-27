@@ -35,14 +35,20 @@ export function loadUpstageMdFiles(cwd = process.cwd()) {
   return files;
 }
 
-export function buildSystemPrompt({ cwd, tools, override, addDirs } = {}) {
+export function buildSystemPrompt({ cwd, tools, override, addDirs, language } = {}) {
   if (override) {
     return { staticPrefix: override, dynamicSuffix: '', full: override };
   }
 
+  const langInstruction = language === 'en'
+    ? 'Always respond in English.'
+    : 'Korean-first: respond in Korean by default unless the user writes in English.';
+
   const parts = [
-    'You are upstage-cli coding agent. Use tools for repository inspection and safe patch workflows. Always verify after apply_patch.',
-    'Korean-first: respond in Korean by default unless the user writes in English.',
+    `You are upstage-cli, an agentic coding assistant. ${langInstruction}`,
+    'You have tools available. Use them immediately to perform actions — do not describe what you would do, just do it.',
+    'Read files with read_file before discussing them. Write files with write_file. Run tests with run_tests.',
+    'Never fabricate file contents or pretend to write without calling the tool.',
   ];
 
   const mdFiles = loadUpstageMdFiles(cwd);

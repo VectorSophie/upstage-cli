@@ -398,6 +398,11 @@ async function* runCriticPhase({ registry, cwd, session, runtimeCache, conversat
     return; // run_tests not available or errored — skip critic
   }
 
+  // Skip if run_tests itself errored (e.g. npm/npx not in PATH)
+  if (!testResult.ok && (testResult.error?.message || "").includes("ENOENT")) {
+    return;
+  }
+
   const passed =
     testResult.ok &&
     testResult.data?.ok !== false &&
@@ -835,7 +840,8 @@ export async function* runAgentLoop({
     cwd,
     tools: registry?.toModelTools ? registry.toModelTools() : [],
     override: systemPromptOverride,
-    addDirs
+    addDirs,
+    language: settings?.language
   });
 
   appendHistory(session, { role: "user", content: input });

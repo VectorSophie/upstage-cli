@@ -27,16 +27,26 @@ export class UpstageAdapter {
     return this.apiKey.length > 0;
   }
 
-  async complete({ messages, tools = [], stream = true, onToken }) {
+  async complete({ messages, tools = [], stream = true, onToken, toolChoice }) {
     if (!this.isConfigured()) {
       throw new Error("UPSTAGE_API_KEY is not configured");
     }
+
+    // Use "required" only on the very first user turn (no tool history yet) when the
+    // last user message is clearly an action request. This stops Solar Pro2 from
+    // describing what it would do instead of doing it.
+    const ACTION_WORDS = /\b(read|write|create|edit|fix|add|run|list|find|search|delete|rename|move|show|check)\b/i;
+    const hasToolResults = messages.some((m) => m.role === "tool");
+    const lastUser = [...messages].reverse().find((m) => m.role === "user");
+    const isActionPrompt = typeof lastUser?.content === "string" && ACTION_WORDS.test(lastUser.content);
+    const resolvedToolChoice =
+      toolChoice || (tools.length > 0 && !hasToolResults && isActionPrompt ? "required" : "auto");
 
     const payload = {
       model: this.model,
       messages,
       tools,
-      tool_choice: "auto",
+      tool_choice: resolvedToolChoice,
       temperature: this.temperature,
       stream
     };

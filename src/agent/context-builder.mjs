@@ -11,17 +11,19 @@ function extractKeywords(prompt) {
   ).slice(0, 8);
 }
 
+const MAX_CONTEXT_CHARS = 24_000; // hard cap: keep well under Solar Pro2's 65k token limit
+
 export async function buildContext({
   input,
   registry,
   cwd,
   runtimeCache,
-  maxFiles = 6,
-  maxCharsPerFile = 2000
+  maxFiles = 5,
+  maxCharsPerFile = 1500
 }) {
   const keywords = extractKeywords(input);
 
-  const repoMap = await registry.execute("repo_map", { maxFiles: 100 }, { cwd, runtimeCache });
+  const repoMap = await registry.execute("repo_map", { maxFiles: 30 }, { cwd, runtimeCache });
   const mapData = repoMap.ok ? repoMap.data : { totalFiles: 0, map: "" };
 
   const candidates = new Set();
@@ -164,11 +166,12 @@ export function formatContextForModel(context) {
   lines.push(`- keywordHints: ${context.keywords.join(", ") || "none"}`);
   if (context.repoSummary.map) {
     lines.push("- repository map (condensed):");
-    lines.push(context.repoSummary.map);
+    // Cap repo map to avoid flooding the context
+    lines.push(context.repoSummary.map.slice(0, 4000));
   }
   if (Array.isArray(context.modules) && context.modules.length > 0) {
     lines.push("- module edges:");
-    for (const module of context.modules.slice(0, 12)) {
+    for (const module of context.modules.slice(0, 8)) {
       lines.push(`  - ${module.file} -> ${(module.imports || []).slice(0, 3).join(", ") || "(none)"}`);
     }
   }
@@ -186,9 +189,13 @@ export function formatContextForModel(context) {
     for (const chunk of context.retrieval.chunks) {
       lines.push(`  - ${chunk.path} (score=${chunk.score})`);
       lines.push("```text");
-      lines.push(chunk.text.slice(0, 400));
+      lines.push(chunk.text.slice(0, 300));
       lines.push("```");
     }
   }
-  return lines.join("\n");
+  const result = lines.join("\n");
+  if (result.length > MAX_CONTEXT_CHARS) {
+    return result.slice(0, MAX_CONTEXT_CHARS) + "\n... (context truncated)";
+  }
+  return result;
 }

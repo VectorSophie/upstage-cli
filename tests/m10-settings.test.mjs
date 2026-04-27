@@ -104,7 +104,7 @@ test("loadUpstageMdFiles returns array from project cwd", () => {
 
 test("buildSystemPrompt includes UPSTAGE.md content", () => {
   const result = buildSystemPrompt({ cwd: process.cwd() });
-  assert.ok(result.full.includes("upstage-cli coding agent"));
+  assert.ok(result.full.includes("upstage-cli"));
   assert.ok(result.staticPrefix.length > 0);
 });
 

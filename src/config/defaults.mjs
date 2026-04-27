@@ -1,7 +1,7 @@
 export const DEFAULT_LOOP_BUDGET = {
-  maxSteps: 8,
-  maxToolCalls: 8,
-  maxWallTimeMs: 15000
+  maxSteps: 12,
+  maxToolCalls: 30,
+  maxWallTimeMs: 180_000
 };
 
 export const DEFAULT_POLICY = {

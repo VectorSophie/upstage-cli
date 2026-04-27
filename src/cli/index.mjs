@@ -329,6 +329,26 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       }
       return;
     }
+    if (event.type === "critic") {
+      if (!bridgeJson && !screen) {
+        const stage = event.stage || "";
+        if (stage === "start") process.stderr.write("\n[critic] running tests...\n");
+        else if (stage === "pass") process.stderr.write("[critic] tests pass ✓\n");
+        else if (stage === "fail") process.stderr.write(`[critic] tests failed (cycle ${event.cycles})\n`);
+      }
+      return;
+    }
+    if (event.type === "replan") {
+      if (!bridgeJson && !screen) {
+        process.stderr.write(`\n[replan] trigger=${event.trigger} count=${event.count}\n`);
+      }
+      return;
+    }
+    if (event.type === "tool_log" || event.type === "lifecycle" || event.type === "compaction" ||
+        event.type === "hook_permission_result" || event.type === "stop" || event.type === "error") {
+      // Known event types we intentionally suppress in plain output mode
+      return;
+    }
   };
 
   let result;
