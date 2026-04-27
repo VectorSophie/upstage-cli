@@ -1,6 +1,8 @@
 import { runCommand } from "./commands/run.mjs";
 import { reportCommand } from "./commands/report.mjs";
 import { compareCommand } from "./commands/compare.mjs";
+import { replayCommand } from "./commands/replay.mjs";
+import { reviewCommand } from "./commands/review.mjs";
 
 function parseArgs(argv) {
   const positional = [];
@@ -46,20 +48,32 @@ export async function main() {
     case "compare":
       await compareCommand(rest, options);
       break;
+    case "replay":
+      await replayCommand(rest, options);
+      break;
+    case "review":
+      await reviewCommand(rest, options);
+      break;
     default:
-      console.log(`harness — upstage-cli evaluation harness v2.0.0
+      console.log(`harness — upstage-cli evaluation harness v2.3.0
 
 Commands:
   harness run     <task.yaml> [--agent mock|upstage] [--k N] [--runs-dir ./runs]
   harness compare <task.yaml> --agent A --agent B [--parallel] [--runs-dir ./runs]
-  harness report  <run.json> [--jsonl]
+  harness report  <run.json> [--jsonl] [--html] [--dashboard]
+  harness replay  <run.json> [--stop-at-turn N] [--task task.yaml] [--runs-dir ./runs]
+  harness review  <run.json>
 
 Options:
-  --agent     Agent to use (default: mock); repeat for compare
-  --k         Number of runs for pass@k (default: 1)
-  --runs-dir  Directory to save run artifacts (default: runs/)
-  --parallel  Run agents in parallel (compare only)
-  --jsonl     Output SWE-bench predictions JSONL format
+  --agent          Agent to use (default: mock); repeat for compare
+  --k              Number of runs for pass@k (default: 1)
+  --runs-dir       Directory to save run artifacts (default: runs/)
+  --parallel       Run agents in parallel (compare only)
+  --jsonl          Output SWE-bench predictions JSONL format
+  --html           Output HTML report
+  --dashboard      Output multi-run HTML dashboard
+  --stop-at-turn   Stop replay after turn N
+  --task           Task YAML path for replay (inferred from run if omitted)
 `);
       if (command && command !== "help") process.exitCode = 1;
   }
