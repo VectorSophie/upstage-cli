@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync, existsSync } from "node:fs";
-import { resolve, join } from "node:path";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { resolve, join, dirname } from "node:path";
 import { CodingAgent } from "../interface.mjs";
 
 /**
@@ -57,6 +57,7 @@ export class MockAgent extends CodingAgent {
 
     for (const { filePath, content } of fixes) {
       const absPath = resolve(workdir, filePath);
+      mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, content, "utf8");
     }
 

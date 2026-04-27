@@ -1,5 +1,6 @@
 import { runCommand } from "./commands/run.mjs";
 import { reportCommand } from "./commands/report.mjs";
+import { compareCommand } from "./commands/compare.mjs";
 
 function parseArgs(argv) {
   const positional = [];
@@ -11,7 +12,12 @@ function parseArgs(argv) {
       const key = arg.slice(2);
       const next = argv[i + 1];
       if (next && !next.startsWith("--")) {
-        options[key] = next;
+        // Accumulate repeated flags (e.g. --agent A --agent B) into arrays
+        if (key in options) {
+          options[key] = Array.isArray(options[key]) ? [...options[key], next] : [options[key], next];
+        } else {
+          options[key] = next;
+        }
         i += 2;
       } else {
         options[key] = true;
@@ -37,17 +43,22 @@ export async function main() {
     case "report":
       reportCommand(rest, options);
       break;
+    case "compare":
+      await compareCommand(rest, options);
+      break;
     default:
       console.log(`harness — upstage-cli evaluation harness v2.0.0
 
 Commands:
-  harness run <task.yaml> [--agent mock|upstage] [--k N] [--runs-dir ./runs]
-  harness report <run.json> [--jsonl]
+  harness run     <task.yaml> [--agent mock|upstage] [--k N] [--runs-dir ./runs]
+  harness compare <task.yaml> --agent A --agent B [--parallel] [--runs-dir ./runs]
+  harness report  <run.json> [--jsonl]
 
 Options:
-  --agent     Agent to use (default: mock)
+  --agent     Agent to use (default: mock); repeat for compare
   --k         Number of runs for pass@k (default: 1)
   --runs-dir  Directory to save run artifacts (default: runs/)
+  --parallel  Run agents in parallel (compare only)
   --jsonl     Output SWE-bench predictions JSONL format
 `);
       if (command && command !== "help") process.exitCode = 1;
