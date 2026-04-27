@@ -1,6 +1,6 @@
 {
   "name": "@vectorsophie/upstage-cli",
-  "version": "2.4.0",
+  "version": "2.5.0",
   "description": "Agentic coding assistant powered by Upstage Solar Pro2 — TUI, 30 built-in tools, MCP support, evaluation harness",
   "license": "MIT",
   "author": "VectorSophie",
@@ -13,11 +13,23 @@
     "url": "https://github.com/VectorSophie/upstage-cli/issues"
   },
   "keywords": [
-    "ai", "coding-assistant", "agent", "cli", "tui",
-    "upstage", "solar", "llm", "mcp", "swe-bench"
+    "ai",
+    "coding-assistant",
+    "agent",
+    "cli",
+    "tui",
+    "upstage",
+    "solar",
+    "llm",
+    "mcp",
+    "swe-bench"
   ],
-  "engines": { "node": ">=20.0.0" },
-  "publishConfig": { "access": "public" },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "type": "module",
   "files": [
     "src/",
