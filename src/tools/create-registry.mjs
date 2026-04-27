@@ -22,6 +22,13 @@ import {
 } from "./builtin/intelligence-tools.mjs";
 import { ghIssueCommentTool, ghIssueReadTool, ghPrCreateTool, ghPrReviewTool } from "./builtin/github-tools.mjs";
 import { runSubagentTool } from "./builtin/run-subagent.mjs";
+import { globTool } from "./builtin/glob.mjs";
+import { deleteFileTool } from "./builtin/delete-file.mjs";
+import { renameFileTool } from "./builtin/rename-file.mjs";
+import { grepTool } from "./builtin/grep.mjs";
+import { multiEditTool } from "./builtin/multi-edit.mjs";
+import { webFetchTool } from "./builtin/web-fetch.mjs";
+import { webSearchTool } from "./builtin/web-search.mjs";
 import { McpClientManager } from "./mcp/client-manager.mjs";
 import { createMcpTool } from "./mcp/mcp-tool.mjs";
 import { createDiscoveredTool } from "./discovery/discovered-tool.mjs";
@@ -120,6 +127,13 @@ export function createRegistry(policy) {
   registry.register(ghIssueCommentTool);
   registry.register(ghPrCreateTool);
   registry.register(ghPrReviewTool);
+  registry.register(globTool);
+  registry.register(deleteFileTool);
+  registry.register(renameFileTool);
+  registry.register(grepTool);
+  registry.register(multiEditTool);
+  registry.register(webFetchTool);
+  registry.register(webSearchTool);
   return registry;
 }
 
