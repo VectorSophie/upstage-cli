@@ -31,6 +31,31 @@ const SOLAR_PRO2_WARNING_THRESHOLD = Math.floor(SOLAR_PRO2_TOKEN_LIMIT * 0.8);
 const DEFAULT_MAX_CONVERSATION_MESSAGES = 40;
 const CONTEXT_EXCEEDED_RETRY_MESSAGES = 12;
 
+const CRITIC_WRITE_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "apply_patch"]);
+const CRITIC_MAX_CYCLES = 3;
+const REPLAN_CONSECUTIVE_FAILURE_THRESHOLD = 3;
+const REPLAN_TOOL_LOOP_THRESHOLD = 3;
+const REPLAN_MAX_REPLANS = 2;
+
+function getReplanState(runtimeCache) {
+  if (!runtimeCache) return { consecutiveFailures: 0, criticCycles: 0, replanCount: 0, toolCallSigs: [] };
+  if (!runtimeCache._replanState) {
+    runtimeCache._replanState = { consecutiveFailures: 0, criticCycles: 0, replanCount: 0, toolCallSigs: [] };
+  }
+  return runtimeCache._replanState;
+}
+
+function detectToolLoop(state, toolCallList) {
+  if (toolCallList.length === 0 || state.toolCallSigs.length < REPLAN_TOOL_LOOP_THRESHOLD) return false;
+  const recent = state.toolCallSigs.slice(-20);
+  for (const tc of toolCallList) {
+    const sig = `${tc.function?.name}|${tc.function?.arguments || ""}`;
+    const count = recent.filter((s) => s === sig).length;
+    if (count >= REPLAN_TOOL_LOOP_THRESHOLD) return true;
+  }
+  return false;
+}
+
 function safeJsonParse(value) {
   try {
     return JSON.parse(value);
@@ -359,6 +384,54 @@ function yieldTokenUsageUpdate({ tokenBudgeter, completion, adapter, registry, s
   return events;
 }
 
+async function* runCriticPhase({ registry, cwd, session, runtimeCache, conversation }) {
+  if (process.env.UPSTAGE_CRITIC_DISABLED === "true") return;
+  const replanState = getReplanState(runtimeCache);
+  if (replanState.criticCycles >= CRITIC_MAX_CYCLES) return;
+
+  yield createEvent(AgentEventType.CRITIC, { stage: "start" });
+
+  let testResult;
+  try {
+    testResult = await registry.execute("run_tests", {}, { cwd, session, runtimeCache });
+  } catch {
+    return; // run_tests not available or errored — skip critic
+  }
+
+  const passed =
+    testResult.ok &&
+    testResult.data?.ok !== false &&
+    testResult.data?.exitCode !== 1 &&
+    testResult.data?.exitCode !== 2;
+
+  if (passed) {
+    yield createEvent(AgentEventType.CRITIC, { stage: "pass" });
+    replanState.criticCycles = 0;
+    return;
+  }
+
+  replanState.criticCycles += 1;
+
+  const output = testResult.ok
+    ? testResult.data?.output || testResult.data?.stderr || "Tests failed (no output captured)"
+    : testResult.error?.message || "Test runner error";
+
+  const feedbackContent =
+    replanState.criticCycles >= CRITIC_MAX_CYCLES
+      ? `⚠ Tests have failed ${replanState.criticCycles} times in a row after your edits. Your current approach is not working. Stop, diagnose what is fundamentally wrong, and try a completely different strategy:\n\n${output.slice(0, 1500)}`
+      : `⚠ Tests failed after your edit. Fix the failures before continuing:\n\n${output.slice(0, 1500)}`;
+
+  const criticMsg = { role: "user", content: feedbackContent };
+  conversation.push(criticMsg);
+  appendHistory(session, criticMsg);
+
+  yield createEvent(AgentEventType.CRITIC, {
+    stage: "fail",
+    cycles: replanState.criticCycles,
+    output: output.slice(0, 300)
+  });
+}
+
 async function* executeToolCallsPhase({
   toolCallList,
   toolCalls,
@@ -373,6 +446,7 @@ async function* executeToolCallsPhase({
 }) {
   let nextState = AgentState.ACTING;
   let nextToolCalls = toolCalls;
+  let usedWriteTools = false;
 
   for (const toolCall of toolCallList) {
     const toolName = toolCall.function?.name;
@@ -388,9 +462,13 @@ async function* executeToolCallsPhase({
 
     yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
 
+    // Track write-tool usage for critic
+    if (CRITIC_WRITE_TOOLS.has(toolName)) {
+      usedWriteTools = true;
+    }
+
     // Checkpoint before destructive file operations
-    const WRITE_TOOLS = new Set(["write_file", "edit_file", "apply_patch"]);
-    if (WRITE_TOOLS.has(toolName) && runtimeCache?.checkpointManager && args?.path) {
+    if (CRITIC_WRITE_TOOLS.has(toolName) && runtimeCache?.checkpointManager && args?.path) {
       const { resolve: resolvePath } = await import("node:path");
       const absPath = resolvePath(cwd, args.path);
       await runtimeCache.checkpointManager.save(absPath).catch(() => {});
@@ -485,6 +563,11 @@ async function* executeToolCallsPhase({
     }
 
     appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
+  }
+
+  // Critic: run tests after write operations and inject failure feedback
+  if (usedWriteTools) {
+    yield* runCriticPhase({ registry, cwd, session, runtimeCache, conversation });
   }
 
   return {
@@ -950,6 +1033,34 @@ export async function* runAgentLoop({
       const completion = completionResult.completion;
       const toolCallList = Array.isArray(completion.toolCalls) ? completion.toolCalls : [];
 
+      // Re-plan: detect tool loop before executing
+      if (toolCallList.length > 0) {
+        const rs = getReplanState(runtimeCache);
+        if (detectToolLoop(rs, toolCallList) && rs.replanCount < REPLAN_MAX_REPLANS) {
+          rs.replanCount += 1;
+          rs.consecutiveFailures = 0;
+          for (const tc of toolCallList) {
+            rs.toolCallSigs.push(`${tc.function?.name}|${tc.function?.arguments || ""}`);
+          }
+          const replanMsg = {
+            role: "user",
+            content:
+              "You are calling the same tools repeatedly without making progress. Break the loop: summarize what you have tried and why it did not work, then choose a completely different approach."
+          };
+          conversation.push(replanMsg);
+          appendHistory(session, replanMsg);
+          yield createEvent(AgentEventType.REPLAN, { trigger: "tool_loop", count: rs.replanCount });
+          state = AgentState.PLANNING;
+          steps += 1;
+          continue;
+        }
+        // Track tool call signatures for future loop detection
+        for (const tc of toolCallList) {
+          rs.toolCallSigs.push(`${tc.function?.name}|${tc.function?.arguments || ""}`);
+        }
+        if (rs.toolCallSigs.length > 30) rs.toolCallSigs.splice(0, rs.toolCallSigs.length - 30);
+      }
+
       const phaseResult = yield* processCompletionWithTools({
         completion,
         conversation,
@@ -967,9 +1078,32 @@ export async function* runAgentLoop({
       });
 
       if (phaseResult.terminal) {
+        // Re-plan: inject recovery message on repeated tool failures instead of hard-failing
+        if (phaseResult.terminal.stopReason === StopReason.TOOL_ERROR) {
+          const rs = getReplanState(runtimeCache);
+          rs.consecutiveFailures += 1;
+          if (rs.consecutiveFailures >= REPLAN_CONSECUTIVE_FAILURE_THRESHOLD && rs.replanCount < REPLAN_MAX_REPLANS) {
+            rs.replanCount += 1;
+            rs.consecutiveFailures = 0;
+            const errMsg = (phaseResult.terminal.response || "").slice(0, 200);
+            const replanMsg = {
+              role: "user",
+              content: `Your approach keeps running into errors (latest: ${errMsg}). Stop and reconsider your assumptions. Propose a fundamentally different strategy, then try again.`
+            };
+            conversation.push(replanMsg);
+            appendHistory(session, replanMsg);
+            yield createEvent(AgentEventType.REPLAN, { trigger: "consecutive_failures", count: rs.replanCount });
+            state = AgentState.PLANNING;
+            steps += 1;
+            continue;
+          }
+        } else {
+          getReplanState(runtimeCache).consecutiveFailures = 0;
+        }
         return phaseResult.terminal;
       }
 
+      getReplanState(runtimeCache).consecutiveFailures = 0;
       toolCalls = phaseResult.toolCalls;
       state = phaseResult.state;
       steps += 1;

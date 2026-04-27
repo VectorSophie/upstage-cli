@@ -15,6 +15,8 @@ export const AgentEventType = {
   SYSTEM_WARNING: "system_warning",
   COMPACTION: "compaction",
   HOOK_PERMISSION_RESULT: "hook_permission_result",
+  CRITIC: "critic",
+  REPLAN: "replan",
   ERROR: "error",
   STOP: "stop"
 };

@@ -15,13 +15,24 @@ import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
 import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
+import { ModelRouter } from "../model/router.mjs";
 import { getProvider } from "../core/providers.mjs";
 
-function createAdapter({ model } = {}) {
+function createBaseAdapter({ model } = {}) {
   const provider = getProvider(model);
   if (provider.id === "openai") return new OpenAIAdapter({ model });
   if (provider.id === "gemini") return new GeminiAdapter({ model });
   return new UpstageAdapter({ model: model || undefined });
+}
+
+function createAdapter({ model } = {}) {
+  const proAdapter = createBaseAdapter({ model });
+  const fastModel = process.env.UPSTAGE_FAST_MODEL;
+  if (fastModel && fastModel !== proAdapter.model) {
+    const fastAdapter = createBaseAdapter({ model: fastModel });
+    return new ModelRouter({ proAdapter, fastAdapter });
+  }
+  return proAdapter;
 }
 import {
   createInteractiveApprovalHandler,

@@ -3,6 +3,7 @@ import { reportCommand } from "./commands/report.mjs";
 import { compareCommand } from "./commands/compare.mjs";
 import { replayCommand } from "./commands/replay.mjs";
 import { reviewCommand } from "./commands/review.mjs";
+import { importCommand } from "./commands/import.mjs";
 
 function parseArgs(argv) {
   const positional = [];
@@ -54,8 +55,11 @@ export async function main() {
     case "review":
       await reviewCommand(rest, options);
       break;
+    case "import":
+      await importCommand(rest, options);
+      break;
     default:
-      console.log(`harness — upstage-cli evaluation harness v2.3.0
+      console.log(`harness — upstage-cli evaluation harness v2.4.0
 
 Commands:
   harness run     <task.yaml> [--agent mock|upstage] [--k N] [--runs-dir ./runs]
@@ -63,6 +67,7 @@ Commands:
   harness report  <run.json> [--jsonl] [--html] [--dashboard]
   harness replay  <run.json> [--stop-at-turn N] [--task task.yaml] [--runs-dir ./runs]
   harness review  <run.json>
+  harness import  <swebench|aider> <source> [--out-dir tasks/]
 
 Options:
   --agent          Agent to use (default: mock); repeat for compare
@@ -74,6 +79,8 @@ Options:
   --dashboard      Output multi-run HTML dashboard
   --stop-at-turn   Stop replay after turn N
   --task           Task YAML path for replay (inferred from run if omitted)
+  --out-dir        Output directory for imported tasks (import only)
+  --verbose        Verbose output
 `);
       if (command && command !== "help") process.exitCode = 1;
   }

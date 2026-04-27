@@ -69,6 +69,52 @@ export async function buildContext({
     }
   }
 
+  // Glob tier: filename-like keywords (contains dot or dash) → direct file discovery
+  if (candidates.size < maxFiles) {
+    const filePatternKeywords = keywords.filter((k) => (k.includes(".") || k.includes("-")) && k.length > 4);
+    // Also try adjacent keyword pairs as potential kebab-case filenames
+    const pairs = [];
+    for (let i = 0; i < keywords.length - 1; i++) {
+      pairs.push(`${keywords[i]}-${keywords[i + 1]}`);
+    }
+    const globTargets = [...filePatternKeywords, ...pairs.slice(0, 4)].slice(0, 6);
+    if (globTargets.length > 0) {
+      const globResults = await Promise.all(
+        globTargets.map((k) =>
+          registry.execute("glob", { pattern: `**/*${k}*` }, { cwd, runtimeCache }).catch(() => null)
+        )
+      );
+      for (const gr of globResults) {
+        if (!gr?.ok || !Array.isArray(gr.data?.files)) continue;
+        for (const file of gr.data.files.slice(0, 3)) {
+          candidates.add(file);
+          if (candidates.size >= maxFiles) break;
+        }
+        if (candidates.size >= maxFiles) break;
+      }
+    }
+  }
+
+  // Call-graph tier: find_references for top symbols to discover connected files
+  if (candidates.size < maxFiles) {
+    const refResults = await Promise.all(
+      keywords.slice(0, 4).map((k) =>
+        registry.execute("find_references", { symbol: k }, { cwd, runtimeCache }).catch(() => null)
+      )
+    );
+    for (const rr of refResults) {
+      if (!rr?.ok || !Array.isArray(rr.data?.references)) continue;
+      for (const ref of rr.data.references) {
+        const file = ref.file || ref.path;
+        if (file) {
+          candidates.add(file);
+          if (candidates.size >= maxFiles) break;
+        }
+      }
+      if (candidates.size >= maxFiles) break;
+    }
+  }
+
   const selectedFiles = Array.from(candidates).slice(0, maxFiles);
   const snippetResults = await Promise.all(
     selectedFiles.map((relativePath) =>
