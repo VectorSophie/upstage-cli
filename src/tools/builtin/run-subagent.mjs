@@ -100,6 +100,15 @@ export const runSubagentTool = {
       }
     }));
 
+    if (context.registry?.hookEngine?.runSubagentStop) {
+      await context.registry.hookEngine.runSubagentStop({
+        role: role.name,
+        stopReason: subResult.stopReason,
+        ok: subResult.ok,
+        parentSessionId: context.session?.id || null
+      }).catch(() => {});
+    }
+
     return {
       role: role.name,
       allowedTools,

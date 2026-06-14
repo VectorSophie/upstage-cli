@@ -844,8 +844,28 @@ export async function* runAgentLoop({
     language: settings?.language
   });
 
-  appendHistory(session, { role: "user", content: input });
-  conversation.push({ role: "user", content: input });
+  // UserPromptSubmit hook — may block the prompt or inject additional context.
+  let effectiveInput = input;
+  if (registry?.hookEngine?.runUserPromptSubmit) {
+    const ups = await registry.hookEngine.runUserPromptSubmit(input, { cwd, sessionId: session.id });
+    if (ups && ups.allow === false) {
+      yield createEvent(AgentEventType.SYSTEM_WARNING, { message: ups.reason });
+      return {
+        ok: false,
+        state: AgentState.FAIL,
+        stopReason: StopReason.POLICY_BLOCKED,
+        response: ups.reason || "Prompt blocked by UserPromptSubmit hook.",
+        trace,
+        session
+      };
+    }
+    if (ups && ups.additionalContext) {
+      effectiveInput = `${input}\n\n[hook context]\n${ups.additionalContext}`;
+    }
+  }
+
+  appendHistory(session, { role: "user", content: effectiveInput });
+  conversation.push({ role: "user", content: effectiveInput });
 
   try {
     while (steps < budget.maxSteps) {
@@ -914,13 +934,19 @@ export async function* runAgentLoop({
         keywords: context.keywords
       });
 
-      // Proactive context compaction before each model call
+      // Proactive context compaction before each model call (PreCompact hook
+      // may veto it).
       if (contextManager.shouldCompact(conversation)) {
-        conversation = contextManager.compact(conversation);
-        yield createEvent(AgentEventType.COMPACTION, {
-          reason: "auto_threshold",
-          ...contextManager.getStats()
-        });
+        const proceed = registry?.hookEngine?.runPreCompact
+          ? await registry.hookEngine.runPreCompact({ trigger: "auto_threshold", ...contextManager.getStats() })
+          : true;
+        if (proceed) {
+          conversation = contextManager.compact(conversation);
+          yield createEvent(AgentEventType.COMPACTION, {
+            reason: "auto_threshold",
+            ...contextManager.getStats()
+          });
+        }
       }
 
       const messages = buildModelMessages({

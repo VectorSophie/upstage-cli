@@ -553,12 +553,14 @@ async function main() {
       rl: null,
       settings
     });
+    await hookEngine.runSessionEnd(session.id || "", "prompt_complete");
     process.off("uncaughtException", onFatal);
     process.off("unhandledRejection", onFatal);
     return;
   }
 
   await runInteractive(registry, adapter, args, session, runtimeCache, settings);
+  await hookEngine.runSessionEnd(session.id || "", "exit");
   process.off("uncaughtException", onFatal);
   process.off("unhandledRejection", onFatal);
 }
