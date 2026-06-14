@@ -123,3 +123,6 @@ Thumbs.db
 .upstage-cli/
 *.wasm
 !src/**/*.wasm
+
+# upstage-cli runtime checkpoints (scratch)
+.upstage/checkpoints/

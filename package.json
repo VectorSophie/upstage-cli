@@ -39,7 +39,8 @@
     "LICENSE"
   ],
   "bin": {
-    "upstage": "src/cli/index.mjs"
+    "upstage": "src/cli/index.mjs",
+    "upstage-mcp": "src/mcp/upstage-server.mjs"
   },
   "scripts": {
     "dev": "node src/cli/index.mjs",

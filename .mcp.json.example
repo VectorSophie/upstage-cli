@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "upstage": {
+      "command": "node",
+      "args": ["C:/Workspace/upstage-cli/src/mcp/upstage-server.mjs"],
+      "env": {
+        "UPSTAGE_API_KEY": "up_your_key_here",
+        "UPSTAGE_MODEL": "solar-pro2"
+      }
+    }
+  }
+}

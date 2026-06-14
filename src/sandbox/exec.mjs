@@ -92,7 +92,11 @@ export async function runSandboxedProcess(binary, args = [], options = {}) {
       cwd: normalized.cwd,
       env: normalized.env,
       stdio: ["ignore", "pipe", "pipe"],
-      shell: false
+      // On Windows, `npm`/`npx`/`yarn` etc. are `.cmd` shims that cannot be
+      // launched without a shell — `spawn("npm")` fails with ENOENT. Args are
+      // already validated against shell metacharacters above and the binary
+      // comes from the allowlist, so enabling the shell here is safe.
+      shell: process.platform === "win32"
     });
 
     let stdout = "";
