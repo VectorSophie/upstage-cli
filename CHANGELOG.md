@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Added
+- **MCP Streamable-HTTP transport (`src/tools/mcp/http-client.mjs`)** — connect to
+  remote MCP servers, not just local stdio. Implements the current Streamable HTTP
+  transport (MCP spec 2025-03-26+): single-endpoint JSON-RPC over POST, responses
+  as JSON *or* SSE, `Mcp-Session-Id` propagation, `MCP-Protocol-Version` header,
+  and session teardown via HTTP DELETE. `.mcp.json` `url` entries now connect
+  (`{ "<name>": { "url": "https://host/mcp", "headers": {...} } }`) instead of
+  being skipped. Verified live against `@modelcontextprotocol/server-everything`
+  in `streamableHttp` mode. Tests: `tests/m19-mcp-http.test.mjs`.
 - **Real MCP client (`src/tools/mcp/stdio-client.mjs`)** — a genuine JSON-RPC 2.0
   client over the MCP stdio transport (initialize handshake +
   `notifications/initialized`, `tools/list`, `tools/call`, id correlation,

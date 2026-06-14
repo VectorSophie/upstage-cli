@@ -83,7 +83,7 @@ test(".mcp.json config connects and registers tools into the registry", async ()
   }
 });
 
-test("remote (url) entries are skipped, not connected", async () => {
+test("stdio and remote (url) entries are normalized with the right transport", async () => {
   const dir = await mkdtemp(join(tmpdir(), "mcp-cfg-"));
   try {
     await writeFile(
@@ -91,7 +91,9 @@ test("remote (url) entries are skipped, not connected", async () => {
       JSON.stringify({ mcpServers: { remote: { url: "https://example.com/mcp" }, local: { command: process.execPath, args: [MOCK] } } })
     );
     const configs = await loadMcpServerConfigs(dir, {});
-    assert.deepEqual(configs.map((c) => c.name), ["local"]);
+    const byName = Object.fromEntries(configs.map((c) => [c.name, c.transport]));
+    assert.equal(byName.local, "stdio");
+    assert.equal(byName.remote, "http");
   } finally {
     await rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
   }

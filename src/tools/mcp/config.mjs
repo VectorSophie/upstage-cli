@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { StdioMcpClient } from "./stdio-client.mjs";
+import { HttpMcpClient } from "./http-client.mjs";
 
 /**
  * Claude-Code-compatible MCP configuration.
@@ -9,11 +10,10 @@ import { StdioMcpClient } from "./stdio-client.mjs";
  * connects each one, returning `[{ name, client }]` ready for
  * `createRegistryWithExtensions({ mcpServers })`.
  *
- * Supported entry shape (stdio transport — the default for local servers):
- *   { "mcpServers": { "<name>": { "command": "npx", "args": [...], "env": {...} } } }
- *
- * Remote (`url`/`type: "http"|"sse"`) entries are recognized but skipped for now
- * with a clear warning, so configs don't silently misbehave.
+ * Two transports are supported:
+ *   stdio: { "<name>": { "command": "npx", "args": [...], "env": {...} } }
+ *   http:  { "<name>": { "url": "https://host/mcp", "headers": {...} } }
+ *          (Streamable HTTP; `type: "http"|"sse"` are also recognized)
  */
 
 function warn(onLog, message) {
@@ -49,7 +49,16 @@ export async function loadMcpServerConfigs(cwd = process.cwd(), settings = {}, {
 
     const isRemote = typeof def.url === "string" || def.type === "http" || def.type === "sse";
     if (isRemote) {
-      warn(onLog, `server '${name}' uses a remote transport (url/http/sse) which is not supported yet — skipping`);
+      if (typeof def.url !== "string" || def.url.length === 0) {
+        warn(onLog, `server '${name}' is remote but has no 'url' — skipping`);
+        continue;
+      }
+      configs.push({
+        name,
+        transport: "http",
+        url: def.url,
+        headers: def.headers && typeof def.headers === "object" ? def.headers : {}
+      });
       continue;
     }
     if (typeof def.command !== "string" || def.command.length === 0) {
@@ -58,6 +67,7 @@ export async function loadMcpServerConfigs(cwd = process.cwd(), settings = {}, {
     }
     configs.push({
       name,
+      transport: "stdio",
       command: def.command,
       args: Array.isArray(def.args) ? def.args : [],
       env: def.env && typeof def.env === "object" ? def.env : {}
@@ -66,22 +76,29 @@ export async function loadMcpServerConfigs(cwd = process.cwd(), settings = {}, {
   return configs;
 }
 
+function buildClient(cfg, { cwd, timeoutMs }) {
+  if (cfg.transport === "http") {
+    return new HttpMcpClient({ url: cfg.url, headers: cfg.headers, name: cfg.name, timeoutMs });
+  }
+  return new StdioMcpClient({
+    command: cfg.command,
+    args: cfg.args,
+    env: cfg.env,
+    cwd,
+    name: cfg.name,
+    timeoutMs
+  });
+}
+
 /**
- * Connect each configured stdio server. Failures are isolated: a server that
- * won't start is logged and skipped, never crashing the host.
- * Returns `[{ name, client }]` plus a `closeAll()` you can call on shutdown.
+ * Connect each configured server (stdio or http). Failures are isolated: a
+ * server that won't start/connect is logged and skipped, never crashing the
+ * host. Returns `[{ name, client }]` plus a `closeAll()` for shutdown.
  */
 export async function connectConfiguredServers(configs, { cwd, onLog, timeoutMs } = {}) {
   const servers = [];
   for (const cfg of configs) {
-    const client = new StdioMcpClient({
-      command: cfg.command,
-      args: cfg.args,
-      env: cfg.env,
-      cwd,
-      name: cfg.name,
-      timeoutMs
-    });
+    const client = buildClient(cfg, { cwd, timeoutMs });
     try {
       await client.connect();
       servers.push({ name: cfg.name, client });

@@ -105,9 +105,10 @@ export default [
 
 #### `.mcp.json` 으로 실제 MCP 서버 연동 (Claude Code 호환)
 
-프로젝트 루트에 `.mcp.json` 을 두면 실제 MCP 서버(stdio)를 자동으로 연결합니다.
-표준 JSON-RPC 2.0 stdio 클라이언트로 `tools/list` · `tools/call` 을 수행하며,
-등록된 도구는 `<서버이름>__<도구이름>` 으로 노출됩니다.
+프로젝트 루트에 `.mcp.json` 을 두면 실제 MCP 서버를 자동으로 연결합니다.
+**stdio** 와 **Streamable HTTP** 두 전송을 모두 지원하며, 표준 JSON-RPC 2.0 로
+`tools/list` · `tools/call` 을 수행하고, 등록된 도구는 `<서버이름>__<도구이름>`
+으로 노출됩니다.
 
 ```json
 {
@@ -115,13 +116,17 @@ export default [
     "filesystem": {
       "command": "npx",
       "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "remote-api": {
+      "url": "https://your-host.example.com/mcp",
+      "headers": { "Authorization": "Bearer ..." }
     }
   }
 }
 ```
 
+- `command` → stdio 전송, `url` → Streamable HTTP 전송(세션·SSE 응답 처리 포함).
 - `settings.json` 의 `mcpServers` 와 병합되며, 연결 실패한 서버는 경고 후 건너뜁니다.
-- 원격(`url`/`http`/`sse`) 전송은 아직 미지원이며 경고와 함께 무시됩니다.
 - upstage-cli 를 **반대로** Claude Code 의 서브에이전트로 쓰려면
   [`docs/claude-code-integration.md`](./docs/claude-code-integration.md) 참고.
 
