@@ -5,6 +5,7 @@ import { join } from "node:path";
 import os from "node:os";
 import { renderMarkdown } from "./markdown.mjs";
 import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
+import { appendSpec, readSpecs } from "../core/spec.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -71,6 +72,20 @@ export const COMMANDS = {
       const res = await restoreCheckpoint(base, id);
       if (!res.ok) return { response: `되돌리기 실패: ${res.error}` };
       return { response: `↩ 복원됨: ${res.relativePath} (${res.action}, ${res.id})` };
+    }
+  },
+
+  "/spec": {
+    description: "스펙 기록/조회 (UPSTAGE.md에 지속 저장) — /spec <내용>",
+    async handler(args, state) {
+      const cwd = state?._session?.workspace?.cwd || process.cwd();
+      const text = (args || []).join(" ").trim();
+      if (!text) {
+        const specs = await readSpecs(cwd);
+        return { response: specs ? `현재 스펙:\n\n${specs}` : "기록된 스펙이 없습니다. /spec <내용> 으로 추가하세요." };
+      }
+      const { entry } = await appendSpec(cwd, text);
+      return { response: `📝 스펙 저장됨 (UPSTAGE.md):\n${entry}` };
     }
   },
 
