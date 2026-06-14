@@ -1,4 +1,5 @@
 ﻿import { COLOR, c } from "./colors.mjs";
+import { selectLogo } from "./responsive-logo.mjs";
 
 function supportsBracketedPasteMode() {
   return process.platform !== "win32";
@@ -113,8 +114,14 @@ const BANNER = [
 
 export function renderAppHeader(sessionId) {
   const out = [];
-  for (const line of BANNER) {
-    out.push(c(COLOR.primary, line));
+  // Responsive logo: the full ASCII banner needs a wide/tall terminal; collapse
+  // to the compact wordmark otherwise (keeps the brand, fits the window).
+  if (selectLogo({ cols: process.stdout.columns || 80, rows: process.stdout.rows || 24 }) === "full") {
+    for (const line of BANNER) {
+      out.push(c(COLOR.primary, line));
+    }
+  } else {
+    out.push(c(COLOR.primary, " ◉ solar"));
   }
   out.push("");
   out.push(c(COLOR.secondary, " 한국형 Gemini CLI 지향 Upstage Solar-Pro 에이전트"));

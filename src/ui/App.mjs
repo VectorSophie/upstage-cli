@@ -17,6 +17,9 @@ import { StatusBar } from "./components/StatusBar.mjs";
 import { THEME } from "./colors.mjs";
 import { canUseFullscreenTui, enterFullscreenTui, exitFullscreenTui } from "./tui.mjs";
 import { shouldRoutePrintableToComposer } from "./input-routing.mjs";
+import { getAutocomplete, applyCompletion } from "./composer-autocomplete.mjs";
+import { nextMode } from "./mode-cycle.mjs";
+import { COMMANDS } from "./commands.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
 import { createSession, listSessions, loadSession, saveSession } from "../runtime/session.mjs";
 import {
@@ -253,7 +256,25 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     }
   }, [messages, currentSession]);
 
+  const commandList = useMemo(() => Object.keys(COMMANDS).map((name) => ({ name })), []);
+  const autocomplete = (focusedPane === 'input' && !isProcessing && composerValue.startsWith('/'))
+    ? getAutocomplete(composerValue, { commands: commandList })
+    : null;
+
   useInput((input, key) => {
+    // shift+tab cycles the permission mode (default → accept edits → plan).
+    if (key.tab && key.shift) {
+      setApprovalMode((m) => nextMode(m));
+      return;
+    }
+    // Tab accepts the top autocomplete suggestion when one is active.
+    if (key.tab && autocomplete && autocomplete.items.length > 0) {
+      const top = autocomplete.items[0];
+      const value = autocomplete.mode === 'command' ? top.name : top;
+      setComposerValue(applyCompletion(composerValue, { mode: autocomplete.mode, value, start: autocomplete.start }));
+      return;
+    }
+
     if (shouldRoutePrintableToComposer({
       focusedPane,
       input,
@@ -665,6 +686,21 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         systemWarning: systemWarning,
         language: language
       }),
+      autocomplete && React.createElement(
+        Box,
+        { flexDirection: "column", paddingX: 2 },
+        ...autocomplete.items.slice(0, 6).map((it, idx) => {
+          const name = autocomplete.mode === 'command' ? it.name : `@${it}`;
+          const desc = autocomplete.mode === 'command' ? (COMMANDS[it.name]?.description || '') : '';
+          return React.createElement(
+            Text,
+            { key: name, color: idx === 0 ? THEME.primary : THEME.dim },
+            `${idx === 0 ? '› ' : '  '}${name}${desc ? '  ' : ''}`,
+            desc ? React.createElement(Text, { color: THEME.text.dim }, desc) : null
+          );
+        }),
+        React.createElement(Text, { color: THEME.text.dim }, '  ⇥ accept  ·  ⇧⇥ change mode')
+      ),
       React.createElement(Composer, {
         onSend: handleSend,
         isDisabled: isProcessing,
