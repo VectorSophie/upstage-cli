@@ -65,6 +65,16 @@ import { getDefaultCommands, rankCommands } from "../ui/command-palette.mjs";
 import { AgentLoader } from "../agents/loader.mjs";
 import { SkillsLoader } from "../skills/loader.mjs";
 import { HookEngine } from "../hooks/engine.mjs";
+import { PluginLoader } from "../plugins/loader.mjs";
+
+function mergeHookMaps(base, extra) {
+  const out = { ...base };
+  for (const [event, defs] of Object.entries(extra || {})) {
+    if (!Array.isArray(defs)) continue;
+    out[event] = (out[event] || []).concat(defs);
+  }
+  return out;
+}
 
 function parseArgs(argv) {
   const result = parseCliArgs(argv);
@@ -507,13 +517,31 @@ async function main() {
   const cwd = process.cwd();
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
   const discovery = createDiscoveryConfigFromEnv(cwd);
-  const mcpServers = await loadAllMcpServers(cwd, settings);
+
+  // Discover Claude-compatible plugins and merge their components into the
+  // settings/loaders before everything downstream is built.
+  const pluginLoader = await new PluginLoader().load(cwd);
+  const mergedSettings = {
+    ...settings,
+    hooks: mergeHookMaps(settings.hooks || {}, pluginLoader.hooks),
+    mcpServers: { ...pluginLoader.mcpServers, ...(settings.mcpServers || {}) }
+  };
+
+  const mcpServers = await loadAllMcpServers(cwd, mergedSettings);
   const agentLoader = new AgentLoader();
   await agentLoader.load(cwd);
+  for (const def of pluginLoader.agents) {
+    if (!agentLoader.has(def.name)) agentLoader.agents.set(def.name, def);
+  }
   const skillsLoader = new SkillsLoader();
   await skillsLoader.load(cwd);
+  for (const s of pluginLoader.skills) {
+    if (!skillsLoader.skills.has(s.name)) {
+      skillsLoader.skills.set(s.name, { name: s.name, description: s.description, aliases: [], trigger: null, prompt: s.prompt });
+    }
+  }
 
-  const hookEngine = new HookEngine(settings.hooks || {});
+  const hookEngine = new HookEngine(mergedSettings.hooks || {});
 
   const runtimeCache = {
     verifyStages,
