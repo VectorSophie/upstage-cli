@@ -4,6 +4,36 @@ All notable changes to upstage-cli are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- **Real MCP client (`src/tools/mcp/stdio-client.mjs`)** — a genuine JSON-RPC 2.0
+  client over the MCP stdio transport (initialize handshake +
+  `notifications/initialized`, `tools/list`, `tools/call`, id correlation,
+  per-request timeouts, isolated failure). Replaces the previous in-memory stub:
+  upstage-cli can now **consume the real MCP ecosystem**. Verified live against
+  `@modelcontextprotocol/server-everything` (13 tools, `echo` round-trip).
+- **Claude-compatible `.mcp.json` config** (`src/tools/mcp/config.mjs`) — reads
+  `{ "mcpServers": { name: { command, args, env } } }` from project `.mcp.json`
+  and `settings.mcpServers`, connects each stdio server at CLI startup, and
+  registers their tools (`<server>__<tool>`). Remote `url`/`http`/`sse` entries
+  are recognized and skipped with a warning (stdio-only for now). A failing
+  server is logged and skipped, never fatal. Legacy `UPSTAGE_MCP_SERVERS_MODULE`
+  still works. Tests: `tests/m18-mcp-client.test.mjs` (offline mock fixture).
+- **MCP server (`src/mcp/upstage-server.mjs`, `upstage-mcp` bin)** — exposes the
+  Solar agent as a delegatable subagent over standard MCP stdio (initialize /
+  tools/list / tools/call). Two tools: `upstage_delegate` (read/write/test/
+  self-correct, confined to `cwd`) and `upstage_ask` (read-only). Wireable into
+  Claude Code via `.mcp.json`; see `docs/claude-code-integration.md`.
+- `scripts/mcp-smoke.mjs` manual smoke client; `tests/m17-mcp-server.test.mjs`
+  protocol-contract tests (no API key required).
+
+### Fixed
+- **Windows: sandboxed `spawn` of `.cmd` shims** (`npm`, `npx`, …) failed with
+  `ENOENT` because `shell: false` can't resolve them — broke the critic loop and
+  `run_tests`. Now enables the shell only on `win32` (args are already validated
+  against shell metacharacters).
+- **`TOOL_LOG` runtime event was unregistered** in the event schema, so any tool
+  emitting a log line (e.g. `run_tests` stderr) threw `Unsupported runtime event
+  type` and crashed the run. Added it to the allowed set.
 
 ## [2.4.0] - 2026-04-27
 ### Added

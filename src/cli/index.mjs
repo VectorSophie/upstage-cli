@@ -7,6 +7,7 @@ import {
   createDiscoveredToolInvoker,
   createRegistryWithExtensions
 } from "../tools/create-registry.mjs";
+import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
 import { DEFAULT_POLICY } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
@@ -124,6 +125,24 @@ async function loadMcpServersFromEnv(cwd) {
   }
 
   return candidate;
+}
+
+/**
+ * Collect every MCP server to register: the legacy in-process module
+ * (UPSTAGE_MCP_SERVERS_MODULE) plus real stdio servers connected from
+ * `.mcp.json` / settings.mcpServers. Connection failures are isolated.
+ */
+async function loadAllMcpServers(cwd, settings) {
+  const moduleServers = await loadMcpServersFromEnv(cwd);
+
+  const onLog = (msg) => process.stderr.write(`[mcp] ${msg}\n`);
+  const configs = await loadMcpServerConfigs(cwd, settings, { onLog });
+  const { servers, closeAll } = await connectConfiguredServers(configs, { cwd, onLog });
+  if (servers.length > 0) {
+    process.once("exit", () => { closeAll().catch(() => {}); });
+  }
+
+  return [...moduleServers, ...servers];
 }
 
 function createDiscoveryConfigFromEnv(cwd) {
@@ -488,7 +507,7 @@ async function main() {
   const cwd = process.cwd();
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
   const discovery = createDiscoveryConfigFromEnv(cwd);
-  const mcpServers = await loadMcpServersFromEnv(cwd);
+  const mcpServers = await loadAllMcpServers(cwd, settings);
   const agentLoader = new AgentLoader();
   await agentLoader.load(cwd);
   const skillsLoader = new SkillsLoader();
