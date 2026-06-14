@@ -3,6 +3,7 @@ import { DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { buildContext, formatContextForModel } from "./context-builder.mjs";
 import { planNextAction } from "../model/mock-planner.mjs";
 import { buildSystemPrompt } from "../core/system-prompt.mjs";
+import { resolveMentions } from "./file-mentions.mjs";
 import {
   appendAppliedPatch,
   appendHistory,
@@ -863,6 +864,20 @@ export async function* runAgentLoop({
       effectiveInput = `${input}\n\n[hook context]\n${ups.additionalContext}`;
     }
   }
+
+  // @file mentions — inject referenced file contents (confined to cwd).
+  try {
+    const { mentions, contextBlock } = await resolveMentions(input, cwd);
+    if (contextBlock) {
+      effectiveInput = `${effectiveInput}\n\n${contextBlock}`;
+    }
+    const missing = mentions.filter((m) => !m.ok);
+    if (missing.length > 0) {
+      yield createEvent(AgentEventType.SYSTEM_WARNING, {
+        message: `Unresolved @mentions: ${missing.map((m) => m.path).join(", ")}`
+      });
+    }
+  } catch { /* mentions are best-effort */ }
 
   appendHistory(session, { role: "user", content: effectiveInput });
   conversation.push({ role: "user", content: effectiveInput });
