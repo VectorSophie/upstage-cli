@@ -5,6 +5,26 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Added
+- **Claude-compatible hooks** — command hooks now use the Claude contract (event
+  JSON on stdin, exit 2 blocks, stdout JSON decision). New lifecycle events wired
+  in: `UserPromptSubmit` (block/inject context), `PreCompact` (veto compaction),
+  `SessionEnd`, `SubagentStop`. (`src/hooks/engine.mjs`)
+- **`/rewind`** — list and restore the on-disk file checkpoints (revert a file to
+  its pre-edit content, or delete it if it was new). (`src/core/rewind.mjs`)
+- **`.claude-plugin` PluginLoader** — discover Claude-compatible plugins under
+  `.claude/plugins`/`.upstage/plugins` and merge their commands/agents/skills/
+  hooks/`.mcp.json` at startup. (`src/plugins/loader.mjs`)
+- **`@file` mentions** — `@path` tokens in a prompt inject file contents (confined
+  to cwd, 64KB cap). (`src/agent/file-mentions.mjs`)
+- **TUI**: composer slash-command autocomplete strip, **Tab** to accept,
+  **shift+tab** permission-mode cycling (default → accept edits → plan), and a
+  responsive logo (full ASCII on large terminals, compact wordmark when cramped).
+  Backed by tested pure-logic modules (autocomplete, input-history, mode-cycle,
+  stream-batcher, responsive-logo).
+- **Git-worktree isolation** (`src/core/worktree.mjs`) — run work on an isolated
+  checkout/branch and collect its diff; foundation for safe parallel subagents.
+- **`/spec`** — persist feature specs into `UPSTAGE.md`'s `## Specs` section
+  (auto-merged into the system prompt) for spec-driven memory. (`src/core/spec.mjs`)
 - **MCP Streamable-HTTP transport (`src/tools/mcp/http-client.mjs`)** — connect to
   remote MCP servers, not just local stdio. Implements the current Streamable HTTP
   transport (MCP spec 2025-03-26+): single-endpoint JSON-RPC over POST, responses
