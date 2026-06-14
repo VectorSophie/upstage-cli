@@ -4,6 +4,7 @@ import { mkdir } from "node:fs/promises";
 import { join } from "node:path";
 import os from "node:os";
 import { renderMarkdown } from "./markdown.mjs";
+import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -45,6 +46,31 @@ export const COMMANDS = {
         response: `컨텍스트 압축 완료: ${before} → ${after} 토큰 (${state.messages?.length || 0} → ${compacted.length} 메시지)`,
         updatedMessages: compacted
       };
+    }
+  },
+
+  "/rewind": {
+    description: "파일 체크포인트 목록 표시 / 복원 (/rewind <id> 또는 /rewind last)",
+    async handler(args, state) {
+      const cwd = state?._session?.workspace?.cwd || process.cwd();
+      const base = checkpointsDir(cwd);
+      const target = args && args[0];
+
+      if (!target) {
+        const list = await listCheckpoints(base);
+        if (list.length === 0) return { response: "복원할 체크포인트가 없습니다." };
+        const lines = list.map((c, i) => {
+          const when = c.timestamp ? new Date(c.timestamp).toLocaleTimeString() : "?";
+          const kind = c.isNew ? "new" : "edit";
+          return `  ${String(i + 1).padStart(2)}. ${c.id}  ${when}  [${kind}]  ${c.relativePath}`;
+        });
+        return { response: `체크포인트 (최신순):\n\n${lines.join("\n")}\n\n복원: /rewind <id>  ·  마지막 되돌리기: /rewind last` };
+      }
+
+      const id = target === "last" || target === "latest" ? null : target;
+      const res = await restoreCheckpoint(base, id);
+      if (!res.ok) return { response: `되돌리기 실패: ${res.error}` };
+      return { response: `↩ 복원됨: ${res.relativePath} (${res.action}, ${res.id})` };
     }
   },
 
