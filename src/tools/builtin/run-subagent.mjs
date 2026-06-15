@@ -1,6 +1,7 @@
 import { runAgentLoop, collectAgentLoop } from "../../agent/loop.mjs";
 import { createSession } from "../../runtime/session.mjs";
 import { createDefaultAgentRoleRegistry } from "../../agent/registry/index.mjs";
+import { isGitRepo, createWorktree, worktreeDiff, removeWorktree } from "../../core/worktree.mjs";
 
 function createScopedRegistry(parentRegistry, allowedTools) {
   const allowlist = new Set(allowedTools);
@@ -55,7 +56,8 @@ export const runSubagentTool = {
         type: "array",
         items: { type: "string" }
       },
-      maxSteps: { type: "number" }
+      maxSteps: { type: "number" },
+      isolate: { type: "boolean" }
     },
     required: ["task"],
     additionalProperties: false
@@ -80,25 +82,49 @@ export const runSubagentTool = {
           : DEFAULT_ALLOWED_TOOLS;
 
     const scopedRegistry = createScopedRegistry(context.registry, allowedTools);
-    const subSession = createSession(context.cwd);
+
+    // Optional git-worktree isolation: run the subagent on its own branch/
+    // checkout so its edits never touch the parent working tree. Writes are
+    // validated against `runCwd`, so they stay confined to the worktree.
+    let worktree = null;
+    let runCwd = context.cwd;
+    if (args.isolate && isGitRepo(context.cwd)) {
+      try {
+        worktree = createWorktree(context.cwd);
+        runCwd = worktree.path;
+      } catch {
+        worktree = null; // fall back to a non-isolated run
+      }
+    }
+
+    const subSession = createSession(runCwd);
     subSession.parentSessionId = context.session?.id || null;
     subSession.role = role.name;
 
-    const { result: subResult } = await collectAgentLoop(runAgentLoop({
-      input: args.task,
-      registry: scopedRegistry,
-      cwd: context.cwd,
-      adapter: context.adapter,
-      stream: false,
-      session: subSession,
-      runtimeCache: context.runtimeCache || {},
-      systemPromptOverride: agentDef?.prompt || null,
-      budget: {
-        maxSteps: Number.isInteger(args.maxSteps) ? args.maxSteps : 4,
-        maxToolCalls: 6,
-        maxWallTimeMs: 15000
+    let subResult;
+    let isolatedDiff = null;
+    try {
+      ({ result: subResult } = await collectAgentLoop(runAgentLoop({
+        input: args.task,
+        registry: scopedRegistry,
+        cwd: runCwd,
+        adapter: context.adapter,
+        stream: false,
+        session: subSession,
+        runtimeCache: context.runtimeCache || {},
+        systemPromptOverride: agentDef?.prompt || null,
+        budget: {
+          maxSteps: Number.isInteger(args.maxSteps) ? args.maxSteps : 4,
+          maxToolCalls: 6,
+          maxWallTimeMs: 15000
+        }
+      })));
+    } finally {
+      if (worktree) {
+        isolatedDiff = worktreeDiff(worktree.path);
+        removeWorktree(context.cwd, worktree.path);
       }
-    }));
+    }
 
     if (context.registry?.hookEngine?.runSubagentStop) {
       await context.registry.hookEngine.runSubagentStop({
@@ -112,6 +138,9 @@ export const runSubagentTool = {
     return {
       role: role.name,
       allowedTools,
+      isolated: !!worktree,
+      branch: worktree?.branch || null,
+      diff: isolatedDiff,
       stopReason: subResult.stopReason,
       ok: subResult.ok,
       response: subResult.response,
