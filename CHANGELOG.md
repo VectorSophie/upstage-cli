@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Added
+- **IDE bridge (`upstage-bridge`)** — bidirectional NDJSON-over-stdio protocol so
+  an editor extension can drive the agent (initialize/prompt/cancel/ping; streams
+  every agent event tagged by prompt id, ends with a result). Testable protocol
+  core (`src/bridge/bridge-server.mjs`) + real entrypoint. See `docs/ide-bridge.md`.
+- **`run_subagent({ isolate: true })`** — run a delegated subagent on an isolated
+  git worktree/branch; writes stay confined to the worktree, its diff is returned,
+  and it's always cleaned up. Enables safe parallel subagent edits.
+- **TUI render tests** — added `ink-testing-library` (dev) and actual frame-output
+  tests for `<Composer>`, `<StatusBar>`, and the extracted `<AutocompleteStrip>`.
 - **Claude-compatible hooks** — command hooks now use the Claude contract (event
   JSON on stdin, exit 2 blocks, stdout JSON decision). New lifecycle events wired
   in: `UserPromptSubmit` (block/inject context), `PreCompact` (veto compaction),

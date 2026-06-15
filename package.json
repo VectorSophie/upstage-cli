@@ -40,7 +40,8 @@
   ],
   "bin": {
     "upstage": "src/cli/index.mjs",
-    "upstage-mcp": "src/mcp/upstage-server.mjs"
+    "upstage-mcp": "src/mcp/upstage-server.mjs",
+    "upstage-bridge": "src/bridge/server.mjs"
   },
   "scripts": {
     "dev": "node src/cli/index.mjs",
