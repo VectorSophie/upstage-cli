@@ -14,6 +14,7 @@ import { RepoMap } from "./components/RepoMap.mjs";
 import { ApprovalDialog } from "./components/ApprovalDialog.mjs";
 import { Sidebar } from "./components/Sidebar.mjs";
 import { StatusBar } from "./components/StatusBar.mjs";
+import { AutocompleteStrip } from "./components/AutocompleteStrip.mjs";
 import { THEME } from "./colors.mjs";
 import { canUseFullscreenTui, enterFullscreenTui, exitFullscreenTui } from "./tui.mjs";
 import { shouldRoutePrintableToComposer } from "./input-routing.mjs";
@@ -686,21 +687,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         systemWarning: systemWarning,
         language: language
       }),
-      autocomplete && React.createElement(
-        Box,
-        { flexDirection: "column", paddingX: 2 },
-        ...autocomplete.items.slice(0, 6).map((it, idx) => {
-          const name = autocomplete.mode === 'command' ? it.name : `@${it}`;
-          const desc = autocomplete.mode === 'command' ? (COMMANDS[it.name]?.description || '') : '';
-          return React.createElement(
-            Text,
-            { key: name, color: idx === 0 ? THEME.primary : THEME.dim },
-            `${idx === 0 ? '› ' : '  '}${name}${desc ? '  ' : ''}`,
-            desc ? React.createElement(Text, { color: THEME.text.dim }, desc) : null
-          );
-        }),
-        React.createElement(Text, { color: THEME.text.dim }, '  ⇥ accept  ·  ⇧⇥ change mode')
-      ),
+      React.createElement(AutocompleteStrip, { autocomplete, commands: COMMANDS }),
       React.createElement(Composer, {
         onSend: handleSend,
         isDisabled: isProcessing,
