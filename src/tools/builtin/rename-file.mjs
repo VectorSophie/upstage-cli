@@ -53,7 +53,7 @@ export const renameFileTool = {
       const s = await stat(fromAbs);
       if (s.isDirectory()) throw new Error(`Source is a directory; rename_file only moves files`);
     } catch (err) {
-      if (err.code === "ENOENT") throw new Error(`Source file not found: ${args.from}`);
+      if (err.code === "ENOENT") throw new Error(`Source file not found: ${args.from}`, { cause: err });
       throw err;
     }
 

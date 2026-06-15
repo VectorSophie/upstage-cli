@@ -50,7 +50,7 @@ export const deleteFileTool = {
       const s = await stat(absolutePath);
       if (s.isDirectory()) throw new Error(`Path is a directory, not a file: ${args.path}`);
     } catch (err) {
-      if (err.code === "ENOENT") throw new Error(`File not found: ${args.path}`);
+      if (err.code === "ENOENT") throw new Error(`File not found: ${args.path}`, { cause: err });
       throw err;
     }
 

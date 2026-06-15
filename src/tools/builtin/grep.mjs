@@ -28,7 +28,7 @@ function tryRipgrep(pattern, root, args) {
 async function jsGrep(pattern, root, args) {
   const flags = args.ignoreCase ? "gi" : "g";
   let regex;
-  try { regex = new RegExp(pattern, flags); } catch (e) { throw new Error(`Invalid regex: ${e.message}`); }
+  try { regex = new RegExp(pattern, flags); } catch (e) { throw new Error(`Invalid regex: ${e.message}`, { cause: e }); }
 
   const files = await collectWorkspaceFiles(root, { maxFiles: 500, maxDepth: 8 });
   const lines = [];
