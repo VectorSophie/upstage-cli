@@ -13,7 +13,8 @@
       "Bash(git tag *)",
       "Bash(node --test tests/m13-commands-markdown.test.mjs)",
       "Bash(node -e \"import\\('chalk'\\).then\\(m => console.log\\(Object.keys\\(m\\)\\)\\)\")",
-      "Bash(node -e ' *)"
+      "Bash(node -e ' *)",
+      "Read(//tmp/claude-1000/-home-vectorsophie-Desktop-Workspace-upstage-cli/**)"
     ]
   }
 }

@@ -1,26 +1,23 @@
-﻿import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
 import { THEME } from "../colors.mjs";
 
-export const DiffPreview = ({ diff }) => {
+// Thin wrapper around OpenTUI's native `diff` component — it colors/syntax-
+// highlights internally from the raw unified-diff string, so unlike the old
+// hand-rolled version there's no pre-baked ANSI text to worry about wrapping.
+export const DiffPreview = ({ diff, filetype }) => {
   if (!diff) return null;
 
-  const lines = diff.split('\n');
-
-  return React.createElement(
-    Box,
-    { flexDirection: "column", paddingX: 1, borderStyle: "round", borderColor: THEME.dim, marginY: 1 },
-    lines.map((line, i) => {
-      let color = THEME.text.primary;
-      if (line.startsWith('+')) color = THEME.text.success;
-      else if (line.startsWith('-')) color = THEME.text.error;
-      else if (line.startsWith('@@')) color = THEME.accent;
-
-      return React.createElement(
-        Text,
-        { key: i, color },
-        line
-      );
+  return React.createElement("box", { paddingX: 1, borderStyle: "rounded", borderColor: THEME.dim, marginTop: 1 },
+    React.createElement("diff", {
+      diff,
+      filetype,
+      view: "unified",
+      showLineNumbers: true,
+      addedBg: "#0c2c0c",
+      removedBg: "#2c0c0c",
+      addedSignColor: THEME.text.success,
+      removedSignColor: THEME.text.error,
+      height: Math.min(24, diff.split("\n").length + 1)
     })
   );
 };

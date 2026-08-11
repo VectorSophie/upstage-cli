@@ -24,6 +24,7 @@ export const SETTINGS_SCHEMA = {
   model: 'solar-pro2',
   subagentModel: null,
   fastModel: 'solar-pro2',
+  reasoningEffort: 'auto', // 'auto' | 'low' | 'high' — Solar Pro2 hybrid reasoning switch
   fastMode: false,
   alwaysThinkingEnabled: false,
   autoCompactEnabled: true,

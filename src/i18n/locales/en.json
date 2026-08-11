@@ -8,10 +8,11 @@
     "sessionVersion": "  v1.0.0  ·  {session} "
   },
   "help": {
-    "text": "\n  ✦ UPSTAGE CLI SHORTCUTS & COMMANDS\n  \n  Shortcuts:\n  Tab    : Cycle Focus (Input/Chat/Sidebar)\n  Ctrl+S : Toggle Session Browser\n  Ctrl+T : Toggle Repository Map\n  Ctrl+X : Open External Editor\n  Esc    : Enter Navigation Mode (j/k to scroll)\n  Esc+Esc: Rewind Session (Undo last turn)\n  i      : Focus Input (Insert Mode)\n  \n  Slash Commands:\n  /new      : Start a fresh session\n  /sessions : Open session browser\n  /tree     : Open repository map\n  /help     : Show this help message\n  /lang ko  : Switch language to Korean\n  /lang en  : Switch language to English\n  /exit     : Exit the application\n"
+    "text": "\n  ✦ UPSTAGE CLI SHORTCUTS & COMMANDS\n  \n  Shortcuts:\n  Tab    : Cycle Focus (Input/Chat/Sidebar)\n  Ctrl+S : Toggle Session Browser\n  Ctrl+T : Toggle Repository Map\n  Ctrl+X : Open External Editor\n  Ctrl+C : Copy Selected Text\n  Ctrl+E : Cycle Solar Pro2 Reasoning Effort (auto/low/high)\n  Esc    : Enter Navigation Mode (j/k to scroll) / Clear Selection\n  Esc+Esc: Rewind Session (Undo last turn)\n  i      : Focus Input (Insert Mode)\n  \n  Mouse:\n  Drag to select text, release to copy — or click sidebar tabs/status bar\n  mode chip directly. If a drag ever grabs our UI instead of text, hold\n  Option (iTerm2) or Shift (most other terminals) to use the terminal's\n  own native selection instead.\n  \n  Slash Commands:\n  /new      : Start a fresh session\n  /sessions : Open session browser\n  /tree     : Open repository map\n  /help     : Show this help message\n  /lang ko  : Switch language to Korean\n  /lang en  : Switch language to English\n  /exit     : Exit the application\n"
   },
   "empty": {
-    "chat": "How can I help you today?"
+    "chat": "How can I help you today?",
+    "hints": ["Fix a TODO in the codebase", "What is the tech stack of this project?", "Fix broken tests"]
   },
   "sidebar": {
     "tabs": {
@@ -26,16 +27,28 @@
   "steps": {
     "plan": "Planning: {mode}",
     "tool": "Using tool: {tool}",
-    "analyzing": "Analyzing..."
+    "analyzing": "Analyzing...",
+    "verifying": "Verifying...",
+    "criticStart": "Running tests...",
+    "criticPass": "Tests pass ✓",
+    "criticFail": "Tests failed (cycle {cycle})",
+    "replan": "Replanning — trigger: {trigger}, attempt {count}",
+    "compaction": "Context compacted ({count} messages)"
   },
   "status": {
     "idle": "Idle",
     "thinking": "Thinking...",
+    "verifying": "Verifying...",
     "warning": "Warning",
     "error": "Error",
     "sessionRewound": "Session rewound",
     "newSessionStarted": "New session started",
-    "languageChanged": "Language changed"
+    "languageChanged": "Language changed",
+    "copiedToClipboard": "Copied to clipboard",
+    "copyUnsupported": "Selected — this terminal doesn't support clipboard copy",
+    "sessionBranched": "Session branched — further turns write to the new branch",
+    "undoApplied": "↩ Reverted",
+    "undoNotFound": "No checkpoint found for that file"
   },
   "warning": {
     "badge": "WARN",
@@ -73,7 +86,15 @@
     "required": "⚠️ APPROVAL REQUIRED: ",
     "allowAction": "Allow this action? ",
     "yes": "(y)es ",
-    "no": "(n)o"
+    "no": "(n)o",
+    "piiDetected": "Korean personal-data pattern detected",
+    "pipaWarning": "PIPA: this data is heading outbound (network) — Article 28-8 cross-border transfer applies",
+    "piiType": {
+      "rrn": "resident reg. no.",
+      "bizReg": "business reg. no.",
+      "card": "card no.",
+      "phone": "phone no."
+    }
   },
   "sessionBrowser": {
     "title": "✦ SESSION BROWSER ✦",

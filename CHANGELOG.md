@@ -4,7 +4,74 @@ All notable changes to upstage-cli are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Changed
+- **TUI rewritten on OpenTUI, runtime switched to Bun.** Replaced the Ink/React
+  terminal UI with [OpenTUI](https://opentui.com) (`@opentui/core` +
+  `@opentui/react`) — the same engine opencode ships on — for a native Zig
+  rendering core instead of Ink's JS-based layout. This moves the CLI's
+  runtime requirement from `node >=20` to `bun >=1.3` (`engines` updated;
+  `bin` shebangs now `#!/usr/bin/env bun`). `npm install -g` still works,
+  it just needs `bun` on `PATH`. Business-logic tests/lint/check stay on
+  Node (`npm test`); new UI render tests run under `bun test` (`npm run
+  test:ui`), since they need the native renderer. Full event coverage: the
+  new event-consumption layer handles all 20 `AgentEventType` values with an
+  exhaustive switch + fallback (the old TUI silently dropped 12 of them,
+  including `critic`/`replan`/`verify_start`/`compaction`, which now surface
+  in the activity feed). `stream-batcher.mjs` and `input-history.mjs` —
+  written and tested previously but never wired in — are now live (token
+  batching, composer ↑/↓ recall). Deleted the dead legacy ANSI TUI renderer
+  and a duplicate command-palette registry.
 ### Added
+- **Solar Pro2 `reasoning_effort` switch** — exposes the model's own hybrid
+  reasoning toggle (`auto`/`low`/`high`, cycled with **Ctrl+E** or clicking the
+  new status-bar chip). `"high"` makes Solar Pro2 reason step-by-step with
+  verification (per Upstage's own Solar Pro2 Prompting Handbook); `"low"` skips
+  that for simple tasks. Wired through `UpstageAdapter`/`ModelRouter`;
+  `"auto"` omits the field and lets the model pick its own default.
+- **`check_groundedness` tool** — real hallucination check via Upstage's
+  Groundedness Check API (`solar-1-mini-answer-verification`), not the model
+  critiquing itself. Verify a claim is actually supported by its source
+  context before presenting it.
+- **`read_document` tool** — reads scanned/photographed PDFs and images via
+  Upstage Document AI (OCR + Layout Analysis), for inputs `read_file` can't
+  handle: design specs, scanned contracts, whiteboard photos, screenshots.
+- **`semantic_search` tool** — ranks gathered text candidates by relevance
+  using Solar's Korean-optimized embeddings, for queries keyword/grep search
+  misses (paraphrasing, Korean identifiers, synonym mismatch).
+- **Korean PII guardrail** — detects 주민등록번호/사업자등록번호 (resident &
+  business registration numbers, real checksum-validated, not just shape
+  match) plus card numbers and phone numbers in write/network tool calls,
+  forcing a confirmation gate with a distinct **PIPA** warning when personal
+  data is about to leave the machine over the network (`src/permissions/
+  korean-pii-check.mjs`, wired into `PolicyEngine`).
+- **Cost budget guardrail** — `maxCostUsd` hard-stops a turn when actual USD
+  spend crosses the cap (default $5), alongside the existing tool-call/
+  wall-time budgets. Previously the only cost-adjacent guardrail was a
+  context-window *warning* that never actually stopped anything.
+- **`AGENTS.md` interop** — falls back to the Linux-Foundation-stewarded
+  `AGENTS.md` convention (read by 30+ agents) when a directory has no
+  `UPSTAGE.md`; `UPSTAGE.md` stays primary.
+- **Session forking (`/branch`, `/branch list`)** — fork the current session
+  at any point into an independently-resumable branch that starts from a copy
+  of the conversation so far (`forkSession()` in `src/runtime/session.mjs`).
+- **Watch mode (`/watch`, `/unwatch`)** — drop a `// ai! <instruction>` or
+  `# ai? <question>` comment in a file you're editing and save; the agent
+  picks it up automatically (`src/core/watch-mode.mjs`), Aider's own
+  file-comment-trigger convention. Watches each project directory
+  individually rather than one recursive call on the repo root, which blocks
+  on any tree with `node_modules` under it.
+- **Recipes (`/recipe save|run|list`)** — named, parameterized prompt
+  templates (`{{param}}` substitution) persisted under `.upstage/recipes/`,
+  a natural extension of `/spec`'s spec-driven-memory direction.
+- **Inline checkpoint undo** — a clickable "↺ undo" next to any diff in the
+  chat pane reverts that specific file via the existing `/rewind` mechanism,
+  without needing the separate text command.
+- Stronger Korean system-prompt guidance: keep standard dev terms in English
+  rather than switching turn to turn, hold a consistent professional register
+  (합쇼체/하십시오체), plus MUST/NEVER-style emphasis on the two
+  non-negotiable constraints (verify before claiming, never fabricate) —
+  repeated at both the start and end of a long system prompt, per Solar
+  Pro2's own prompting handbook.
 - **IDE bridge (`upstage-bridge`)** — bidirectional NDJSON-over-stdio protocol so
   an editor extension can drive the agent (initialize/prompt/cancel/ping; streams
   every agent event tagged by prompt id, ends with a result). Testable protocol
@@ -12,8 +79,6 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - **`run_subagent({ isolate: true })`** — run a delegated subagent on an isolated
   git worktree/branch; writes stay confined to the worktree, its diff is returned,
   and it's always cleaned up. Enables safe parallel subagent edits.
-- **TUI render tests** — added `ink-testing-library` (dev) and actual frame-output
-  tests for `<Composer>`, `<StatusBar>`, and the extracted `<AutocompleteStrip>`.
 - **Claude-compatible hooks** — command hooks now use the Claude contract (event
   JSON on stdin, exit 2 blocks, stdout JSON decision). New lifecycle events wired
   in: `UserPromptSubmit` (block/inject context), `PreCompact` (veto compaction),
@@ -64,6 +129,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   protocol-contract tests (no API key required).
 
 ### Fixed
+- **TUI approval dialog received the wrong payload shape.** `registry.execute()`
+  calls `context.confirm()` with a single object (`{ tool, args, risk, ... }`),
+  matching what the non-interactive approval handlers already expected — but
+  the TUI's `confirm` destructured it as `(tool, params)`, so every real call
+  silently received the whole payload object as `tool` (compared against
+  string tool names, always false) and `undefined` as `params`
+  (`params.command`/`params.diff` would throw). Untested path, no prior repro;
+  caught while wiring the Korean PII guardrail's confirmation details through
+  the same payload (`src/ui/event-consumer.mjs`).
 - **Windows: sandboxed `spawn` of `.cmd` shims** (`npm`, `npx`, …) failed with
   `ENOENT` because `shell: false` can't resolve them — broke the critic loop and
   `run_tests`. Now enables the shell only on `win32` (args are already validated
