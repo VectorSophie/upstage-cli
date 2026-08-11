@@ -138,12 +138,12 @@ test("getCompletions returns sorted results", () => {
 
 // ─── Markdown renderer ────────────────────────────────────────────────────
 
-test("renderMarkdown('') returns empty string", () => {
-  assert.equal(renderMarkdown(""), "");
+test("renderMarkdown('') returns an empty array", () => {
+  assert.deepEqual(renderMarkdown(""), []);
 });
 
 test("renderMarkdown renders bold text", () => {
-  const out = renderMarkdown("**bold text**");
+  const out = renderMarkdown("**bold text**").join("\n");
   // Text must be present; formatting adds ANSI codes so stripped != raw markdown
   assert.ok(out.includes("bold text"), `got: ${out}`);
   // stripAnsi(out) should equal just the text, not the raw markdown
@@ -151,27 +151,27 @@ test("renderMarkdown renders bold text", () => {
 });
 
 test("renderMarkdown renders h1 with bold+underline", () => {
-  const out = renderMarkdown("# Heading One");
+  const out = renderMarkdown("# Heading One").join("\n");
   assert.ok(out.includes("Heading One"));
   // The # marker should be consumed
   assert.ok(!stripAnsi(out).includes("# "), "expected # removed from output");
 });
 
 test("renderMarkdown renders h2 with bold", () => {
-  const out = renderMarkdown("## Heading Two");
+  const out = renderMarkdown("## Heading Two").join("\n");
   assert.ok(out.includes("Heading Two"));
 });
 
 test("renderMarkdown renders fenced code block with box border", () => {
   const md = "```js\nconst x = 1;\n```";
-  const out = renderMarkdown(md);
+  const out = renderMarkdown(md).join("\n");
   assert.ok(out.includes("┌") || out.includes("└"), `expected box border, got: ${stripAnsi(out)}`);
   assert.ok(stripAnsi(out).includes("x = 1"), `expected code content, got: ${stripAnsi(out)}`);
 });
 
 test("renderMarkdown renders table with borders", () => {
   const md = "| Name | Value |\n|------|-------|\n| foo  | 42    |";
-  const out = renderMarkdown(md);
+  const out = renderMarkdown(md).join("\n");
   assert.ok(out.includes("Name"), `got: ${out}`);
   assert.ok(out.includes("foo"));
   assert.ok(out.includes("│") || out.includes("|"), "expected table formatting");
@@ -179,21 +179,21 @@ test("renderMarkdown renders table with borders", () => {
 
 test("renderMarkdown renders unordered list", () => {
   const md = "- item one\n- item two";
-  const out = renderMarkdown(md);
+  const out = renderMarkdown(md).join("\n");
   assert.ok(out.includes("item one"));
   assert.ok(out.includes("•") || out.includes("-"));
 });
 
 test("renderMarkdown renders blockquote", () => {
   const md = "> quoted text";
-  const out = renderMarkdown(md);
+  const out = renderMarkdown(md).join("\n");
   assert.ok(out.includes("quoted text"));
   assert.ok(out.includes("│") || out.includes(">"));
 });
 
 test("renderMarkdown renders horizontal rule", () => {
   const md = "---";
-  const out = renderMarkdown(md);
+  const out = renderMarkdown(md).join("\n");
   assert.ok(out.includes("─") || out.includes("-"));
 });
 

@@ -30,6 +30,9 @@ import { multiEditTool } from "./builtin/multi-edit.mjs";
 import { webFetchTool } from "./builtin/web-fetch.mjs";
 import { webSearchTool } from "./builtin/web-search.mjs";
 import { todoWriteTool, todoReadTool } from "./builtin/todo.mjs";
+import { checkGroundednessTool } from "./builtin/check-groundedness.mjs";
+import { readDocumentTool } from "./builtin/read-document.mjs";
+import { semanticSearchTool } from "./builtin/semantic-search.mjs";
 import { McpClientManager } from "./mcp/client-manager.mjs";
 import { createMcpTool } from "./mcp/mcp-tool.mjs";
 import { createDiscoveredTool } from "./discovery/discovered-tool.mjs";
@@ -137,6 +140,9 @@ export function createRegistry(policy) {
   registry.register(webSearchTool);
   registry.register(todoWriteTool);
   registry.register(todoReadTool);
+  registry.register(checkGroundednessTool);
+  registry.register(readDocumentTool);
+  registry.register(semanticSearchTool);
   return registry;
 }
 

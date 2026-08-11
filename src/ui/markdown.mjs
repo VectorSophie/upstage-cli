@@ -1,4 +1,5 @@
 import chalk from "chalk";
+import wrapAnsi from "wrap-ansi";
 
 const NO_COLOR = !!process.env.NO_COLOR;
 
@@ -85,9 +86,8 @@ export function highlightSyntax(line, lang) {
 
 // ─── Code block formatter ─────────────────────────────────────────────────
 
-export function formatCodeBlock(lines, lang) {
-  const termWidth = process.stdout.columns || 80;
-  const innerWidth = Math.max(20, termWidth - 4);
+export function formatCodeBlock(lines, lang, width = 80) {
+  const innerWidth = Math.max(20, width - 4);
 
   const langLabel = lang ? ` ${lang} ` : "";
   const dashFill = "─".repeat(Math.max(0, innerWidth - langLabel.length - 1));
@@ -150,8 +150,12 @@ export function stripAnsi(text) {
 
 // ─── Main renderer ────────────────────────────────────────────────────────
 
-export function renderMarkdown(text) {
-  if (!text) return "";
+// Returns an array of already-wrapped, already-colored terminal lines — one
+// OpenTUI <text> per array entry. OpenTUI's own wrap logic (unlike Ink's)
+// splits raw byte offsets and can slice an SGR escape sequence in half, so
+// every line handed to a <text> node must already fit `width` on its own.
+export function renderMarkdown(text, width = 80) {
+  if (!text) return [];
 
   const lines = text.split("\n");
   const out = [];
@@ -175,7 +179,7 @@ export function renderMarkdown(text) {
     if (line.trimStart().startsWith("```")) {
       if (inCode) {
         // End of code block
-        out.push(formatCodeBlock(codeLines, codeLang));
+        out.push(formatCodeBlock(codeLines, codeLang, width));
         codeLines = [];
         codeLang = "";
         inCode = false;
@@ -208,8 +212,7 @@ export function renderMarkdown(text) {
 
     // Horizontal rule
     if (/^---+$/.test(line.trim())) {
-      const w = Math.min(process.stdout.columns || 80, 60);
-      out.push(A.dim("─".repeat(w)));
+      out.push(A.dim("─".repeat(Math.min(width, 60))));
       continue;
     }
 
@@ -233,9 +236,16 @@ export function renderMarkdown(text) {
 
   // Flush unclosed code block
   if (inCode && codeLines.length > 0) {
-    out.push(formatCodeBlock(codeLines, codeLang));
+    out.push(formatCodeBlock(codeLines, codeLang, width));
   }
 
-  const result = out.join("\n");
-  return NO_COLOR ? stripAnsi(result) : result;
+  // Final ANSI-safe wrap pass: every logical block above may itself contain
+  // long lines, so re-split and re-wrap everything to `width` here rather
+  // than trusting the renderer to do it.
+  const finalLines = out
+    .join("\n")
+    .split("\n")
+    .flatMap((line) => wrapAnsi(line, width, { hard: true, trim: false }).split("\n"));
+
+  return NO_COLOR ? finalLines.map(stripAnsi) : finalLines;
 }

@@ -1,43 +1,43 @@
-﻿import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
+import { useAppContext } from "@opentui/react";
 import { THEME } from "../colors.mjs";
 
-export const Sidebar = ({ activeTab, tabs, focusColor, isFocused, height }) => {
+export const Sidebar = ({ activeTab, tabs, isFocused, height, onTabClick }) => {
+  const { renderer } = useAppContext();
+  const setPointer = (style) => renderer?.setMousePointer?.(style);
+
   return React.createElement(
-    Box,
-    { 
-      flexDirection: "column", 
-      width: 36, 
-      height: height,
-      borderStyle: "round", 
-      borderColor: isFocused ? focusColor : THEME.dim,
+    "box",
+    {
+      flexDirection: "column",
+      width: 36,
+      height,
+      backgroundColor: isFocused ? THEME.backgroundPanel : THEME.background,
       paddingX: 1,
       overflow: "hidden"
     },
     React.createElement(
-      Box,
-      { marginBottom: 1, justifyContent: "space-between" },
-      tabs.map(tab => (
-        React.createElement(
-          Box,
-          { 
-            key: tab.id, 
-            borderStyle: "single", 
-            borderColor: activeTab === tab.id ? THEME.primary : THEME.dim,
-            paddingX: 1
-          },
-          React.createElement(
-            Text,
-            { color: activeTab === tab.id ? THEME.secondary : THEME.text.dim, bold: activeTab === tab.id },
-            tab.label
-          )
-        )
+      "box",
+      { flexDirection: "row", marginBottom: 1, gap: 2 },
+      // Click to switch tabs, same handler the p/c/t keyboard shortcuts
+      // call — mouse and keyboard are just two triggers for one action.
+      ...tabs.map((tab) => React.createElement(
+        "text",
+        {
+          key: tab.id,
+          fg: activeTab === tab.id ? THEME.primary : THEME.text.dim,
+          bold: activeTab === tab.id,
+          onMouseUp: () => onTabClick?.(tab.id),
+          onMouseOver: () => setPointer("pointer"),
+          onMouseOut: () => setPointer("default")
+        },
+        activeTab === tab.id ? `[${tab.label}]` : ` ${tab.label} `
       ))
     ),
     React.createElement(
-      Box,
+      "box",
       { flexGrow: 1, flexDirection: "column" },
-      tabs.find(t => t.id === activeTab)?.component
+      tabs.find((tb) => tb.id === activeTab)?.component ?? null
     )
   );
 };

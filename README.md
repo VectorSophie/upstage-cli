@@ -10,7 +10,7 @@ upstage-cli는 **Upstage Solar Pro2** 기반 에이전트형 터미널 UI(TUI)�
 npm install -g @jackochesstern/upstage-cli
 ```
 
-Node.js **20 이상** 필요.
+**[Bun](https://bun.sh) 1.3 이상** 필요 (TUI가 Bun 전용 네이티브 렌더러 위에서 동작합니다). `npm install -g`는 그대로 사용하되, PATH에 `bun`이 있어야 실행됩니다.
 
 ## 빠른 시작
 
@@ -26,8 +26,8 @@ upstage -p "실패하는 테스트 고쳐줘"  # 단발 프롬프트 후 종료
 아래 명령으로 저장소를 준비하고 실행할 수 있습니다.
 
 ```bash
-npm install
-npm start
+bun install
+bun start
 ```
 
 ## 환경 변수

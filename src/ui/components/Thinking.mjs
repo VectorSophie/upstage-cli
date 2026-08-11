@@ -1,36 +1,40 @@
-﻿import React, { useState, useEffect } from 'react';
-import { Box, Text } from 'ink';
-import SpinnerImport from 'ink-spinner';
+import React, { useEffect, useState } from "react";
 import { THEME } from "../colors.mjs";
 import { t } from "../../i18n/index.mjs";
 
-const Spinner = SpinnerImport.default || SpinnerImport;
+const FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+
+function useSpinnerFrame(intervalMs = 80) {
+  const [frame, setFrame] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setFrame((f) => (f + 1) % FRAMES.length), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return FRAMES[frame];
+}
 
 export const Thinking = ({ status, steps = [] }) => {
+  const spinner = useSpinnerFrame();
+
   return React.createElement(
-    Box,
-    { flexDirection: "column", paddingLeft: 1, borderStyle: "round", borderColor: THEME.dim },
+    "box",
+    { flexDirection: "column", paddingLeft: 1, borderStyle: "rounded", borderColor: THEME.dim },
     React.createElement(
-      Box,
-      null,
-      React.createElement(
-        Text,
-        { color: THEME.accent },
-        React.createElement(Spinner, { type: "dots" }),
-        ` ${status || t('thinking.default')}`
-      )
+      "box",
+      { flexDirection: "row" },
+      React.createElement("text", { fg: THEME.accent }, `${spinner} ${status || t("thinking.default")}`)
     ),
-    steps.length > 0 && React.createElement(
-      Box,
+    steps.length > 0 ? React.createElement(
+      "box",
       { flexDirection: "column", marginLeft: 2, marginTop: 1 },
       steps.map((step, i) =>
         React.createElement(
-          Box,
-          { key: i },
-          React.createElement(Text, { color: step.done ? THEME.text.success : THEME.text.dim }, step.done ? '✓ ' : '○ '),
-          React.createElement(Text, { color: THEME.text.dim, italic: true }, step.label)
+          "box",
+          { key: i, flexDirection: "row" },
+          React.createElement("text", { fg: step.done ? THEME.text.success : THEME.text.dim }, step.done ? "✓ " : "○ "),
+          React.createElement("text", { fg: THEME.text.dim }, step.label)
         )
       )
-    )
+    ) : null
   );
 };

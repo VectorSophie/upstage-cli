@@ -1,5 +1,4 @@
-import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
 import { THEME } from "../colors.mjs";
 
 /**
@@ -11,18 +10,22 @@ export const AutocompleteStrip = ({ autocomplete, commands = {} }) => {
   if (!autocomplete || !autocomplete.items || autocomplete.items.length === 0) return null;
 
   return React.createElement(
-    Box,
+    "box",
     { flexDirection: "column", paddingX: 2 },
     ...autocomplete.items.slice(0, 6).map((it, idx) => {
-      const name = autocomplete.mode === 'command' ? it.name : `@${it}`;
-      const desc = autocomplete.mode === 'command' ? (commands[it.name]?.description || '') : '';
+      const name = autocomplete.mode === "command" ? it.name : `@${it}`;
+      const desc = autocomplete.mode === "command" ? (commands[it.name]?.description || "") : "";
       return React.createElement(
-        Text,
-        { key: name, color: idx === 0 ? THEME.primary : THEME.dim },
-        `${idx === 0 ? '› ' : '  '}${name}${desc ? '  ' : ''}`,
-        desc ? React.createElement(Text, { color: THEME.text.dim }, desc) : null
+        "box",
+        { key: name, flexDirection: "row" },
+        React.createElement(
+          "text",
+          { fg: idx === 0 ? THEME.primary : THEME.dim },
+          `${idx === 0 ? "› " : "  "}${name}${desc ? "  " : ""}`
+        ),
+        desc ? React.createElement("text", { fg: THEME.text.dim }, desc) : null
       );
     }),
-    React.createElement(Text, { color: THEME.text.dim }, '  ⇥ accept  ·  ⇧⇥ change mode')
+    React.createElement("text", { fg: THEME.text.dim }, "  ⇥ accept  ·  ⇧⇥ change mode")
   );
 };

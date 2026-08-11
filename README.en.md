@@ -8,7 +8,7 @@ An agentic coding assistant powered by **Upstage Solar Pro2** — runs entirely 
 npm install -g @jackochesstern/upstage-cli
 ```
 
-Requires **Node.js ≥ 20**.
+Requires **[Bun](https://bun.sh) ≥ 1.3** (the TUI runs on a Bun-native renderer). `npm install -g` still works — just make sure `bun` is on your `PATH`.
 
 ## Quick start
 

@@ -259,7 +259,8 @@ export class ToolRegistry {
         args,
         risk: tool.risk,
         description: tool.description,
-        actionClass: policyDecision.actionClass
+        actionClass: policyDecision.actionClass,
+        pii: policyDecision.details?.pii || null
       });
       if (!approved) {
         await this.hookEngine.fire("AfterTool", { tool: name, args, result: null, error: "confirmation_denied", context });
