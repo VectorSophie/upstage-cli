@@ -33,6 +33,7 @@
   "type": "module",
   "files": [
     "src/",
+    "skills/",
     "README.md",
     "README.en.md",
     "CHANGELOG.md",

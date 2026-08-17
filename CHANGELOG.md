@@ -128,6 +128,28 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 - `scripts/mcp-smoke.mjs` manual smoke client; `tests/m17-mcp-server.test.mjs`
   protocol-contract tests (no API key required).
 
+- **Skills catalog wired live (`docs/skills-research-aug2026.md`)** — the
+  previously-built-but-never-connected `SkillsLoader`/`SkillRunner`
+  (`src/skills/`) is now actually reachable: a name+description catalog of
+  every discovered skill is folded into the system prompt each turn (cheap,
+  ~50-100 tokens/skill), a new `load_skill` tool lets the model pull a
+  skill's full instructions autonomously once a task matches one, and
+  typing `/skill-name args` (unrecognized as a builtin command) now falls
+  through to run a matching skill manually, the same way `/recipe run`
+  does. `SkillsLoader` gained two new search sources beyond
+  `.upstage/skills/`: a package-bundled first-party pack (`skills/` at the
+  repo root, sibling to `src/`, always available regardless of cwd — same
+  relationship builtin tools have to the package root) and `.claude/skills/`
+  interop, so any repo's existing Claude-Code-format skills — including
+  third-party libraries like
+  [NomaDamas/k-skill](https://github.com/NomaDamas/k-skill) — work here for
+  free. Its frontmatter parser also gained block-scalar (`>`/`|`) support
+  for descriptions long enough to wrap across lines. Ships three first-party
+  skills filling the gap community Korean-skill libraries don't cover
+  (dev-infrastructure, not consumer lifestyle automation):
+  `korean-pii-guard`, `groundedness-check`, and `toss-payments-integration`.
+  Tests: `tests/m31-skills.test.mjs`.
+
 ### Fixed
 - **TUI approval dialog received the wrong payload shape.** `registry.execute()`
   calls `context.confirm()` with a single object (`{ tool, args, risk, ... }`),

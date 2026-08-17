@@ -243,9 +243,13 @@ describe("SkillsLoader", () => {
   it("list() returns name/description/aliases", async () => {
     const loader = new SkillsLoader();
     await loader.load(tmpDir);
+    // list() also always includes the package-bundled first-party pack
+    // (docs/skills-research-aug2026.md) regardless of cwd — check the
+    // tmpDir-local skills are present rather than asserting an exact set.
     const items = loader.list();
-    const names = items.map((i) => i.name).sort();
-    assert.deepEqual(names, ["refactor", "summarize"]);
+    const names = items.map((i) => i.name);
+    assert.ok(names.includes("refactor"));
+    assert.ok(names.includes("summarize"));
     const sumItem = items.find((i) => i.name === "summarize");
     assert.deepEqual(sumItem.aliases, ["sum", "summary"]);
   });
@@ -318,9 +322,11 @@ describe("SkillRunner", () => {
     const loader = new SkillsLoader();
     await loader.load(tmpDir);
     const runner = new SkillRunner(loader, async function* () {});
+    // Also always includes the package-bundled first-party pack — see the
+    // SkillsLoader "list()" test above for why this checks inclusion
+    // rather than an exact count.
     const available = runner.listAvailable();
-    assert.equal(available.length, 1);
-    assert.equal(available[0].name, "ping");
+    assert.ok(available.some((s) => s.name === "ping"));
   });
 
   it("execute() throws when skill not found", async () => {
