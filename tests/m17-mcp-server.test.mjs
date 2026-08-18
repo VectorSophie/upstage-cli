@@ -44,7 +44,9 @@ test("initialize returns protocolVersion and serverInfo", async () => {
     { id: 1, method: "initialize", params: { protocolVersion: "2024-11-05", capabilities: {} } }
   ]);
   const r = replies.get(1).result;
-  assert.equal(r.protocolVersion, "2024-11-05");
+  // The server always states its own best-supported version (currently the
+  // 2026-07-28 spec), regardless of what the client requested in params.
+  assert.equal(r.protocolVersion, "2026-07-28");
   assert.equal(r.serverInfo.name, "upstage-cli");
   assert.ok(r.capabilities.tools);
 });

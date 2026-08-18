@@ -14,7 +14,9 @@ import { createInterface } from "node:readline";
  *   new StdioMcpClient({ command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "."] })
  */
 
-const PROTOCOL_VERSION = "2024-11-05";
+// See http-client.mjs's PROTOCOL_VERSION comment — same reasoning, offer our
+// best-supported version, servers negotiate down as needed.
+const PROTOCOL_VERSION = "2026-07-28";
 const CLIENT_INFO = { name: "upstage-cli", version: "2.6.1" };
 
 export class StdioMcpClient {

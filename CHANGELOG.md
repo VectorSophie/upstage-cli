@@ -21,6 +21,19 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   written and tested previously but never wired in — are now live (token
   batching, composer ↑/↓ recall). Deleted the dead legacy ANSI TUI renderer
   and a duplicate command-palette registry.
+- **MCP client/server bumped to the 2026-07-28 protocol version** (was
+  `2024-11-05`, the original spec release). `HttpMcpClient`/`StdioMcpClient`
+  (`src/tools/mcp/`) now offer this as their `initialize` request's
+  `protocolVersion`; a server that only understands an older version still
+  gets a working connection, since our HTTP client already adopts whatever
+  version the server negotiates back (`initResult.protocolVersion`) rather
+  than assuming its own offer was accepted. Our own bundled MCP server
+  (`src/mcp/upstage-server.mjs`) now states the same version. Doesn't (yet)
+  implement the 2026-07-28 rewrite's fully stateless model (per-request
+  `_meta` identity, MRTR, `Mcp-Method`/`Mcp-Name` routing) — that's a bigger
+  redesign of `http-client.mjs`'s session handling, tracked separately; this
+  is the low-risk "stop offering a two-year-stale version string" fix.
+  See `docs/new-concepts-aug2026-pt2.md` §0.
 ### Added
 - **Solar Pro2 `reasoning_effort` switch** — exposes the model's own hybrid
   reasoning toggle (`auto`/`low`/`high`, cycled with **Ctrl+E** or clicking the

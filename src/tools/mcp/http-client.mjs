@@ -12,7 +12,15 @@
  * and session teardown via HTTP DELETE on close.
  */
 
-const PROTOCOL_VERSION = "2024-11-05";
+// Offer our best-supported spec version; a server that only understands an
+// older one replies with that version instead (captured below in connect()),
+// so this is safe to bump without breaking older servers. The 2026-07-28
+// rewrite drops the stateful initialize/Mcp-Session-Id handshake for a
+// stateless model (per-request identity) with a 12-month compat window for
+// old-style servers — we still speak the old handshake here, which is the
+// covered case; a server that's dropped handshake support entirely (post
+// compat window) would need the stateless rewrite, not done here.
+const PROTOCOL_VERSION = "2026-07-28";
 const CLIENT_INFO = { name: "upstage-cli", version: "2.6.1" };
 
 /** Parse an SSE payload, return the JSON-RPC message whose id matches, or the
