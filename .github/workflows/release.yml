@@ -108,6 +108,15 @@ jobs:
 
       - name: Create GitHub Release
         uses: actions/github-script@v7
+        env:
+          # Passed as an env var, not spliced into the script's JS source via
+          # ${{ }} — the changelog text is Markdown full of backtick code
+          # spans, and any backtick in a `${{ }}`-substituted value inside a
+          # JS template literal terminates it early and corrupts the rest of
+          # the script into invalid JS (this broke the very first release
+          # that got this far, v3.0.0 — every earlier tag failed at the
+          # Validate step first, so this was latent and never triggered).
+          RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
         with:
           script: |
             const fs = require("fs");
@@ -117,7 +126,7 @@ jobs:
               repo: context.repo.repo,
               tag_name: context.ref.replace('refs/tags/', ''),
               name: context.ref.replace('refs/tags/', ''),
-              body: `${{ steps.changelog.outputs.notes }}`,
+              body: process.env.RELEASE_NOTES || "",
               draft: false,
               prerelease: context.ref.includes('-')
             });
