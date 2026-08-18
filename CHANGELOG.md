@@ -4,6 +4,12 @@ All notable changes to upstage-cli are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+### Added
+- **CI now publishes to npm on tag push** (`.github/workflows/release.yml`'s
+  new `publish-npm` job, `npm publish --access public` authenticated via
+  the `NPM_TOKEN` repo secret). Previously a tag only produced a GitHub
+  Release + binaries (see 3.0.0 below) — the npm package itself had to be
+  published manually and, in practice, wasn't since 2.5.0.
 
 ## [3.0.0] - 2026-08-19
 ### Added
