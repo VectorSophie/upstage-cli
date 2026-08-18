@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - "v*"
+  # Lets an already-tagged version be re-run (e.g. to retry just npm
+  # publishing after adding that job) without deleting/re-pushing the tag.
+  # Requires a `tag` input since workflow_dispatch has no ref-derived
+  # GITHUB_REF_NAME of its own.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v3.0.0) — must already exist"
+        required: true
 
 jobs:
   validate:
@@ -30,6 +39,24 @@ jobs:
 
       - name: Validate package
         run: npm pack --dry-run
+
+  publish-npm:
+    name: Publish to npm
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   # One real runner per target platform/arch, not a cross-compile matrix from
   # a single host — @opentui/core's native rendering core ships a separate
@@ -80,7 +107,7 @@ jobs:
           if-no-files-found: error
 
   release:
-    name: Release ${{ github.ref_name }}
+    name: Release ${{ github.event.inputs.tag || github.ref_name }}
     needs: [validate, build-binaries]
     runs-on: ubuntu-latest
     permissions:
@@ -97,10 +124,20 @@ jobs:
           pattern: "upstage-*"
           merge-multiple: true
 
+      - name: Resolve tag
+        id: tag
+        run: |
+          # workflow_dispatch has no ref-derived GITHUB_REF_NAME of its own
+          # (that'd be the branch it was dispatched against) — use the
+          # explicit input instead. A normal tag push keeps working as before.
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
       - name: Extract changelog entry
         id: changelog
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.tag.outputs.tag }}"
+          VERSION="${VERSION#v}"
           NOTES=$(awk "/^## \[${VERSION}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md)
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
@@ -117,20 +154,44 @@ jobs:
           # that got this far, v3.0.0 — every earlier tag failed at the
           # Validate step first, so this was latent and never triggered).
           RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
+          TAG_NAME: ${{ steps.tag.outputs.tag }}
         with:
           script: |
             const fs = require("fs");
             const path = require("path");
-            const release = await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: context.ref.replace('refs/tags/', ''),
-              body: process.env.RELEASE_NOTES || "",
-              draft: false,
-              prerelease: context.ref.includes('-')
-            });
+            const tag = process.env.TAG_NAME;
+
+            // Idempotent: a manual workflow_dispatch re-run against an
+            // already-released tag (e.g. to retry npm publishing alone)
+            // shouldn't fail here trying to create a duplicate release.
+            let release;
+            try {
+              const existing = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag
+              });
+              release = existing;
+              console.log(`Release ${tag} already exists, skipping creation.`);
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              release = await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: tag,
+                body: process.env.RELEASE_NOTES || "",
+                draft: false,
+                prerelease: tag.includes('-')
+              });
+            }
+
+            const existingAssets = new Set((release.data.assets || []).map(a => a.name));
             for (const file of fs.readdirSync("dist")) {
+              if (existingAssets.has(file)) {
+                console.log(`Asset ${file} already attached, skipping.`);
+                continue;
+              }
               await github.rest.repos.uploadReleaseAsset({
                 owner: context.repo.owner,
                 repo: context.repo.repo,
