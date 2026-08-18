@@ -1,10 +1,25 @@
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import os from "node:os";
+
+// Package-bundled first-party skills (docs/skills-research-aug2026.md) ship
+// at <repo root>/skills/, sibling to src/ — same relationship builtin tools
+// have to the package root. Always available regardless of cwd, distinct
+// from project-local skills below. .claude/skills/ is Agent-Skills-format
+// interop: picks up any repo's existing skills for free (e.g. `npx skills
+// add NomaDamas/k-skill --all -g`), a different convention from
+// PluginLoader's .claude/plugins/*/skills/ marketplace layout.
+// "First seen wins" (see load() below) — project-local dirs are listed
+// before the bundled pack so a project can override a first-party skill,
+// and both come before the global (~) dir.
+const PACKAGE_SKILLS_DIR = fileURLToPath(new URL("../../skills", import.meta.url));
 
 const SEARCH_DIRS = (cwd) => [
   join(cwd, ".upstage", "skills"),
+  join(cwd, ".claude", "skills"),
+  PACKAGE_SKILLS_DIR,
   join(os.homedir(), ".upstage", "skills"),
 ];
 
@@ -12,17 +27,35 @@ function parseFrontmatter(content) {
   const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n([\s\S]*)$/);
   if (!match) return { meta: {}, body: content.trim() };
 
+  const lines = match[1].split(/\r?\n/);
   const meta = {};
-  for (const line of match[1].split(/\r?\n/)) {
-    const kv = line.match(/^(\w+)\s*:\s*(.+)$/);
-    if (!kv) continue;
+  let i = 0;
+  while (i < lines.length) {
+    const kv = lines[i].match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (!kv) { i++; continue; }
     const key = kv[1].trim();
     const val = kv[2].trim();
+
+    // Block scalar (`>` folds into spaces, `|` preserves newlines) — the
+    // one addition beyond the original flat-scalar/bracket-list parser,
+    // needed for skill descriptions long enough to wrap across lines.
+    if (val === ">" || val === "|") {
+      const blockLines = [];
+      i++;
+      while (i < lines.length && (lines[i].trim() === "" || /^\s+/.test(lines[i]))) {
+        blockLines.push(lines[i].replace(/^ {1,2}/, ""));
+        i++;
+      }
+      meta[key] = (val === "|" ? blockLines.join("\n") : blockLines.join(" ")).trim();
+      continue;
+    }
+
     if (val.startsWith("[") && val.endsWith("]")) {
-      meta[key] = val.slice(1, -1).split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
+      meta[key] = val.slice(1, -1).split(",").map((s) => s.trim().replace(/^["']|["']$/g, "")).filter(Boolean);
     } else {
       meta[key] = val.replace(/^["']|["']$/g, "");
     }
+    i++;
   }
   return { meta, body: match[2].trim() };
 }
@@ -57,6 +90,7 @@ export class SkillsLoader {
               description: meta.description || "",
               aliases: Array.isArray(meta.aliases) ? meta.aliases : [],
               trigger: meta.trigger || null,
+              license: meta.license || null,
               prompt: body
             });
           }

@@ -867,7 +867,8 @@ export async function* runAgentLoop({
     tools: registry?.toModelTools ? registry.toModelTools() : [],
     override: systemPromptOverride,
     addDirs,
-    language: settings?.language
+    language: settings?.language,
+    skills: runtimeCache?.skillsLoader?.list?.() || []
   });
 
   // UserPromptSubmit hook — may block the prompt or inject additional context.

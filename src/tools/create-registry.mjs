@@ -33,6 +33,7 @@ import { todoWriteTool, todoReadTool } from "./builtin/todo.mjs";
 import { checkGroundednessTool } from "./builtin/check-groundedness.mjs";
 import { readDocumentTool } from "./builtin/read-document.mjs";
 import { semanticSearchTool } from "./builtin/semantic-search.mjs";
+import { loadSkillTool } from "./builtin/load-skill.mjs";
 import { McpClientManager } from "./mcp/client-manager.mjs";
 import { createMcpTool } from "./mcp/mcp-tool.mjs";
 import { createDiscoveredTool } from "./discovery/discovered-tool.mjs";
@@ -143,6 +144,7 @@ export function createRegistry(policy) {
   registry.register(checkGroundednessTool);
   registry.register(readDocumentTool);
   registry.register(semanticSearchTool);
+  registry.register(loadSkillTool);
   return registry;
 }
 

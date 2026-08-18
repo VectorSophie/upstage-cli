@@ -50,7 +50,7 @@ export function loadUpstageMdFiles(cwd = process.cwd()) {
   return files;
 }
 
-export function buildSystemPrompt({ cwd, tools, override, addDirs, language } = {}) {
+export function buildSystemPrompt({ cwd, tools, override, addDirs, language, skills } = {}) {
   if (override) {
     return { staticPrefix: override, dynamicSuffix: '', full: override };
   }
@@ -102,6 +102,16 @@ export function buildSystemPrompt({ cwd, tools, override, addDirs, language } = 
 
   for (const f of mdFiles) {
     parts.push(f.content);
+  }
+
+  // Agent Skills catalog tier (docs/skills-research-aug2026.md §2/§5): cheap
+  // name+description list only, from the caller's already-loaded
+  // SkillsLoader (src/skills/loader.mjs) — full instructions load lazily
+  // via the load_skill tool once a task actually matches one, not injected
+  // here. Built inline rather than re-scanning the filesystem per turn.
+  if (Array.isArray(skills) && skills.length > 0) {
+    const lines = skills.map((s) => `- ${s.name}: ${s.description}`);
+    parts.push(`Skills available (call load_skill with the exact name when a task matches one, for full instructions):\n${lines.join('\n')}`);
   }
 
   // Repeat the language/register constraint at the end too, not just the

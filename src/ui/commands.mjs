@@ -449,6 +449,19 @@ export async function executeCommand(input, state) {
 
   const def = COMMANDS[cmd];
   if (!def) {
+    // Fall back to a user/project-defined skill (src/skills/loader.mjs) —
+    // `/summarize some text` runs the "summarize" skill the same way
+    // `/recipe run` does, before falling through to "unknown command".
+    // Manual invocation this way; the load_skill tool is the autonomous
+    // path for the model to reach for the same skills on its own.
+    const skill = state?._skillsLoader?.get?.(cmd.slice(1));
+    if (skill) {
+      try {
+        return { response: "__run_skill__", runPrompt: state._skillsLoader.run(skill.name, args.join(" ")) };
+      } catch (err) {
+        return { response: `스킬 실행 오류: ${err.message}` };
+      }
+    }
     const close = getCompletions(cmd);
     const hint = close.length > 0 ? ` (혹시 ${close[0]}?)` : "";
     return { response: `알 수 없는 명령어: ${cmd}${hint}` };
