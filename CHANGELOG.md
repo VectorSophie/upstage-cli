@@ -4,6 +4,73 @@ All notable changes to upstage-cli are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [3.0.0] - 2026-08-19
+### Added
+- **Standalone executables — no Node or Bun install required.** Every tagged
+  release now builds and attaches self-contained `upstage` binaries for
+  linux-x64, linux-arm64, darwin-x64, darwin-arm64, and windows-x64 (`bun
+  build --compile`, one real runner per platform in `.github/workflows/
+  release.yml` — `@opentui/core`'s native rendering core ships a separate
+  prebuilt addon per OS/arch, resolved at runtime, so this can't be
+  cross-compiled from a single host). Each release asset is a
+  `upstage-<platform>-<arch>.tar.gz`/`.zip` bundling the binary with
+  `skills/` and the tree-sitter `.wasm` grammars alongside it — both are
+  normally resolved relative to the installed npm package on disk, which
+  doesn't exist inside a single-file compiled executable, so the binary
+  ships its own copies and the loaders now also check next to
+  `process.execPath` for them (`src/skills/loader.mjs`,
+  `src/indexer/parsers/adapter.mjs`). `scripts/install.sh` — the
+  `curl -fsSL .../install.sh | bash` one-liner (macOS/Linux) — downloads
+  the right asset from the latest release, extracts it, and symlinks
+  `upstage` onto `PATH`. See `scripts/package-binary.mjs` for the packaging
+  logic and rationale.
+### Fixed
+- **Real tree-sitter symbol search was silently dead for every real user.**
+  `src/indexer/parsers/adapter.mjs` resolved its `.wasm` grammar files
+  relative to `process.cwd()` — the directory the *target* project lives
+  in, not where upstage-cli itself (and its own `tree-sitter-*`
+  dependencies) is installed. It only ever worked by coincidence when
+  running from inside this repo's own checkout; every other project fell
+  back to regex-based symbol extraction with no indication anything had
+  degraded. Now resolves via `import.meta.resolve` against the package
+  install location instead. Found while verifying standalone-executable
+  packaging (`bun build --compile`), fixed as a general correctness bug —
+  it predates this release and isn't specific to compiled binaries. New
+  regression test: `tests/m32-treesitter-adapter.test.mjs`.
+- **`web-tree-sitter` pinned to `0.25.10`** (was `^0.26.7`) to match
+  `@opentui/core`'s exact peer dependency — the version skew meant
+  OpenTUI's own internal tree-sitter usage referenced a `.wasm` filename
+  that only exists in the older release, which is harmless under normal
+  `bun run` (that code path is unreachable — this project's Markdown
+  rendering stayed hand-rolled, never adopted OpenTUI's `Code` component)
+  but broke `bun build --compile`'s static bundling outright.
+- **i18n locale loading now survives single-file compilation.** Switched
+  `src/i18n/index.mjs` from `fs.readFileSync` against `__dirname` to static
+  `import ... with { type: "json" }` for the two locale files — the former
+  resolved to nothing inside a compiled binary's virtual filesystem
+  (`$bunfs/root/...`), crashing every invocation; the latter gets the JSON
+  bundled directly into the executable, working identically in dev/npm/
+  compiled modes with less code.
+- Dead-code pass: removed an unreferenced `fireHook`/`summarizeContext`
+  helper pair in `src/tools/registry.mjs` (superseded by inline hook
+  firing), unused imports across `src/cli/index.mjs`,
+  `src/agents/loader.mjs`, `src/permissions/checker.mjs`,
+  `src/tools/builtin/{glob,grep}.mjs`, and four test files. Fixed
+  `eslint.config.mjs` two ways: `caughtErrorsIgnorePattern` now covers the
+  codebase's existing `catch (_e)` convention (previously only
+  `args`/`varsIgnorePattern` respected the `_` prefix, so every intentional
+  `catch (_e)` still warned), and `ecmaVersion` bumped to `"latest"` (import
+  attributes syntax needs newer-than-2024). Lint is now 0 warnings, 0
+  errors (was 35 warnings, invisible in normal `npm run lint | tail`
+  usage).
+- **MCP `CLIENT_INFO`/`SERVER_INFO` version drift.** `src/tools/mcp/
+  {http-client,stdio-client}.mjs` and `src/mcp/upstage-server.mjs` each
+  hardcoded their own `version: "2.6.1"` string, independent of
+  `package.json`'s actual version and of each other. Now import
+  `package.json`'s `version` directly (`with { type: "json" }`) so this
+  can't drift again.
+
 ### Changed
 - **TUI rewritten on OpenTUI, runtime switched to Bun.** Replaced the Ink/React
   terminal UI with [OpenTUI](https://opentui.com) (`@opentui/core` +

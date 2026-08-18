@@ -1,6 +1,6 @@
 {
   "name": "@jackochesstern/upstage-cli",
-  "version": "2.5.0",
+  "version": "3.0.0",
   "description": "Agentic coding assistant powered by Upstage Solar Pro2 — TUI, 30 built-in tools, MCP support, evaluation harness",
   "license": "MIT",
   "author": "VectorSophie",
@@ -65,7 +65,7 @@
     "tree-sitter-javascript": "^0.25.0",
     "tree-sitter-python": "^0.25.0",
     "tree-sitter-typescript": "^0.23.2",
-    "web-tree-sitter": "^0.26.7",
+    "web-tree-sitter": "0.25.10",
     "wrap-ansi": "^10.0.0"
   },
   "devDependencies": {

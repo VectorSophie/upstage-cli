@@ -593,7 +593,7 @@ async function* executeToolCallsPhase({
   };
 }
 
-async function* runVerificationGenerator(registry, cwd, session, runtimeCache) {
+async function* runVerificationGenerator(registry, cwd, session, _runtimeCache) {
   emitRuntime(registry, session, "VERIFY_RESULT", { stage: "start" });
   yield createEvent(AgentEventType.VERIFY_START, {});
   yield createEvent(AgentEventType.THINKING, {

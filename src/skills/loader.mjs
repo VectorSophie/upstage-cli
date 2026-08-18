@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import os from "node:os";
 
@@ -20,6 +20,15 @@ const SEARCH_DIRS = (cwd) => [
   join(cwd, ".upstage", "skills"),
   join(cwd, ".claude", "skills"),
   PACKAGE_SKILLS_DIR,
+  // A `bun build --compile` standalone executable has no real on-disk
+  // location for import.meta.url (it resolves inside a virtual $bunfs
+  // root), so PACKAGE_SKILLS_DIR above silently resolves to nothing there
+  // — this is the compiled-binary equivalent: a `skills/` dir shipped
+  // alongside the executable itself (the release tarball's layout), found
+  // via the one path that IS real in that mode, process.execPath. Computed
+  // per-call (not a module-level const) so it reflects the current
+  // process.execPath rather than whatever it was at first import.
+  join(dirname(process.execPath), "skills"),
   join(os.homedir(), ".upstage", "skills"),
 ];
 
