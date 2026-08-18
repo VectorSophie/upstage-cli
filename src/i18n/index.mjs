@@ -1,22 +1,13 @@
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Static imports (not fs.readFileSync against __dirname) so these two known
+// locale files get bundled directly into a `bun build --compile` standalone
+// executable — a runtime fs read relative to the module's on-disk location
+// resolves to nothing inside a compiled binary's virtual filesystem.
+import ko from './locales/ko.json' with { type: 'json' };
+import en from './locales/en.json' with { type: 'json' };
 
 const DEFAULT_LANGUAGE = 'ko';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-function loadLocale(localeName) {
-  const localePath = path.join(__dirname, 'locales', `${localeName}.json`);
-  const content = fs.readFileSync(localePath, 'utf8');
-  return JSON.parse(content);
-}
-
-const LOCALES = {
-  ko: loadLocale('ko'),
-  en: loadLocale('en')
-};
+const LOCALES = { ko, en };
 
 export const SUPPORTED_LANGUAGES = Object.freeze(Object.keys(LOCALES));
 

@@ -6,11 +6,21 @@ upstage-cli는 **Upstage Solar Pro2** 기반 에이전트형 터미널 UI(TUI)�
 
 ## 설치
 
+**독립 실행형 바이너리 (macOS/Linux)** — Node나 Bun 설치 없이 바로 사용:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VectorSophie/upstage-cli/master/scripts/install.sh | bash
+```
+
+[최신 릴리스](https://github.com/VectorSophie/upstage-cli/releases/latest)에서 플랫폼에 맞는 `upstage-<platform>-<arch>` 빌드를 내려받아 `~/.local/bin`에 설치합니다. **Windows**: 릴리스 페이지에서 `upstage-windows-x64.zip`을 내려받아 `upstage.exe`를 직접 실행하세요.
+
+**npm** (이미 Node를 쓰고 있고 Bun을 따로 설치해도 괜찮다면):
+
 ```bash
 npm install -g @jackochesstern/upstage-cli
 ```
 
-**[Bun](https://bun.sh) 1.3 이상** 필요 (TUI가 Bun 전용 네이티브 렌더러 위에서 동작합니다). `npm install -g`는 그대로 사용하되, PATH에 `bun`이 있어야 실행됩니다.
+PATH에 **[Bun](https://bun.sh) 1.3 이상**이 필요합니다 (TUI가 Bun 전용 네이티브 렌더러 위에서 동작합니다) — 위 독립 실행형 바이너리는 Bun 런타임이 바이너리 안에 이미 컴파일되어 있어 이 요구사항이 없습니다.
 
 ## 빠른 시작
 

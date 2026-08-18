@@ -1,7 +1,11 @@
-import { extname, join } from "node:path";
+import { existsSync } from "node:fs";
+import { dirname, extname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import * as TreeSitter from "web-tree-sitter";
 
-const PARSERS = {
+// Exported so scripts/package-binary.mjs can ship these .wasm grammars
+// alongside a compiled standalone executable without duplicating this list.
+export const PARSERS = {
   javascript: {
     module: "tree-sitter-javascript",
     wasm: "tree-sitter-javascript.wasm",
@@ -90,13 +94,32 @@ async function getLanguageForExtension(ext) {
   }
 
   const config = PARSERS[langKey];
-  const wasmPath = join(process.cwd(), "node_modules", config.module, config.wasm);
-  
+  // Resolve relative to this package's own install location, not the
+  // target repo's cwd — these tree-sitter-* wasm grammars are our
+  // dependency, not something a random project being indexed would have
+  // in its own node_modules. (Previously resolved via process.cwd(), which
+  // only ever worked by coincidence when running from inside this repo.)
+  let wasmPath;
+  try {
+    wasmPath = join(fileURLToPath(import.meta.resolve(`${config.module}/package.json`)), "..", config.wasm);
+  } catch {
+    wasmPath = null;
+  }
+  // node_modules doesn't exist inside a `bun build --compile` standalone
+  // executable (import.meta.resolve above throws there) — fall back to a
+  // `tree-sitter/` dir shipped alongside the executable, same idea as
+  // skills/loader.mjs's EXECUTABLE_SIBLING_SKILLS_DIR.
+  if (!wasmPath || !existsSync(wasmPath)) {
+    const sibling = join(dirname(process.execPath), "tree-sitter", config.wasm);
+    if (existsSync(sibling)) wasmPath = sibling;
+  }
+  if (!wasmPath) return null;
+
   try {
     const lang = await LanguageClass.load(wasmPath);
     langCache.set(langKey, lang);
     return lang;
-  } catch (e) {
+  } catch {
     return null;
   }
 }
@@ -152,10 +175,12 @@ async function extractWithTreeSitter(content, relativePath, ext) {
       return null;
     }
 
-    if (typeof lang.query === "function") {
-      query = lang.query(queryText);
-    } else if (typeof QueryClass === "function") {
+    // Prefer the `new Query(lang, text)` constructor — `lang.query()` still
+    // works on the current web-tree-sitter but logs a deprecation warning.
+    if (typeof QueryClass === "function") {
       query = new QueryClass(lang, queryText);
+    } else if (typeof lang.query === "function") {
+      query = lang.query(queryText);
     } else {
       return null;
     }

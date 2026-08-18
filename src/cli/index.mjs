@@ -1,5 +1,4 @@
 #!/usr/bin/env bun
-import readline from "node:readline";
 import process from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -44,7 +43,6 @@ import {
 import { createPermissionChecker } from "../permissions/checker.mjs";
 import {
   createSession,
-  listSessions,
   loadLatestSession,
   loadSession,
   resetSession,
@@ -52,7 +50,6 @@ import {
 } from "../runtime/session.mjs";
 import {
   canUseFullscreenTui,
-  enterFullscreenTui,
   exitFullscreenTui,
   renderEvent
 } from "../ui/plain-event-renderer.mjs";

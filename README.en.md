@@ -4,11 +4,21 @@ An agentic coding assistant powered by **Upstage Solar Pro2** — runs entirely 
 
 ## Installation
 
+**Standalone binary (macOS/Linux)** — no Node or Bun install required:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/VectorSophie/upstage-cli/master/scripts/install.sh | bash
+```
+
+Downloads the right `upstage-<platform>-<arch>` build from the [latest release](https://github.com/VectorSophie/upstage-cli/releases/latest) and installs it to `~/.local/bin`. **Windows**: download `upstage-windows-x64.zip` from the releases page and run `upstage.exe` directly.
+
+**npm** (if you already have Node and don't mind a separate Bun install):
+
 ```bash
 npm install -g @jackochesstern/upstage-cli
 ```
 
-Requires **[Bun](https://bun.sh) ≥ 1.3** (the TUI runs on a Bun-native renderer). `npm install -g` still works — just make sure `bun` is on your `PATH`.
+Requires **[Bun](https://bun.sh) ≥ 1.3** on `PATH` (the TUI runs on a Bun-native renderer) — the standalone binary above doesn't have this requirement, since Bun's runtime is compiled directly into it.
 
 ## Quick start
 

@@ -11,16 +11,6 @@ function emitEvent(eventBus, type, payload) {
   eventBus.emit(type, payload);
 }
 
-function summarizeContext(context = {}) {
-  return {
-    cwd: context.cwd || null,
-    hasConfirm: typeof context.confirm === "function",
-    hasSession: !!context.session,
-    sessionId: context.session?.id || null,
-    hasRuntimeCache: !!context.runtimeCache
-  };
-}
-
 function summarizeResult(result) {
   if (result === null || typeof result === "undefined") {
     return null;
@@ -46,27 +36,6 @@ function summarizeResult(result) {
   return {
     type: typeof result
   };
-}
-
-async function fireHook(hookSystem, eventBus, hookName, payload) {
-  if (!hookSystem || typeof hookSystem.fire !== "function") {
-    return [];
-  }
-  emitEvent(eventBus, "HOOK_LIFECYCLE", {
-    hook: hookName,
-    stage: "start",
-    tool: payload?.tool || null,
-    context: summarizeContext(payload?.context || {})
-  });
-  const results = await hookSystem.fire(hookName, payload);
-  emitEvent(eventBus, "HOOK_LIFECYCLE", {
-    hook: hookName,
-    stage: "end",
-    tool: payload?.tool || null,
-    context: summarizeContext(payload?.context || {}),
-    results: summarizeResult(results)
-  });
-  return results;
 }
 
 export class ToolRegistry {

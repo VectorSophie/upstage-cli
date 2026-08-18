@@ -20,8 +20,10 @@
 // old-style servers — we still speak the old handshake here, which is the
 // covered case; a server that's dropped handshake support entirely (post
 // compat window) would need the stateless rewrite, not done here.
+import pkg from "../../../package.json" with { type: "json" };
+
 const PROTOCOL_VERSION = "2026-07-28";
-const CLIENT_INFO = { name: "upstage-cli", version: "2.6.1" };
+const CLIENT_INFO = { name: "upstage-cli", version: pkg.version };
 
 /** Parse an SSE payload, return the JSON-RPC message whose id matches, or the
  *  last parseable `data:` object if no id filter is given. */

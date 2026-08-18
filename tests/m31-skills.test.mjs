@@ -83,6 +83,27 @@ test("SkillsLoader discovers .claude/skills/ (Agent Skills format interop)", asy
   }
 });
 
+test("SkillsLoader discovers a skills/ dir shipped alongside a compiled executable (process.execPath sibling)", async () => {
+  // Simulates `bun build --compile` distribution: import.meta.url has no
+  // real disk location there, so PACKAGE_SKILLS_DIR alone can't be relied
+  // on — the loader also checks dirname(process.execPath)/skills.
+  const fakeExecDir = await mkdtemp(join(tmpdir(), "skills-exec-sibling-"));
+  const originalExecPath = process.execPath;
+  try {
+    const dir = join(fakeExecDir, "skills", "sibling-only-skill");
+    await mkdir(dir, { recursive: true });
+    await writeFile(join(dir, "SKILL.md"), "---\nname: sibling-only-skill\ndescription: found next to the binary\n---\nbody", "utf8");
+
+    Object.defineProperty(process, "execPath", { value: join(fakeExecDir, "upstage"), configurable: true });
+    const loader = new SkillsLoader();
+    await loader.load("/nonexistent-cwd-for-skills-test");
+    assert.equal(loader.get("sibling-only-skill")?.description, "found next to the binary");
+  } finally {
+    Object.defineProperty(process, "execPath", { value: originalExecPath, configurable: true });
+    await rm(fakeExecDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+  }
+});
+
 // ─── system prompt integration ──────────────────────────────────────────
 
 test("buildSystemPrompt folds a skills catalog in when given a skills list, and omits it when empty", () => {

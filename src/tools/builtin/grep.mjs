@@ -1,5 +1,5 @@
 import { readFile } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { relative } from "node:path";
 import { spawnSync } from "node:child_process";
 import { collectWorkspaceFiles, isLikelyTextFile } from "../lib/fs-utils.mjs";
 import { resolveWorkspacePath } from "../lib/fs-utils.mjs";
