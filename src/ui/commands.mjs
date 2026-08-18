@@ -300,7 +300,7 @@ export const COMMANDS = {
     description: "사용자 정의 에이전트 목록",
     handler(_args, state) {
       const loader = state?._agentLoader;
-      if (!loader) return { response: "에이전트 로더 없음 (Phase 6에서 활성화)" };
+      if (!loader) return { response: "에이전트 로더가 초기화되지 않았습니다." };
       const agents = loader.list?.() || [];
       if (agents.length === 0) return { response: "로드된 에이전트 없음 (.upstage/agents/ 에 정의 추가)" };
       return { response: `에이전트 (${agents.length}개):\n${agents.map((a) => `  • ${a.name}: ${a.description || ""}`).join("\n")}` };
@@ -311,10 +311,14 @@ export const COMMANDS = {
     description: "사용 가능한 스킬 목록",
     handler(_args, state) {
       const loader = state?._skillsLoader;
-      if (!loader) return { response: "스킬 로더 없음 (Phase 6에서 활성화)" };
+      if (!loader) return { response: "스킬 로더가 초기화되지 않았습니다." };
       const skills = loader.list?.() || [];
       if (skills.length === 0) return { response: "로드된 스킬 없음 (.upstage/skills/ 에 정의 추가)" };
-      return { response: `스킬 (${skills.length}개):\n${skills.map((s) => `  • ${s.name}: ${s.description || ""}`).join("\n")}` };
+      return {
+        response: `스킬 (${skills.length}개) — /<이름> 으로 직접 실행:\n${skills
+          .map((s) => `  • /${s.name}${s.license ? ` [${s.license}]` : ""}: ${s.description || ""}`)
+          .join("\n")}`
+      };
     }
   },
 

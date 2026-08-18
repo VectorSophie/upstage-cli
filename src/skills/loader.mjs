@@ -124,8 +124,8 @@ export class SkillsLoader {
   }
 
   list() {
-    return Array.from(this.skills.values()).map(({ name, description, aliases }) => ({
-      name, description, aliases
+    return Array.from(this.skills.values()).map(({ name, description, aliases, license }) => ({
+      name, description, aliases, license
     }));
   }
 
