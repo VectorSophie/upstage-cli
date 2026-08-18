@@ -149,6 +149,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
   (dev-infrastructure, not consumer lifestyle automation):
   `korean-pii-guard`, `groundedness-check`, and `toss-payments-integration`.
   Tests: `tests/m31-skills.test.mjs`.
+- **Skills are now tab-completable.** The composer's `/`-autocomplete only
+  knew about built-in commands; loaded skills (bundled, project, or
+  `.claude/skills/`) are now merged into the same suggestion list with their
+  descriptions, so `/kt<Tab>` surfaces `/ktx-booking` the same way any
+  built-in command would. `/skills` output now shows the `/<name>` form
+  (matching how you actually invoke one) and its license tag.
 
 ### Fixed
 - **TUI approval dialog received the wrong payload shape.** `registry.execute()`

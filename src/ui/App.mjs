@@ -233,7 +233,20 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
     setStatusKey(res.ok ? "undoApplied" : "undoNotFound");
   }, [currentSession]);
 
-  const commandList = useMemo(() => Object.keys(COMMANDS).map((name) => ({ name })), []);
+  // Skills are manually invocable as /<name> (commands.mjs' unknown-command
+  // fallback) but weren't reachable from tab-completion — merge them in so
+  // /kt... surfaces /ktx-booking same as any built-in command would. The
+  // skills list itself is a fresh array each render (loader.list() has no
+  // cache), so a useMemo here would never actually hit; skip it.
+  const skillList = runtimeCache?.skillsLoader?.list?.() || [];
+  const commandList = [
+    ...Object.keys(COMMANDS).map((name) => ({ name })),
+    ...skillList.map((s) => ({ name: `/${s.name}` }))
+  ];
+  const commandDescriptions = {
+    ...COMMANDS,
+    ...Object.fromEntries(skillList.map((s) => [`/${s.name}`, { description: s.description }]))
+  };
   const autocomplete = (focusedPane === "input" && !isProcessing && composerValue.startsWith("/"))
     ? getAutocomplete(composerValue, { commands: commandList })
     : null;
@@ -604,7 +617,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         onModeClick: () => setApprovalMode((m) => nextMode(m)),
         reasoningEffort, onReasoningClick: cycleReasoningEffort
       }),
-      React.createElement(AutocompleteStrip, { autocomplete, commands: COMMANDS }),
+      React.createElement(AutocompleteStrip, { autocomplete, commands: commandDescriptions }),
       React.createElement(Composer, {
         onSend: handleSend, isDisabled: isProcessing,
         isFocused: focusedPane === "input" && !showSessions && !approval,
