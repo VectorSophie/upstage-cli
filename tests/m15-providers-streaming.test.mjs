@@ -53,6 +53,11 @@ describe("getProvider", () => {
     assert.equal(getProvider(null).id, "upstage");
     assert.equal(getProvider(undefined).id, "upstage");
   });
+
+  it("routes vendor/model slugs to openrouter", () => {
+    assert.equal(getProvider("openai/gpt-oss-120b").id, "openrouter");
+    assert.equal(getProvider("meta-llama/llama-3.1-70b-instruct").id, "openrouter");
+  });
 });
 
 describe("getProviderByName", () => {
@@ -67,13 +72,13 @@ describe("getProviderByName", () => {
 });
 
 describe("listProviders", () => {
-  it("returns exactly 3 providers", () => {
-    assert.equal(listProviders().length, 3);
+  it("returns exactly 4 providers", () => {
+    assert.equal(listProviders().length, 4);
   });
 
-  it("includes upstage, openai, gemini", () => {
+  it("includes upstage, openai, gemini, openrouter", () => {
     const ids = listProviders().map((p) => p.id).sort();
-    assert.deepEqual(ids, ["gemini", "openai", "upstage"]);
+    assert.deepEqual(ids, ["gemini", "openai", "openrouter", "upstage"]);
   });
 });
 
@@ -84,6 +89,7 @@ describe("checkProviderKeys", () => {
     assert.equal(typeof result.upstage, "boolean");
     assert.equal(typeof result.openai, "boolean");
     assert.equal(typeof result.gemini, "boolean");
+    assert.equal(typeof result.openrouter, "boolean");
   });
 
   it("detects UPSTAGE_API_KEY", () => {
@@ -276,6 +282,16 @@ describe("OpenAIAdapter.isConfigured", () => {
   it("returns true when key provided via constructor", () => {
     const adapter = new OpenAIAdapter({ apiKey: "sk-test" });
     assert.equal(adapter.isConfigured(), true);
+  });
+
+  it("accepts a custom baseUrl (OpenRouter and other OpenAI-compatible endpoints)", () => {
+    const adapter = new OpenAIAdapter({ apiKey: "sk-test", baseUrl: "https://openrouter.ai/api/v1" });
+    assert.equal(adapter.baseUrl, "https://openrouter.ai/api/v1");
+  });
+
+  it("defaults baseUrl to api.openai.com when not given", () => {
+    const adapter = new OpenAIAdapter({ apiKey: "sk-test" });
+    assert.equal(adapter.baseUrl, "https://api.openai.com/v1");
   });
 });
 

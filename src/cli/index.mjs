@@ -21,6 +21,13 @@ import { getProvider } from "../core/providers.mjs";
 function createBaseAdapter({ model, reasoningEffort } = {}) {
   const provider = getProvider(model);
   if (provider.id === "openai") return new OpenAIAdapter({ model });
+  if (provider.id === "openrouter") {
+    return new OpenAIAdapter({
+      model,
+      apiKey: process.env.OPENROUTER_API_KEY,
+      baseUrl: "https://openrouter.ai/api/v1"
+    });
+  }
   if (provider.id === "gemini") return new GeminiAdapter({ model });
   // reasoning_effort is a Solar Pro2-specific parameter; only the Upstage
   // adapter understands it, so it's never passed to the other providers.
