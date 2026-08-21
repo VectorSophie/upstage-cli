@@ -48,6 +48,14 @@ export const SETTINGS_SCHEMA = {
   debugMode: false,
   language: 'ko',
   featureFlags: {},
+  // Agent-loop guardrails (src/config/defaults.mjs DEFAULT_LOOP_BUDGET).
+  // null = use the built-in default; set any field to override.
+  loopBudget: {
+    maxSteps: null,
+    maxToolCalls: null,
+    maxWallTimeMs: null,
+    maxCostUsd: null,
+  },
 };
 
 export function deepClone(obj) {
@@ -95,6 +103,10 @@ export function applyEnvOverrides(settings) {
   if (process.env.UPSTAGE_THEME) settings.theme = process.env.UPSTAGE_THEME;
   if (process.env.UPSTAGE_VIM_MODE === '1') settings.vimMode = true;
   if (process.env.UPSTAGE_SANDBOX === '0') settings.permissions.sandbox = false;
+  if (process.env.UPSTAGE_MAX_WALL_TIME_MS) {
+    const n = parseInt(process.env.UPSTAGE_MAX_WALL_TIME_MS, 10);
+    if (!isNaN(n)) settings.loopBudget.maxWallTimeMs = n;
+  }
 }
 
 export async function loadSettings({ cwd = process.cwd() } = {}) {

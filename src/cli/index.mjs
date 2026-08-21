@@ -8,7 +8,7 @@ import {
 } from "../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
-import { DEFAULT_POLICY } from "../config/defaults.mjs";
+import { DEFAULT_POLICY, DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
@@ -92,6 +92,7 @@ function parseArgs(argv) {
   if (result.systemPrompt) compat.systemPrompt = result.systemPrompt;
   if (result.addDirs?.length) compat.addDirs = result.addDirs;
   if (result.maxTurns) compat.maxTurns = result.maxTurns;
+  if (result.maxTimeSec) compat.maxTimeSec = result.maxTimeSec;
   if (result.language) compat.language = result.language;
   if (result.verbose) compat.verbose = result.verbose;
   if (result.debug) compat.debug = result.debug;
@@ -338,6 +339,13 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
     }
   };
 
+  const budget = {
+    ...DEFAULT_LOOP_BUDGET,
+    ...Object.fromEntries(Object.entries(settings.loopBudget || {}).filter(([, v]) => v != null)),
+    ...(args.maxTurns ? { maxSteps: args.maxTurns } : {}),
+    ...(args.maxTimeSec ? { maxWallTimeMs: args.maxTimeSec * 1000 } : {})
+  };
+
   let result;
   const gen = runAgentLoop({
     input: prompt,
@@ -349,6 +357,7 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
     session,
     runtimeCache,
     settings,
+    budget,
     systemPromptOverride: args.systemPrompt || null,
     addDirs: args.addDirs || []
   });

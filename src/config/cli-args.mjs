@@ -14,6 +14,7 @@ export function parseCliArgs(argv) {
     systemPrompt: null,
     addDirs: [],
     maxTurns: null,
+    maxTimeSec: null,
     allowedTools: null,
     disallowedTools: null,
     verbose: false,
@@ -88,6 +89,11 @@ export function parseCliArgs(argv) {
       i += 1;
       continue;
     }
+    if (token === '--max-time') {
+      result.maxTimeSec = parseInt(argv[i + 1], 10);
+      i += 1;
+      continue;
+    }
     if (token === '--allowedTools') {
       result.allowedTools = (argv[i + 1] || '').split(',').map((s) => s.trim());
       i += 1;
@@ -141,6 +147,7 @@ Options:
   --system-prompt <text>    Override system prompt
   --add-dir <dir>           Additional directory for UPSTAGE.md
   --max-turns <n>           Maximum conversation turns
+  --max-time <sec>          Wall-time budget in seconds (default: 180)
   --allowedTools <tools>    Comma-separated allowed tools
   --disallowedTools <tools> Comma-separated denied tools
   --lang <code>             Language (ko/en)

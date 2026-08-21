@@ -138,6 +138,34 @@ test("parseCliArgs parses --add-dir", () => {
   assert.deepEqual(args.addDirs, ["/extra", "/more"]);
 });
 
+test("parseCliArgs parses --max-turns and --max-time", () => {
+  const args = parseCliArgs(["--max-turns", "5", "--max-time", "60"]);
+  assert.equal(args.maxTurns, 5);
+  assert.equal(args.maxTimeSec, 60);
+});
+
+test("settings schema exposes a null-by-default loopBudget override", () => {
+  assert.deepEqual(SETTINGS_SCHEMA.loopBudget, {
+    maxSteps: null,
+    maxToolCalls: null,
+    maxWallTimeMs: null,
+    maxCostUsd: null,
+  });
+});
+
+test("applyEnvOverrides applies UPSTAGE_MAX_WALL_TIME_MS", () => {
+  const original = process.env.UPSTAGE_MAX_WALL_TIME_MS;
+  process.env.UPSTAGE_MAX_WALL_TIME_MS = "600000";
+  const settings = deepClone(SETTINGS_SCHEMA);
+  applyEnvOverrides(settings);
+  assert.equal(settings.loopBudget.maxWallTimeMs, 600000);
+  if (original === undefined) {
+    delete process.env.UPSTAGE_MAX_WALL_TIME_MS;
+  } else {
+    process.env.UPSTAGE_MAX_WALL_TIME_MS = original;
+  }
+});
+
 test("getUsageText returns non-empty string", () => {
   const text = getUsageText();
   assert.ok(text.length > 0);
