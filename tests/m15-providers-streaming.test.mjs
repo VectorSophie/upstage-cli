@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { getProvider, getProviderByName, listProviders, checkProviderKeys } from "../src/core/providers.mjs";
+import { getProvider, getProviderByName, listProviders, checkProviderKeys, PROVIDERS } from "../src/core/providers.mjs";
 import { parseSSEChunk, accumulateStream } from "../src/core/streaming.mjs";
 import { normalizeUsage } from "../src/model/fetch-utils.mjs";
 import { UpstageAdapter } from "../src/model/upstage-adapter.mjs";
@@ -57,6 +57,19 @@ describe("getProvider", () => {
   it("routes vendor/model slugs to openrouter", () => {
     assert.equal(getProvider("openai/gpt-oss-120b").id, "openrouter");
     assert.equal(getProvider("meta-llama/llama-3.1-70b-instruct").id, "openrouter");
+  });
+});
+
+describe("PROVIDERS.upstage.models", () => {
+  it("lists solar-pro3 and solar-pro4 alongside the existing models", () => {
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro3"));
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro4"));
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro2"));
+  });
+
+  it("still routes solar-pro3 and solar-pro4 to the upstage provider", () => {
+    assert.equal(getProvider("solar-pro3").id, "upstage");
+    assert.equal(getProvider("solar-pro4").id, "upstage");
   });
 });
 
