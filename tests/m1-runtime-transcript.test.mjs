@@ -169,3 +169,70 @@ assert.equal(result.ok, true);
 assert.equal(result.stopReason, "done");
 assert.equal(result.response, "done after tool");
 });
+
+test("runAgentLoop passes reasoning_effort=high when alwaysThinkingEnabled is set", async () => {
+  const registry = new ToolRegistry({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: false
+  });
+
+  const capturedCalls = [];
+  const adapter = {
+    isConfigured() {
+      return true;
+    },
+    async complete(opts) {
+      capturedCalls.push(opts);
+      return { content: "done", toolCalls: [] };
+    }
+  };
+
+  const session = createSession(process.cwd());
+  const { result } = await collectAgentLoop(runAgentLoop({
+    input: "say hi",
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {},
+    settings: { alwaysThinkingEnabled: true, thinkingBudget: 10000 }
+  }));
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedCalls.length, 1);
+  assert.equal(capturedCalls[0].reasoningEffort, "high");
+});
+
+test("runAgentLoop omits reasoning_effort when alwaysThinkingEnabled is false", async () => {
+  const registry = new ToolRegistry({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: false
+  });
+
+  const capturedCalls = [];
+  const adapter = {
+    isConfigured() {
+      return true;
+    },
+    async complete(opts) {
+      capturedCalls.push(opts);
+      return { content: "done", toolCalls: [] };
+    }
+  };
+
+  const session = createSession(process.cwd());
+  const { result } = await collectAgentLoop(runAgentLoop({
+    input: "say hi",
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {},
+    settings: { alwaysThinkingEnabled: false }
+  }));
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedCalls[0].reasoningEffort, undefined);
+});

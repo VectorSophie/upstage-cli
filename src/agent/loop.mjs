@@ -84,6 +84,14 @@ function toFiniteNumber(value) {
   return numericValue;
 }
 
+function resolveReasoningEffort(settings) {
+  if (!settings?.alwaysThinkingEnabled) {
+    return undefined;
+  }
+  const budget = Number(settings.thinkingBudget);
+  return Number.isFinite(budget) && budget >= 5000 ? "high" : "low";
+}
+
 function normalizeTokenUsage(rawUsage) {
   if (!rawUsage || typeof rawUsage !== "object") {
     return null;
@@ -344,13 +352,14 @@ async function fireBeforeToolSelectionHook(registry, session, { step, input, cwd
   });
 }
 
-async function requestModelCompletion({ adapter, messages, registry, stream, onToken, trace, session }) {
+async function requestModelCompletion({ adapter, messages, registry, stream, onToken, trace, session, reasoningEffort }) {
   try {
     const completion = await adapter.complete({
       messages,
       tools: registry.toModelTools(),
       stream,
-      onToken
+      onToken,
+      reasoningEffort
     });
     return {
       ok: true,
@@ -825,6 +834,7 @@ export async function* runAgentLoop({
   }
 
   const tokenBudgeter = createTokenBudgeter(session);
+  const reasoningEffort = resolveReasoningEffort(settings);
 
   const contextManager = new ContextManager(
     settings?.maxContextTokens || SOLAR_PRO2_TOKEN_LIMIT,
@@ -1020,7 +1030,8 @@ export async function* runAgentLoop({
         stream,
         onToken,
         trace,
-        session
+        session,
+        reasoningEffort
       });
 
       if (stream && collectedContent) {
@@ -1066,7 +1077,8 @@ export async function* runAgentLoop({
             stream,
             onToken,
             trace,
-            session
+            session,
+            reasoningEffort
           });
           if (!retryCompletion.ok) {
             return retryCompletion.terminal;
