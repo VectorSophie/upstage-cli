@@ -12,13 +12,12 @@ function extractKeywords(prompt) {
   ).slice(0, 8);
 }
 
-// Ratio preserved from the original hand-tuned Pro2-era budget: 24,000 chars
-// against a 65,536-token limit, assuming ~4 chars/token, is ~9% of the token
-// budget spent on injected repo context. Scaled proportionally for models
-// with larger context windows instead of staying fixed at 24k.
+// Ratio approximately preserved from the original hand-tuned Pro2-era budget:
+// 24,000 chars against a 65,536-token limit, assuming ~4 chars/token, is ~9%
+// of the token budget spent on injected repo context. Scaled proportionally
+// for models with larger context windows instead of staying fixed at 24k.
 const CONTEXT_CHARS_PER_TOKEN = 4;
 const CONTEXT_BUDGET_RATIO = 0.09;
-const DEFAULT_MAX_CONTEXT_CHARS = 24_000;
 
 export async function buildContext({
   input,
@@ -167,7 +166,6 @@ export async function buildContext({
 }
 
 function resolveMaxContextChars(modelId) {
-  if (!modelId) return DEFAULT_MAX_CONTEXT_CHARS;
   const { contextLimit } = getModelCapabilities(modelId);
   return Math.floor(contextLimit * CONTEXT_CHARS_PER_TOKEN * CONTEXT_BUDGET_RATIO);
 }
