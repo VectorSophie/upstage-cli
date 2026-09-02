@@ -24,14 +24,14 @@ export const SETTINGS_SCHEMA = {
   model: 'solar-pro4',
   subagentModel: null,
   fastModel: 'solar-pro4',
-  reasoningEffort: 'auto', // 'auto' | 'low' | 'high' — Solar Pro2 hybrid reasoning switch
+  reasoningEffort: 'auto', // 'auto' | 'low' | 'high' — reasoning-effort switch, support varies by model (see src/model/model-capabilities.mjs)
   fastMode: false,
   alwaysThinkingEnabled: false,
   autoCompactEnabled: true,
   fileCheckpointingEnabled: true,
   promptSuggestionEnabled: true,
   briefMode: false,
-  maxContextTokens: 65536,
+  maxContextTokens: null,
   maxOutputTokens: 4096,
   maxTokens: 4096,
   thinkingBudget: 10000,

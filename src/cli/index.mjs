@@ -29,8 +29,9 @@ function createBaseAdapter({ model, reasoningEffort } = {}) {
     });
   }
   if (provider.id === "gemini") return new GeminiAdapter({ model });
-  // reasoning_effort is a Solar Pro2-specific parameter; only the Upstage
-  // adapter understands it, so it's never passed to the other providers.
+  // reasoning_effort support varies by model (see src/model/model-capabilities.mjs);
+  // only the Upstage adapter understands the parameter at all, so it's never
+  // passed to the other providers.
   return new UpstageAdapter({ model: model || undefined, reasoningEffort });
 }
 

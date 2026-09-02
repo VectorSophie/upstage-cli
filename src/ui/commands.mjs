@@ -159,7 +159,7 @@ export const COMMANDS = {
         `자동압축     : ${cfg.autoCompactEnabled ?? true}`,
         `파일체크포인트: ${cfg.fileCheckpointingEnabled ?? true}`,
         `압축임계값   : ${cfg.compactThreshold ?? 0.8}`,
-        `최대컨텍스트 : ${cfg.maxContextTokens ?? 65536}`,
+        `최대컨텍스트 : ${cfg.maxContextTokens ?? "자동 (모델별 상이)"}`,
         `스트리밍     : ${cfg.stream ?? true}`,
         `언어         : ${cfg.language || "ko"}`,
       ];
