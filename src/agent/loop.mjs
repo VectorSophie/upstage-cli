@@ -995,7 +995,7 @@ export async function* runAgentLoop({
       }
 
       const context = await buildContext({ input, registry, cwd, runtimeCache });
-      const contextBlock = formatContextForModel(context);
+      const contextBlock = formatContextForModel(context, { modelId: adapter?.model });
 
       yield createEvent(AgentEventType.PLAN, { mode: "model", contextSummary: context.repoSummary, keywords: context.keywords });
 
