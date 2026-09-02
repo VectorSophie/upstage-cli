@@ -331,6 +331,33 @@ const warningEvents = events.filter((event) => event.type === "system_warning");
   assert.ok(runtimeWarning);
 });
 
+test("resolveTokenLimit uses the active model's capability-table context limit", async () => {
+  const { resolveTokenLimit } = await import("../src/agent/loop.mjs");
+
+  const originalEnv = process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  try {
+    assert.equal(resolveTokenLimit("solar-pro4"), 512_000);
+    assert.equal(resolveTokenLimit("solar-pro2"), 65_536);
+    assert.equal(resolveTokenLimit(undefined), 65_536); // fallback
+  } finally {
+    if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+    else process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = originalEnv;
+  }
+});
+
+test("resolveTokenLimit still honors the UPSTAGE_MODEL_CONTEXT_LIMIT env override", async () => {
+  const { resolveTokenLimit } = await import("../src/agent/loop.mjs");
+  const originalEnv = process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = "99999";
+  try {
+    assert.equal(resolveTokenLimit("solar-pro4"), 99999);
+  } finally {
+    if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+    else process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = originalEnv;
+  }
+});
+
 test("agent loop retries once with compacted context on context_length_exceeded", async () => {
   const registry = new ToolRegistry({
     allowHighRiskTools: true,

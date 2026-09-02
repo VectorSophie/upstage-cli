@@ -18,17 +18,16 @@ import {
 } from "../protocol/events.mjs";
 import { ContextManager } from "../core/context-manager.mjs";
 import { CheckpointManager } from "../core/checkpoints.mjs";
+import { getModelCapabilities } from "../model/model-capabilities.mjs";
 
-function resolveTokenLimit() {
+export function resolveTokenLimit(modelId) {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
   if (Number.isFinite(rawLimit) && rawLimit > 0) {
     return Math.floor(rawLimit);
   }
-  return 65_536;
+  return getModelCapabilities(modelId).contextLimit;
 }
 
-const SOLAR_PRO2_TOKEN_LIMIT = resolveTokenLimit();
-const SOLAR_PRO2_WARNING_THRESHOLD = Math.floor(SOLAR_PRO2_TOKEN_LIMIT * 0.8);
 const DEFAULT_MAX_CONVERSATION_MESSAGES = 40;
 const CONTEXT_EXCEEDED_RETRY_MESSAGES = 12;
 
@@ -131,7 +130,7 @@ function normalizeTokenUsage(rawUsage) {
   };
 }
 
-function readSessionTokenBaseline(session) {
+function readSessionTokenBaseline(session, warningThreshold) {
   if (!session || !Array.isArray(session.runtimeEvents)) {
     return {
       totalTokens: 0,
@@ -156,7 +155,7 @@ function readSessionTokenBaseline(session) {
     }
   }
 
-  if (totalTokens > SOLAR_PRO2_WARNING_THRESHOLD) {
+  if (totalTokens > warningThreshold) {
     warningEmitted = true;
   }
 
@@ -167,8 +166,16 @@ function readSessionTokenBaseline(session) {
   };
 }
 
-function createTokenBudgeter(session) {
-  const baseline = readSessionTokenBaseline(session);
+// NOTE: the task spec's suggested replacement for this function dropped
+// totalCost/sessionTotalCost tracking entirely. That would break the cost
+// budget guardrail in processCompletionWithTools (`tokenBudgeter.totalCost()`
+// checked against `budget.maxCostUsd`, which DEFAULT_LOOP_BUDGET sets to a
+// real, always-active 5.0 cap) on every agent loop run. totalCost tracking
+// is orthogonal to the model-aware token-limit change this task is about, so
+// it's preserved here alongside the new `tokenLimit` parameter.
+function createTokenBudgeter(session, tokenLimit) {
+  const warningThreshold = Math.floor(tokenLimit * 0.8);
+  const baseline = readSessionTokenBaseline(session, warningThreshold);
   let sessionTotalTokens = baseline.totalTokens;
   let sessionTotalCost = baseline.totalCost || 0;
   let warningEmitted = baseline.warningEmitted;
@@ -190,10 +197,10 @@ function createTokenBudgeter(session) {
         ...normalizedUsage,
         sessionTotalTokens,
         sessionTotalCost,
-        limit: SOLAR_PRO2_TOKEN_LIMIT
+        limit: tokenLimit
       };
 
-      if (warningEmitted || sessionTotalTokens <= SOLAR_PRO2_WARNING_THRESHOLD) {
+      if (warningEmitted || sessionTotalTokens <= warningThreshold) {
         return {
           usage,
           warning: null
@@ -206,11 +213,11 @@ function createTokenBudgeter(session) {
         warning: {
           level: "warning",
           code: "TOKEN_CONTEXT_HIGH",
-          message: `Session context usage is above 80% of Solar Pro2 limit (${sessionTotalTokens}/${SOLAR_PRO2_TOKEN_LIMIT} tokens).`,
+          message: `Session context usage is above 80% of model limit (${sessionTotalTokens}/${tokenLimit} tokens).`,
           usage: {
             totalTokens: sessionTotalTokens,
-            threshold: SOLAR_PRO2_WARNING_THRESHOLD,
-            limit: SOLAR_PRO2_TOKEN_LIMIT
+            threshold: warningThreshold,
+            limit: tokenLimit
           }
         }
       };
@@ -845,11 +852,12 @@ export async function* runAgentLoop({
     };
   }
 
-  const tokenBudgeter = createTokenBudgeter(session);
+  const tokenLimit = resolveTokenLimit(adapter?.model);
+  const tokenBudgeter = createTokenBudgeter(session, tokenLimit);
   const reasoningEffort = resolveReasoningEffort(settings);
 
   const contextManager = new ContextManager(
-    settings?.maxContextTokens || SOLAR_PRO2_TOKEN_LIMIT,
+    settings?.maxContextTokens || tokenLimit,
     settings?.compactThreshold || 0.8
   );
 
