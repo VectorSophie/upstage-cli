@@ -2,7 +2,7 @@ import { fetchWithRetry, normalizeUsage } from "./fetch-utils.mjs";
 import { streamResponse, accumulateStream } from "../core/streaming.mjs";
 
 const DEFAULT_BASE_URL = process.env.UPSTAGE_API_BASE_URL || "https://api.upstage.ai/v1";
-const DEFAULT_MODEL = process.env.UPSTAGE_MODEL || "solar-pro2";
+const DEFAULT_MODEL = process.env.UPSTAGE_MODEL || "solar-pro4";
 
 async function readJsonResponse(response) {
   const data = await response.json();

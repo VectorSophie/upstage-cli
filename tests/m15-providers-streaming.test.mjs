@@ -308,6 +308,20 @@ describe("OpenAIAdapter.isConfigured", () => {
   });
 });
 
+describe("UpstageAdapter default model", () => {
+  it("defaults to solar-pro4 when no model or UPSTAGE_MODEL env var is set", () => {
+    const originalEnv = process.env.UPSTAGE_MODEL;
+    delete process.env.UPSTAGE_MODEL;
+    try {
+      const adapter = new UpstageAdapter({ apiKey: "test-key" });
+      assert.equal(adapter.model, "solar-pro4");
+    } finally {
+      if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL;
+      else process.env.UPSTAGE_MODEL = originalEnv;
+    }
+  });
+});
+
 describe("GeminiAdapter.isConfigured", () => {
   it("returns false when no keys set", () => {
     const oldG = process.env.GEMINI_API_KEY;
