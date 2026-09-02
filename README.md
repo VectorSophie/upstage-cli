@@ -144,7 +144,7 @@ upstage ask -p "이슈 #123을 고쳐줘" --confirm-patches
 *   `-h`, `--help`
 *   `-p`, `--prompt <text>`
 *   `--no-stream`
-*   `--model <model-name>`
+*   `--model <model-name>` (기본값 `solar-pro2`; `solar-pro3`도 사용 가능 — `--model solar-pro3` 또는 `UPSTAGE_MODEL=solar-pro3`)
 *   `--session <session-id>`
 *   `--new-session`
 *   `--reset-session`

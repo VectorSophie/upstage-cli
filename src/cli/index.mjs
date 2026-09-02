@@ -92,6 +92,7 @@ function parseArgs(argv) {
   };
   if (result.permissionMode) compat.permissionMode = result.permissionMode;
   if (result.systemPrompt) compat.systemPrompt = result.systemPrompt;
+  if (result.cwd) compat.cwd = result.cwd;
   if (result.addDirs?.length) compat.addDirs = result.addDirs;
   if (result.maxTurns) compat.maxTurns = result.maxTurns;
   if (result.language) compat.language = result.language;
@@ -461,9 +462,21 @@ async function runInteractive(registry, adapter, args, session, runtimeCache, se
 }
 
 async function main() {
+  const args = parseArgs(process.argv.slice(2));
+
+  if (args.cwd) {
+    const targetCwd = isAbsolute(args.cwd) ? args.cwd : resolve(process.cwd(), args.cwd);
+    try {
+      process.chdir(targetCwd);
+    } catch (error) {
+      console.error(`Failed to change directory to ${targetCwd}: ${error instanceof Error ? error.message : error}`);
+      process.exitCode = 1;
+      return;
+    }
+  }
+
   await loadProjectEnv(process.cwd());
 
-  const args = parseArgs(process.argv.slice(2));
   const settings = await loadSettings({ cwd: process.cwd() });
 
   if (args.model) {

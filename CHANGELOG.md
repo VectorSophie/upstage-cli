@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 ### Added
+- **Parallel independent tool calls** — when a single model turn requests
+  multiple "low risk" (read-only) tools, the agent loop now runs them
+  concurrently via `Promise.all` instead of one at a time; write/exec tools
+  are untouched and still run sequentially with checkpoints. (`src/agent/loop.mjs`)
+- **Incremental repo index rebuild** — `buildIntelligenceIndex` now reparses
+  only files whose mtime/size changed since the last run and reuses cached
+  symbols/imports for the rest, instead of reparsing the entire repo on any
+  single-file edit. (`src/indexer/intelligence.mjs`)
 - **IDE bridge (`upstage-bridge`)** — bidirectional NDJSON-over-stdio protocol so
   an editor extension can drive the agent (initialize/prompt/cancel/ping; streams
   every agent event tagged by prompt id, ends with a result). Testable protocol

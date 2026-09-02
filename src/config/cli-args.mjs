@@ -12,6 +12,7 @@ export function parseCliArgs(argv) {
     bridgeJson: false,
     permissionMode: null,
     systemPrompt: null,
+    cwd: null,
     addDirs: [],
     maxTurns: null,
     allowedTools: null,
@@ -78,6 +79,11 @@ export function parseCliArgs(argv) {
       i += 1;
       continue;
     }
+    if (token === '--cwd') {
+      result.cwd = argv[i + 1] || null;
+      i += 1;
+      continue;
+    }
     if (token === '--add-dir') {
       result.addDirs.push(argv[i + 1] || '');
       i += 1;
@@ -139,6 +145,8 @@ Options:
   --bridge-json             Output JSON bridge format
   --permission-mode <mode>  Permission mode
   --system-prompt <text>    Override system prompt
+  --cwd <dir>               Run as if launched from this directory (changes
+                            process cwd before anything else loads)
   --add-dir <dir>           Additional directory for UPSTAGE.md
   --max-turns <n>           Maximum conversation turns
   --allowedTools <tools>    Comma-separated allowed tools

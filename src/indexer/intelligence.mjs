@@ -72,14 +72,29 @@ export async function buildIntelligenceIndex(cwd, options = {}) {
   const fileSet = new Set(codeFiles);
   const signatures = await buildFileSignatures(cwd, codeFiles);
 
-  if (!options.forceRebuild) {
-    const cached = await loadIntelligenceIndexFromDisk(cwd);
-    if (cached && sameSignatureMap(cached.fileSignatures, signatures)) {
-      return {
-        ...cached,
-        createdAt: Date.now(),
-        fromCache: true
-      };
+  const cached = options.forceRebuild ? null : await loadIntelligenceIndexFromDisk(cwd);
+
+  if (cached && sameSignatureMap(cached.fileSignatures, signatures)) {
+    return {
+      ...cached,
+      createdAt: Date.now(),
+      fromCache: true
+    };
+  }
+
+  // Incremental reindex: only reparse files whose mtime/size changed (or are
+  // new); reuse the cached symbols/imports for everything else instead of
+  // reparsing the whole repo on every single-file edit.
+  const unchangedRelPaths = new Set();
+  const changedFiles = [];
+  for (const filePath of codeFiles) {
+    const relPath = toRepoPath(cwd, filePath);
+    const prevSig = cached?.fileSignatures?.[relPath];
+    const nextSig = signatures[relPath];
+    if (prevSig && prevSig.mtimeMs === nextSig.mtimeMs && prevSig.size === nextSig.size) {
+      unchangedRelPaths.add(relPath);
+    } else {
+      changedFiles.push(filePath);
     }
   }
 
@@ -87,7 +102,20 @@ export async function buildIntelligenceIndex(cwd, options = {}) {
   const importsByFile = {};
   const references = new Map();
 
-  for (const filePath of codeFiles) {
+  if (cached) {
+    for (const symbol of cached.symbols || []) {
+      if (unchangedRelPaths.has(symbol.file)) {
+        symbols.push(symbol);
+      }
+    }
+    for (const [relPath, deps] of Object.entries(cached.importsByFile || {})) {
+      if (unchangedRelPaths.has(relPath)) {
+        importsByFile[relPath] = deps;
+      }
+    }
+  }
+
+  for (const filePath of changedFiles) {
     const content = await readFile(filePath, "utf8");
     const relPath = toRepoPath(cwd, filePath);
     const parsed = await parseSourceFile({
@@ -106,17 +134,17 @@ export async function buildIntelligenceIndex(cwd, options = {}) {
       }
     }
     importsByFile[relPath] = deps;
+  }
 
-    for (const symbol of parsed.symbols) {
-      if (!references.has(symbol.name)) {
-        references.set(symbol.name, []);
-      }
-      references.get(symbol.name).push({
-        file: symbol.file,
-        line: symbol.line,
-        kind: symbol.kind
-      });
+  for (const symbol of symbols) {
+    if (!references.has(symbol.name)) {
+      references.set(symbol.name, []);
     }
+    references.get(symbol.name).push({
+      file: symbol.file,
+      line: symbol.line,
+      kind: symbol.kind
+    });
   }
 
   const index = {

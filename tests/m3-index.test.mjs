@@ -50,3 +50,43 @@ test("intelligence index reuses cache when file signatures are unchanged", async
     await rm(cwd, { recursive: true, force: true });
   }
 });
+
+test("intelligence index reindexes only the changed file, keeping other files' symbols", async () => {
+  const cwd = await makeWorkspace();
+  try {
+    await buildIntelligenceIndex(cwd, { maxFiles: 200, maxDepth: 8 });
+
+    // Only touch helper.js — app.js's cached symbols should be reused as-is.
+    await writeFile(
+      join(cwd, "src", "helper.js"),
+      "export function helper() { return 1; }\nexport function helperTwo() { return 2; }\n",
+      "utf8"
+    );
+
+    const updated = await buildIntelligenceIndex(cwd, { maxFiles: 200, maxDepth: 8 });
+    assert.equal(updated.fromCache, false);
+
+    const names = updated.symbols.map((s) => s.name);
+    assert.ok(names.includes("run"), "unchanged file's symbol (run) should be preserved");
+    assert.ok(names.includes("helper"), "changed file's existing symbol should still be present");
+    assert.ok(names.includes("helperTwo"), "changed file's new symbol should be picked up");
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});
+
+test("intelligence index drops symbols for a file that was deleted", async () => {
+  const cwd = await makeWorkspace();
+  try {
+    const first = await buildIntelligenceIndex(cwd, { maxFiles: 200, maxDepth: 8 });
+    assert.ok(first.symbols.some((s) => s.file === "src/helper.js"));
+
+    await rm(join(cwd, "src", "helper.js"));
+
+    const updated = await buildIntelligenceIndex(cwd, { maxFiles: 200, maxDepth: 8 });
+    assert.ok(!updated.symbols.some((s) => s.file === "src/helper.js"));
+    assert.ok(!Object.keys(updated.importsByFile).includes("src/helper.js"));
+  } finally {
+    await rm(cwd, { recursive: true, force: true });
+  }
+});

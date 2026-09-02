@@ -44,7 +44,8 @@ Commands:
 
 Options:
   -p, --prompt      Run prompt and exit
-  -m, --model       Model to use (default: solar-pro2)
+  -m, --model       Model to use (default: solar-pro2; also accepts solar-pro3
+                    via -m solar-pro3 or UPSTAGE_MODEL=solar-pro3)
   --session         Resume session by ID
   --new-session     Start a fresh session
   --reset-session   Reset and start fresh

@@ -438,6 +438,10 @@ async function* runCriticPhase({ registry, cwd, session, runtimeCache, conversat
   });
 }
 
+function isLowRiskTool(registry, toolName) {
+  return registry.get(toolName)?.risk === "low";
+}
+
 async function* executeToolCallsPhase({
   toolCallList,
   toolCalls,
@@ -454,43 +458,9 @@ async function* executeToolCallsPhase({
   let nextToolCalls = toolCalls;
   let usedWriteTools = false;
 
-  for (const toolCall of toolCallList) {
-    const toolName = toolCall.function?.name;
-    const args = safeJsonParse(toolCall.function?.arguments || "{}");
-    trace.push({ state: nextState, tool: toolName, args });
-
-    yield createEvent(AgentEventType.THINKING, {
-      thought: {
-        subject: `Executing tool: ${toolName || "unknown"}`,
-        description: "Running tool and collecting observation"
-      }
-    });
-
-    yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
-
-    // Track write-tool usage for critic
-    if (CRITIC_WRITE_TOOLS.has(toolName)) {
-      usedWriteTools = true;
-    }
-
-    // Checkpoint before destructive file operations
-    if (CRITIC_WRITE_TOOLS.has(toolName) && runtimeCache?.checkpointManager && args?.path) {
-      const { resolve: resolvePath } = await import("node:path");
-      const absPath = resolvePath(cwd, args.path);
-      await runtimeCache.checkpointManager.save(absPath).catch(() => {});
-    }
-
-    const result = await registry.execute(toolName, args, {
-      cwd,
-      runtimeCache,
-      session,
-      adapter,
-      confirm,
-      onLog: (payload) => {
-        emitRuntime(registry, session, "TOOL_LOG", { tool: toolName, ...payload });
-      }
-    });
-
+  // Post-processes an already-executed tool result: trace/event/append/apply-patch
+  // verification. Shared by both the sequential and parallel execution paths below.
+  async function* postProcess(toolCall, toolName, args, result) {
     nextToolCalls += 1;
     nextState = AgentState.OBSERVING;
     trace.push({ state: nextState, tool: toolName, result });
@@ -515,16 +485,12 @@ async function* executeToolCallsPhase({
           ? StopReason.POLICY_BLOCKED
           : StopReason.TOOL_ERROR;
       return {
-        terminal: {
-          ok: false,
-          state: AgentState.FAIL,
-          stopReason,
-          response: `Tool failed: ${result.error?.message || "unknown"}`,
-          trace,
-          session
-        },
-        state: nextState,
-        toolCalls: nextToolCalls
+        ok: false,
+        state: AgentState.FAIL,
+        stopReason,
+        response: `Tool failed: ${result.error?.message || "unknown"}`,
+        trace,
+        session
       };
     }
 
@@ -552,23 +518,102 @@ async function* executeToolCallsPhase({
         }
         appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
         return {
-          terminal: {
-            ok: false,
-            state: AgentState.FAIL,
-            stopReason: StopReason.TOOL_ERROR,
-            response: "Verification failed after patch apply. Rollback completed.",
-            trace,
-            session,
-            verification: verify
-          },
-          state: nextState,
-          toolCalls: nextToolCalls
+          ok: false,
+          state: AgentState.FAIL,
+          stopReason: StopReason.TOOL_ERROR,
+          response: "Verification failed after patch apply. Rollback completed.",
+          trace,
+          session,
+          verification: verify
         };
       }
       appendAppliedPatch(session, { path: result.data.path, verified: true });
     }
 
     appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
+    return null;
+  }
+
+  function execOne(toolName, args) {
+    return registry.execute(toolName, args, {
+      cwd,
+      runtimeCache,
+      session,
+      adapter,
+      confirm,
+      onLog: (payload) => {
+        emitRuntime(registry, session, "TOOL_LOG", { tool: toolName, ...payload });
+      }
+    });
+  }
+
+  // Independent read-only tool calls (all "low" risk in one model turn) run
+  // concurrently instead of one-by-one — safe because none of them write files,
+  // run shell commands, or depend on each other's output.
+  const canRunInParallel =
+    toolCallList.length > 1 && toolCallList.every((tc) => isLowRiskTool(registry, tc.function?.name));
+
+  if (canRunInParallel) {
+    const prepared = toolCallList.map((toolCall) => ({
+      toolCall,
+      toolName: toolCall.function?.name,
+      args: safeJsonParse(toolCall.function?.arguments || "{}")
+    }));
+
+    for (const { toolName, args } of prepared) {
+      trace.push({ state: nextState, tool: toolName, args });
+      yield createEvent(AgentEventType.THINKING, {
+        thought: {
+          subject: `Executing tool: ${toolName || "unknown"}`,
+          description: "Running tool and collecting observation"
+        }
+      });
+      yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
+    }
+
+    const results = await Promise.all(prepared.map(({ toolName, args }) => execOne(toolName, args)));
+
+    for (let i = 0; i < prepared.length; i += 1) {
+      const { toolCall, toolName, args } = prepared[i];
+      const terminal = yield* postProcess(toolCall, toolName, args, results[i]);
+      if (terminal) {
+        return { terminal, state: nextState, toolCalls: nextToolCalls };
+      }
+    }
+  } else {
+    for (const toolCall of toolCallList) {
+      const toolName = toolCall.function?.name;
+      const args = safeJsonParse(toolCall.function?.arguments || "{}");
+      trace.push({ state: nextState, tool: toolName, args });
+
+      yield createEvent(AgentEventType.THINKING, {
+        thought: {
+          subject: `Executing tool: ${toolName || "unknown"}`,
+          description: "Running tool and collecting observation"
+        }
+      });
+
+      yield createEvent(AgentEventType.TOOL_START, { tool: toolName, args });
+
+      // Track write-tool usage for critic
+      if (CRITIC_WRITE_TOOLS.has(toolName)) {
+        usedWriteTools = true;
+      }
+
+      // Checkpoint before destructive file operations
+      if (CRITIC_WRITE_TOOLS.has(toolName) && runtimeCache?.checkpointManager && args?.path) {
+        const { resolve: resolvePath } = await import("node:path");
+        const absPath = resolvePath(cwd, args.path);
+        await runtimeCache.checkpointManager.save(absPath).catch(() => {});
+      }
+
+      const result = await execOne(toolName, args);
+
+      const terminal = yield* postProcess(toolCall, toolName, args, result);
+      if (terminal) {
+        return { terminal, state: nextState, toolCalls: nextToolCalls };
+      }
+    }
   }
 
   // Critic: run tests after write operations and inject failure feedback

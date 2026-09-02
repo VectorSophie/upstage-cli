@@ -141,6 +141,17 @@ test("parseCliArgs parses --add-dir", () => {
   assert.deepEqual(args.addDirs, ["/extra", "/more"]);
 });
 
+test("parseCliArgs parses --cwd", () => {
+  const args = parseCliArgs(["--cwd", "/some/project", "-p", "hello"]);
+  assert.equal(args.cwd, "/some/project");
+  assert.equal(args.prompt, "hello");
+});
+
+test("parseCliArgs leaves cwd null when not passed", () => {
+  const args = parseCliArgs(["-p", "hello"]);
+  assert.equal(args.cwd, null);
+});
+
 test("getUsageText returns non-empty string", () => {
   const text = getUsageText();
   assert.ok(text.length > 0);
