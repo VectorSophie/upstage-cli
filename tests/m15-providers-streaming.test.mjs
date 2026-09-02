@@ -203,6 +203,29 @@ describe("accumulateStream — openai format", () => {
   });
 });
 
+describe("accumulateStream reasoning content", () => {
+  it("accumulates reasoning_content deltas separately from content", async () => {
+    async function* fakeEvents() {
+      yield 'data: {"choices":[{"delta":{"reasoning_content":"Let me "}}]}';
+      yield 'data: {"choices":[{"delta":{"reasoning_content":"think."}}]}';
+      yield 'data: {"choices":[{"delta":{"content":"The answer is 4."}}]}';
+      yield "data: [DONE]";
+    }
+    const result = await accumulateStream(fakeEvents(), "openai");
+    assert.equal(result.content, "The answer is 4.");
+    assert.equal(result.reasoning, "Let me think.");
+  });
+
+  it("returns null reasoning when no reasoning deltas are present", async () => {
+    async function* fakeEvents() {
+      yield 'data: {"choices":[{"delta":{"content":"hi"}}]}';
+      yield "data: [DONE]";
+    }
+    const result = await accumulateStream(fakeEvents(), "openai");
+    assert.equal(result.reasoning, null);
+  });
+});
+
 // ──────────────────────────────────────────────
 // accumulateStream — Gemini format
 // ──────────────────────────────────────────────

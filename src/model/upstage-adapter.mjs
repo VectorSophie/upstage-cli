@@ -17,6 +17,15 @@ async function readJsonResponse(response) {
   return {
     content: message.content || "",
     toolCalls: message.tool_calls || [],
+    // Field name for the reasoning trace on non-streaming Pro4 responses is
+    // unconfirmed — Upstage hasn't published the exact JSON field name anywhere
+    // found during this project's research. This checks both `reasoning_content`
+    // (the convention used by DeepSeek-R1-style OpenAI-compatible APIs) and
+    // `reasoning` (a plausible alternative), preferring whichever is present.
+    // Best-effort guess based on common conventions, not a confirmed Upstage
+    // API contract — needs live verification against a real Solar Pro4
+    // response before relying on this for anything user-facing.
+    reasoning: message.reasoning_content || message.reasoning || null,
     usage: normalizeUsage(data.usage)
   };
 }
