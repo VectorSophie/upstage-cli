@@ -2,7 +2,7 @@
   "permissions": {
     "defaultMode": "default"
   },
-  "model": "solar-pro2",
+  "model": "solar-pro4",
   "language": "ko",
   "stream": true,
   "autoCompactEnabled": true,

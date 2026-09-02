@@ -280,7 +280,7 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         messages,
         turnCount: messages.length / 2,
         tokenUsage,
-        model: settings?.model || "solar-pro2",
+        model: settings?.model || "solar-pro4",
         tools: registry?.list?.() || [],
         _contextManager: runtimeCache?.contextManager || null,
         _checkpointManager: runtimeCache?.checkpointManager || null,

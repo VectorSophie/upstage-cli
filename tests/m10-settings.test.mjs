@@ -12,8 +12,8 @@ import { loadUpstageMdFiles, buildSystemPrompt } from "../src/core/system-prompt
 import { parseCliArgs, getUsageText } from "../src/config/cli-args.mjs";
 import { readEnv, getEnv, ENV_SCHEMA } from "../src/config/env.mjs";
 
-test("settings schema provides solar-pro2 as default model", () => {
-  assert.equal(SETTINGS_SCHEMA.model, "solar-pro2");
+test("settings schema provides solar-pro4 as default model", () => {
+  assert.equal(SETTINGS_SCHEMA.model, "solar-pro4");
   assert.equal(SETTINGS_SCHEMA.language, "ko");
   assert.equal(SETTINGS_SCHEMA.maxContextTokens, 65536);
   assert.equal(SETTINGS_SCHEMA.permissions.defaultMode, "default");
@@ -85,7 +85,7 @@ test("applyEnvOverrides applies UPSTAGE_MAX_CONTEXT_TOKENS as number", () => {
 
 test("loadSettings merges project settings over defaults", async () => {
   const settings = await loadSettings({ cwd: process.cwd() });
-  assert.equal(settings.model, "solar-pro2");
+  assert.equal(settings.model, "solar-pro4");
   assert.equal(settings.language, "ko");
   assert.equal(typeof settings.permissions.defaultMode, "string");
 });
