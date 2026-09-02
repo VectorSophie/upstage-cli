@@ -236,3 +236,36 @@ test("runAgentLoop omits reasoning_effort when alwaysThinkingEnabled is false", 
   assert.equal(result.ok, true);
   assert.equal(capturedCalls[0].reasoningEffort, undefined);
 });
+
+test("runAgentLoop passes reasoning_effort=low when thinkingBudget is below the threshold", async () => {
+  const registry = new ToolRegistry({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: false
+  });
+
+  const capturedCalls = [];
+  const adapter = {
+    isConfigured() {
+      return true;
+    },
+    async complete(opts) {
+      capturedCalls.push(opts);
+      return { content: "done", toolCalls: [] };
+    }
+  };
+
+  const session = createSession(process.cwd());
+  const { result } = await collectAgentLoop(runAgentLoop({
+    input: "say hi",
+    registry,
+    cwd: process.cwd(),
+    adapter,
+    stream: false,
+    session,
+    runtimeCache: {},
+    settings: { alwaysThinkingEnabled: true, thinkingBudget: 1000 }
+  }));
+
+  assert.equal(result.ok, true);
+  assert.equal(capturedCalls[0].reasoningEffort, "low");
+});

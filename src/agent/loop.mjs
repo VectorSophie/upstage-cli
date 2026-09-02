@@ -84,11 +84,23 @@ function toFiniteNumber(value) {
   return numericValue;
 }
 
+// When settings.alwaysThinkingEnabled is true, the per-turn value computed
+// here is passed as the per-call reasoningEffort on every adapter.complete()
+// call, and upstage-adapter.mjs's effectiveReasoningEffort prefers that
+// per-call value (when the model supports it) over the adapter's
+// instance-level this.reasoningEffort — the one the TUI's Ctrl+E chip
+// mutates via setReasoningEffort(). So a user who manually cycles the TUI
+// chip while alwaysThinkingEnabled is on will see their choice silently
+// overridden on the very next turn. That precedence is intentional here
+// (settings-driven "always on" should win), not a bug to fix in this
+// function — just something to know before changing either side.
 function resolveReasoningEffort(settings) {
   if (!settings?.alwaysThinkingEnabled) {
     return undefined;
   }
   const budget = Number(settings.thinkingBudget);
+  // 5000 is an uncalibrated heuristic cutoff, not sourced from Upstage docs —
+  // revisit once real usage data or Upstage guidance is available.
   return Number.isFinite(budget) && budget >= 5000 ? "high" : "low";
 }
 
