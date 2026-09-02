@@ -32,6 +32,11 @@ const CAPABILITIES = {
   },
   "solar-pro2": {
     contextLimit: 65_536,
+    // false here only gates the newer per-call reasoningEffort override in
+    // UpstageAdapter#complete() — it is NOT the claim "Pro2 has no reasoning_effort
+    // support." Pro2's real reasoning_effort switch is handled separately and
+    // unconditionally via the pre-existing instance-level this.reasoningEffort /
+    // setReasoningEffort() mechanism in upstage-adapter.mjs, which this flag does not gate.
     supportsReasoningEffort: false,
     supportsParallelToolCalls: false,
     supportsResponseFormat: false,

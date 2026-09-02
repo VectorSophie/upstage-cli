@@ -242,6 +242,36 @@ test("upstage adapter omits reasoning_effort on a non-supporting model even if r
   }
 });
 
+test("upstage adapter ignores an invalid per-call reasoning_effort value on a supporting model", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "medium"
+    });
+    // Invalid value + no instance-level default set => falls through to unset => omitted.
+    assert.equal("reasoning_effort" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent loop emits SYSTEM_WARNING after crossing token budget threshold", async () => {
   const registry = new ToolRegistry({
     allowHighRiskTools: true,

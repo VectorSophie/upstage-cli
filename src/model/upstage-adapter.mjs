@@ -78,8 +78,9 @@ export class UpstageAdapter {
     // or setReasoningEffort(), unconditional/ungated — left untouched here since it's
     // real, cited Solar Pro2 behavior this task does not override). When no per-call
     // value is supplied — every caller today — this reduces to exactly this.reasoningEffort.
+    const validPerCallReasoningEffort = VALID_REASONING_EFFORTS.has(reasoningEffort) ? reasoningEffort : null;
     const effectiveReasoningEffort =
-      (capabilities.supportsReasoningEffort && reasoningEffort) || this.reasoningEffort;
+      (capabilities.supportsReasoningEffort && validPerCallReasoningEffort) || this.reasoningEffort;
     if (effectiveReasoningEffort) {
       payload.reasoning_effort = effectiveReasoningEffort;
     }
