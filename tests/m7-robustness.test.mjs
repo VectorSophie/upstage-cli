@@ -126,6 +126,122 @@ test("upstage adapter retries timeout errors", async () => {
   }
 });
 
+test("upstage adapter sends parallel_tool_calls for models that support it", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "read_file" } }],
+      stream: false
+    });
+    assert.equal(capturedBody.parallel_tool_calls, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter omits parallel_tool_calls for models that don't support it", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro2"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "read_file" } }],
+      stream: false
+    });
+    assert.equal("parallel_tool_calls" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter sends reasoning_effort when requested on a supporting model", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "high"
+    });
+    assert.equal(capturedBody.reasoning_effort, "high");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter omits reasoning_effort on a non-supporting model even if requested", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro2"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "high"
+    });
+    assert.equal("reasoning_effort" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent loop emits SYSTEM_WARNING after crossing token budget threshold", async () => {
   const registry = new ToolRegistry({
     allowHighRiskTools: true,

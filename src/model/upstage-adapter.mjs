@@ -1,8 +1,14 @@
 import { fetchWithRetry, normalizeUsage } from "./fetch-utils.mjs";
 import { streamResponse, accumulateStream } from "../core/streaming.mjs";
+import { getModelCapabilities } from "./model-capabilities.mjs";
 
 const DEFAULT_BASE_URL = process.env.UPSTAGE_API_BASE_URL || "https://api.upstage.ai/v1";
 const DEFAULT_MODEL = process.env.UPSTAGE_MODEL || "solar-pro4";
+
+// Use "required" only on the very first user turn (no tool history yet) when the
+// last user message is clearly an action request. This stops Solar Pro2 from
+// describing what it would do instead of doing it.
+export const ACTION_WORDS = /\b(read|write|create|edit|fix|add|run|list|find|search|delete|rename|move|show|check)\b/i;
 
 async function readJsonResponse(response) {
   const data = await response.json();
@@ -41,15 +47,13 @@ export class UpstageAdapter {
     return this.apiKey.length > 0;
   }
 
-  async complete({ messages, tools = [], stream = true, onToken, toolChoice }) {
+  async complete({ messages, tools = [], stream = true, onToken, toolChoice, reasoningEffort }) {
     if (!this.isConfigured()) {
       throw new Error("UPSTAGE_API_KEY is not configured");
     }
 
-    // Use "required" only on the very first user turn (no tool history yet) when the
-    // last user message is clearly an action request. This stops Solar Pro2 from
-    // describing what it would do instead of doing it.
-    const ACTION_WORDS = /\b(read|write|create|edit|fix|add|run|list|find|search|delete|rename|move|show|check)\b/i;
+    const capabilities = getModelCapabilities(this.model);
+
     const hasToolResults = messages.some((m) => m.role === "tool");
     const lastUser = [...messages].reverse().find((m) => m.role === "user");
     const isActionPrompt = typeof lastUser?.content === "string" && ACTION_WORDS.test(lastUser.content);
@@ -64,8 +68,20 @@ export class UpstageAdapter {
       temperature: this.temperature,
       stream
     };
-    if (this.reasoningEffort) {
-      payload.reasoning_effort = this.reasoningEffort;
+
+    if (capabilities.supportsParallelToolCalls && tools.length > 0) {
+      payload.parallel_tool_calls = true;
+    }
+
+    // Per-call reasoningEffort (gated by model capability) layers on top of the
+    // pre-existing instance-level this.reasoningEffort (set via constructor option
+    // or setReasoningEffort(), unconditional/ungated — left untouched here since it's
+    // real, cited Solar Pro2 behavior this task does not override). When no per-call
+    // value is supplied — every caller today — this reduces to exactly this.reasoningEffort.
+    const effectiveReasoningEffort =
+      (capabilities.supportsReasoningEffort && reasoningEffort) || this.reasoningEffort;
+    if (effectiveReasoningEffort) {
+      payload.reasoning_effort = effectiveReasoningEffort;
     }
 
     const response = await fetchWithRetry(() =>
