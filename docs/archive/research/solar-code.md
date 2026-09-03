@@ -1,5 +1,11 @@
 # Solar Code Architectural Analysis
 
+> **Archived (2026-09-03):** early comparative research that fed into a
+> "Rust performance/safety substrate + TypeScript" direction — never built.
+> The actual codebase is 100% Node/Bun `.mjs`, no Rust component exists.
+> Kept for historical reference only; see `CLAUDE.md` for the real
+> architecture.
+
 ## Scope
 
 This document evaluates `solar-code` as an Upstage-oriented coding CLI example and explains why it is not sufficient by itself for a production-grade coding agent.

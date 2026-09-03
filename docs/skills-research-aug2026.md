@@ -1,5 +1,13 @@
 # Skills / "K-Skills" deep dive — August 2026
 
+> **Status note (2026-09-03):** the proposal below has since shipped —
+> `src/skills/loader.mjs` implements Agent Skills format interop, and a
+> bundled first-party pack exists (test suite references 19 adapted k-skill
+> imports; the v3.0.0 CHANGELOG entry references 24 first-party skills
+> total). This doc's design reasoning is still useful background for why
+> the pack looks the way it does; treat "nothing implemented yet" below as
+> historical, not current.
+
 Follow-up to `new-concepts-aug2026.md`, going deep on one specific idea: a
 built-in skills library, Korean-flavored. Short answer up front: **"K-Skills"
 already exists as a real, named, MIT-licensed project** — building our own

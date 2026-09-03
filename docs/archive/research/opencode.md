@@ -1,5 +1,14 @@
 # Opencode Architectural Analysis
 
+> **Archived (2026-09-03):** analyzes the archived Go/Bubble-Tea version of
+> opencode and recommends a Rust-replacing-Go direction — never built (this
+> codebase is 100% Node/Bun `.mjs`). opencode itself has since moved to
+> TypeScript/Bun independently — any convergence with this project is
+> coincidental, not a result of following this doc. Kept for historical
+> reference only. For current opencode research, see the "Future directions"
+> section of `docs/roadmap-tui-and-features.md` (2026-09-03), which reflects
+> opencode's actual current docs.
+
 ## Scope
 
 This document analyzes Opencode with emphasis on tool orchestration, agent loop, architecture, and feedback cycle design patterns relevant to `upstage-cli`.

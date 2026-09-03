@@ -10,6 +10,13 @@ against upstream changelogs directly.
 
 ## 0. Urgent: our hand-rolled MCP client speaks a protocol version from launch day
 
+> **Resolved:** confirmed in the current code (`PROTOCOL_VERSION =
+> "2026-07-28"` in `src/tools/mcp/{stdio-client,http-client}.mjs` and
+> `src/mcp/upstage-server.mjs`) — matches the CHANGELOG's "MCP client/server
+> bumped to the 2026-07-28 protocol version" entry from the v3.0.0 release.
+> §1/§2 (Bun 1.4, plugin marketplace) not re-verified in this pass — worth
+> checking independently before treating as current.
+
 **MCP shipped a major spec rewrite on 2026-07-28**
 ([spec blog](https://blog.modelcontextprotocol.io/posts/2026-07-28/),
 [migration writeup](https://www.developersdigest.tech/blog/mcp-2026-07-28-breaking-changes))

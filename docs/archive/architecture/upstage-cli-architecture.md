@@ -1,5 +1,13 @@
 # upstage-cli Architecture Blueprint
 
+> **SUPERSEDED (archived 2026-09-03):** this blueprint's entire premise — a
+> Rust core ("Rust executes, TypeScript decides") with a Rust tool/index/
+> embedding layer and `ratatui` as the UI framework — was never built. The
+> real architecture is 100% Node/Bun `.mjs`, TUI is React+OpenTUI, and the
+> module layout doesn't match this doc's proposed `cli/`/`ui/`/`runtime/`
+> Rust-TS split. **See `CLAUDE.md` for the actual, current architecture.**
+> Kept here for historical reference only.
+
 ## System Overview
 
 `upstage-cli` is a hybrid AI coding agent platform designed for Gemini CLI-level UX, Opencode-grade tool ergonomics, and Upstage-native model routing.

@@ -1,5 +1,10 @@
 # upstage-cli Reasoning Format
 
+> **SUPERSEDED (archived 2026-09-03):** this parsed-text THOUGHT/PLAN/ACTION/
+> OBSERVATION envelope was never implemented. The real implementation uses
+> native OpenAI-style `tool_calls` throughout (`src/model/upstage-adapter.mjs`,
+> `src/agent/loop.mjs`). Kept for historical reference only.
+
 ## Objective
 
 Define a structured reasoning envelope that is inspectable, tool-compatible, and deterministic enough for replay and testing.

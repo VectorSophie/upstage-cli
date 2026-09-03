@@ -1,5 +1,10 @@
 # Codex CLI Architectural Analysis
 
+> **Archived (2026-09-03):** early comparative research that fed into a
+> "Rust-first core for reliability" direction — never built. The actual
+> codebase is 100% Node/Bun `.mjs`, no Rust component exists. Kept for
+> historical reference only; see `CLAUDE.md` for the real architecture.
+
 ## Scope
 
 This document analyzes OpenAI Codex CLI with focus on editing workflow, diff model, prompting/reasoning strategy, architecture, and reusable patterns for `upstage-cli`.

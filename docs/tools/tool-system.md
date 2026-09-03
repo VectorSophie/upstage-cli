@@ -1,5 +1,13 @@
 # upstage-cli Tool System Design
 
+> **Status note (2026-09-03):** the concepts here (modular registry, risk
+> gating, permission integration) are still directionally accurate, but
+> specifics have drifted — this doc describes ~17 tools with `category`/
+> `sandboxProfile` fields; the real registry has **36 tools** using
+> `actionClass`/`risk` fields and 6 permission modes. See `CLAUDE.md`'s Tool
+> registry section and `README.en.md`'s Built-in tools list for current
+> ground truth.
+
 ## Goals
 
 - Modular, typed, and secure tool architecture.

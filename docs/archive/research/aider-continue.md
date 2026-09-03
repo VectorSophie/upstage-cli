@@ -1,5 +1,10 @@
 # Aider and Continue.dev Comparative Analysis
 
+> **Archived (2026-09-03):** general reference research (repo-map ranking,
+> architect/editor model split) with no upstage-cli-specific claims to go
+> stale. Kept for historical/reference value; not superseded by anything
+> specific.
+
 ## Scope
 
 This supplement ensures full coverage of all requested reference projects.

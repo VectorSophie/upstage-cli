@@ -10,6 +10,13 @@ sources on the dates given, not verified against Upstage's docs directly.
 
 ## 0. Urgent, not optional: we're one full model behind our own vendor
 
+> **Resolved (2026-09-03):** the default model is now `solar-pro4`
+> everywhere (adapter, settings schema, CLI help, this repo's own project
+> config), driven by a new per-model capability table — see the
+> 2026-09-02 Model Modernization plan. §1 onward (standing subagents, async
+> orchestrator, cross-session memory, guardrails) remain unimplemented
+> proposals, still current as written.
+
 **Solar Pro 4 shipped August 10, 2026** — a week before this research pass —
 replacing Solar Pro 3 (Jan/Mar 2026), which itself replaced Solar Pro 2. This
 repo's default is still hardcoded to `solar-pro2` in three places

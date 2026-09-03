@@ -1,5 +1,13 @@
 # upstage-cli Implementation Roadmap (Node-first)
 
+> **SUPERSEDED (archived 2026-09-03):** references `src/agent/loop.js` and
+> `src/ui/tui.js` (wrong extension; both are `.mjs`, and `tui.js`/`tui.mjs`
+> was deleted entirely in the OpenTUI rewrite). The M1–M4 milestones (event
+> bus, policy engine, hooks, MCP, tree-sitter, retrieval) described as future
+> work here are actually done now — this doc was never updated to reflect
+> that. Kept for historical reference only; see `CLAUDE.md` for current
+> architecture and `docs/roadmap-tui-and-features.md` for the live roadmap.
+
 ## Decisions locked
 
 This roadmap reflects the current project decisions:

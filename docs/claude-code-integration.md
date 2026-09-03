@@ -1,5 +1,21 @@
 # Wiring upstage-cli into Claude Code (as a delegatable subagent)
 
+> **Strategic framing superseded (2026-09-03):** the direction below —
+> "Claude Code plans, Solar executes small scoped sub-tasks" — was the
+> project's strategy as of 2026-06-14, motivated by an eval against
+> `solar-pro2` that found weak multi-step planning. That direction has since
+> been explicitly superseded: **upstage-cli now targets a Claude-Code-quality
+> bar with Solar itself as the engine** (native-Solar-driven, not a
+> delegate), following the 2026-09-02 Model Modernization plan (default
+> model is now `solar-pro4`, with a per-model capability table). See memory
+> `project-mcp-subagent-direction` for the full history.
+>
+> The MCP mechanics documented below (the server, its two tools, the
+> config wiring) are still real, working code — nothing here was removed.
+> This remains a legitimate way to use upstage-cli *as a tool from Claude
+> Code* if that workflow is useful to you; it's just no longer this
+> project's primary strategic direction for itself.
+
 `upstage-cli` ships an **MCP server** (`src/mcp/upstage-server.mjs`) that exposes
 the Solar agent as two tools any MCP client — including Claude Code — can call:
 
@@ -7,10 +23,6 @@ the Solar agent as two tools any MCP client — including Claude Code — can ca
 |---|---|---|
 | `upstage_delegate` | Runs the full Solar agent on a narrow coding task in a `cwd`: read/write/edit files, run tests, self-correct. Returns a summary + `git` change list. | ✅ (confined to `cwd`) |
 | `upstage_ask` | Read-only question about a codebase — reads/searches files, never modifies. | ❌ |
-
-The idea: **Claude Code plans and orchestrates; Solar executes small, well-scoped
-sub-tasks.** That plays to Solar's strength (one well-specified change) and away
-from its weakness (long autonomous multi-step planning).
 
 ## Setup
 
@@ -34,7 +46,7 @@ claude mcp add upstage -- node C:/Workspace/upstage-cli/src/mcp/upstage-server.m
       "args": ["C:/Workspace/upstage-cli/src/mcp/upstage-server.mjs"],
       "env": {
         "UPSTAGE_API_KEY": "up_...",
-        "UPSTAGE_MODEL": "solar-pro2"
+        "UPSTAGE_MODEL": "solar-pro4"
       }
     }
   }

@@ -29,8 +29,9 @@ Bun/native-renderer dependency.
 
 ## Environment
 
-- `UPSTAGE_API_KEY` — required to call the Solar Pro2 model (without it, the mock planner runs)
+- `UPSTAGE_API_KEY` — required to call the model (without it, the mock planner runs)
 - `SECURITY_OVERRIDE=true` — bypass write-path restrictions (dev/testing only)
+- Default model is `solar-pro4`; a per-model capability table (`src/model/model-capabilities.mjs`) drives context limits, `parallel_tool_calls`/`reasoning_effort` support, and structured-output support per model (`solar-pro2`/`solar-pro3`/`solar-pro4`), with a conservative Pro2-level fallback for unrecognized ids. Override with `-m`/`UPSTAGE_MODEL`. See `src/config/env.mjs`'s `ENV_SCHEMA` for the full list of `UPSTAGE_*` env vars (~27, covering retries/timeouts/logging/compaction/etc., most with sane defaults).
 
 ## Architecture
 
@@ -40,8 +41,8 @@ The codebase is a terminal-based agentic coding assistant. A single CLI invocati
 
 ```
 src/cli/index.mjs           (arg parsing, session load, registry init)
-  → src/agent/loop.mjs      (async generator state machine: IDLE→PLANNING→ACTING→OBSERVING→DONE)
-      → src/model/upstage-adapter.mjs    (Solar Pro2 streaming API)
+  → src/agent/loop.mjs      (async generator state machine: IDLE→PLANNING→ACTING→OBSERVING/VERIFYING→DONE, plus AWAITING_USER/FAIL)
+      → src/model/upstage-adapter.mjs    (Solar API, streaming — model-aware via model-capabilities.mjs)
       → src/tools/registry.mjs           (tool lookup, policy check, execution)
       → src/core/events/bus.mjs          (audit-trail event bus)
   → src/ui/App.mjs (TUI) OR stdout (ask mode)
@@ -49,15 +50,15 @@ src/cli/index.mjs           (arg parsing, session load, registry init)
 
 ### Agent loop as async generator
 
-`loop.mjs` is an `async function*` that yields typed `AgentEvent` objects (`stream_token`, `tool_start`, `tool_result`, `thinking`, `patch_preview`, `token_usage`, …, 20 types total per `src/protocol/events.mjs`). Both the React/OpenTUI TUI and the plain CLI consume the same generator — the TUI re-renders on each yield, the CLI handler prints each event. This is the core architectural pattern: production of events is decoupled from consumption.
+`loop.mjs` is an `async function*` that yields typed `AgentEvent` objects (`stream_token`, `tool_start`, `tool_result`, `thinking`, `patch_preview`, `token_usage`, …, 20 types total per `src/protocol/events.mjs`). Both the OpenTUI TUI and the plain CLI consume the same generator — the TUI re-renders on each yield, the CLI handler prints each event. This is the core architectural pattern: production of events is decoupled from consumption.
 
 ### Tool registry
 
 `src/tools/registry.mjs` is the single hub for all tools. Three sources feed it:
 
-- **Builtin** (`src/tools/builtin/`) — 17 core tools across `read`, `write`, `exec`, `intel`, `github` action classes
+- **Builtin** (`src/tools/builtin/`) — 36 core tools spanning file I/O, search/navigation, tree-sitter intelligence, execution, web, GitHub, Korean-market skills support (`load_skill`, `semantic_search`, `read_document`, `check_groundedness`), and subagent dispatch
 - **Discovered** — external command outputs JSON tool specs at startup; tools are invoked via subprocess with base64-encoded payload
-- **MCP** — Model Context Protocol servers loaded from config
+- **MCP** — Model Context Protocol servers loaded from `.mcp.json`, both stdio and Streamable HTTP transports, client and server directions both implemented
 
 Every tool execution goes through: permission check → policy evaluation → `BeforeTool` hook → execution → `AfterTool` hook → event emission.
 
@@ -72,11 +73,15 @@ Permission mode is one of six: `default`, `bypassPermissions`, `acceptEdits`, `a
 
 ### Settings cascade
 
-Settings are merged in order (later overrides earlier):
+`src/config/settings.mjs`'s `loadSettings()` deep-merges, in order (later overrides earlier):
 
-1. `~/.upstage-cli/settings.json` (global)
-2. `./.upstage.json` or `./.claude/settings.json` (project)
-3. CLI flags
+1. `~/.upstage/settings.json` (global)
+2. `./.upstage/settings.json` (project)
+3. `./.upstage/settings.local.json` (project, local-only — gitignored by convention)
+4. `applyEnvOverrides()` — `UPSTAGE_*` env vars (see `src/config/env.mjs`)
+5. CLI flags
+
+Session storage uses a separate root (`~/.upstage-cli/sessions/`, note the different directory name) — don't confuse the two.
 
 ### Session persistence
 
@@ -100,7 +105,8 @@ Any `UPSTAGE.md` files found by walking up from `cwd` are merged into the system
 |---|---|
 | `src/cli/index.mjs` | Entry point, mode routing |
 | `src/agent/loop.mjs` | Agent state machine (async generator) |
-| `src/model/upstage-adapter.mjs` | Solar Pro2 API, streaming, retry |
+| `src/model/upstage-adapter.mjs` | Solar API adapter — streaming, retry, capability-gated request fields |
+| `src/model/model-capabilities.mjs` | Per-model capability table (context limit, reasoning/parallel-tool-call/response-format support) |
 | `src/tools/registry.mjs` | Tool hub — registration, policy, lifecycle |
 | `src/core/policy/engine.mjs` | Risk-based policy evaluation |
 | `src/core/events/bus.mjs` | Runtime event bus |

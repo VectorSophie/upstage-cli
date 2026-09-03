@@ -1,5 +1,11 @@
 # Gemini CLI Architectural Analysis
 
+> **Archived (2026-09-03):** early comparative research that fed into a
+> "Rust executes, TypeScript decides" architecture direction — never built.
+> The actual codebase is 100% Node/Bun `.mjs`, no Rust component exists.
+> Kept for historical reference only; see `CLAUDE.md` for the real
+> architecture.
+
 ## Scope
 
 This document analyzes Gemini CLI as an open-source terminal coding agent, with focus on architecture, UX, reasoning loop, tool system, editing model, and context strategy. It emphasizes reusable patterns for `upstage-cli`.

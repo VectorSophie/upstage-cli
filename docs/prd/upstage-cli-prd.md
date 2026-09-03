@@ -1,5 +1,11 @@
 # upstage-cli Product Requirements Document
 
+> **Status note (2026-09-03):** the vision/non-goals sections still broadly
+> hold, but this doc references features that were never built — an
+> `upstage login` command and a Rust performance core — neither exists.
+> Real auth is `UPSTAGE_API_KEY` only; the implementation is 100% Node/Bun.
+> See `CLAUDE.md` for current architecture.
+
 ## Problem Statement
 
 Developers increasingly rely on AI coding agents, but existing terminal tools force trade-offs across model choice, performance, safety, and repository-scale reliability. Upstage users need a first-class coding CLI that matches leading UX while being deeply optimized for Upstage models and enterprise operating constraints.

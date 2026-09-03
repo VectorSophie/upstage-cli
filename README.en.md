@@ -1,6 +1,6 @@
 # ✦✧ upstage-cli
 
-An agentic coding assistant powered by **Upstage Solar Pro2** — runs entirely in your terminal with a full TUI, 30 built-in tools, MCP server support, and an evaluation harness for benchmarking agents on real coding tasks.
+An agentic coding assistant powered by **Upstage Solar Pro4** — runs entirely in your terminal with a full TUI (OpenTUI, native-rendered on Bun), 36 built-in tools, MCP client/server support, and an evaluation harness for benchmarking agents on real coding tasks. A per-model capability table also supports `solar-pro3`/`solar-pro2`.
 
 ## Installation
 
@@ -45,28 +45,44 @@ upstage ask "summarize package.json"
 
 ## CLI options
 
+Run `upstage --help` for the authoritative list. As of this writing:
+
 ```
-upstage [command] [options] [prompt]
+Usage: upstage [command] [options] [prompt]
 
 Commands:
-  chat              Interactive TUI (default)
+  chat              Interactive chat mode (default)
   ask               One-shot prompt mode
+  tui               Fullscreen terminal UI
 
 Options:
-  -p, --prompt      Run prompt and exit
-  -m, --model       Model to use (default: solar-pro2; also accepts solar-pro3
-                    via -m solar-pro3 or UPSTAGE_MODEL=solar-pro3)
-  --session         Resume session by ID
-  --new-session     Start a fresh session
-  --reset-session   Reset and start fresh
-  --permission-mode default|bypassPermissions|acceptEdits|auto|dontAsk|plan
-  --confirm-patches Require confirmation before applying patches
-  --lang            Response language: ko|en
-  --max-turns       Max agent turns per prompt
-  --allowedTools    Comma-separated allow-list
-  --disallowedTools Comma-separated deny-list
-  -v, --verbose     Verbose output
-  -d, --debug       Debug mode
+  -h, --help                Show this help
+  -p, --prompt <text>       Run prompt and exit
+  -m, --model <model>       Model to use (default: solar-pro4)
+  --no-stream               Disable streaming
+  --session <id>            Resume session by ID
+  --new-session             Start a new session
+  --reset-session           Reset and create new session
+  --confirm-patches         Require confirmation for patches
+  --bridge-json             Output JSON bridge format
+  --permission-mode <mode>  Permission mode
+  --system-prompt <text>    Override system prompt
+  --cwd <dir>               Run as if launched from this directory (changes
+                            process cwd before anything else loads)
+  --add-dir <dir>           Additional directory for UPSTAGE.md
+  --max-turns <n>           Maximum conversation turns
+  --max-time <sec>          Wall-time budget in seconds (default: 180)
+  --allowedTools <tools>    Comma-separated allowed tools
+  --disallowedTools <tools> Comma-separated denied tools
+  --lang <code>             Language (ko/en)
+  -v, --verbose             Verbose output
+  -d, --debug               Debug mode
+
+Examples:
+  upstage                        Start interactive REPL
+  upstage -p "Fix bug in app"    Run prompt and exit
+  upstage ask "Read package.json"
+  upstage --lang en -p "hello"   English mode
 ```
 
 ## TUI layout
@@ -78,7 +94,7 @@ Options:
 │  appear here in real time      ││ Active plan, repo map, tool log │
 └────────────────────────────────┘└─────────────────────────────────┘
 ┌─ Status bar ───────────────────────────────────────────────────────┐
-│  ✦✧  solar-pro2 · session-id · Tokens: N | Cost: $N | Lang: EN    │
+│  ✦✧  solar-pro4 · session-id · Tokens: N | Cost: $N | Lang: EN    │
 └────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -86,35 +102,37 @@ Options:
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Cycle focus: input → chat → sidebar |
-| `←` / `→` | Switch sidebar tabs (PLAN / CONTEXT / TOOLS) |
+| `Tab` | Accept top autocomplete suggestion, or cycle focus (input → chat → sidebar) |
+| `Shift+Tab` | Cycle permission mode |
 | `Ctrl+X` | Open current input in `$EDITOR` |
-| `Esc` | Navigation mode — scroll with `j`/`k` |
-| `Esc` × 2 | Rewind — undo last agent turn |
-| `i` | Back to insert mode |
+| `Ctrl+E` | Cycle reasoning effort (low/auto/high) |
+| `Ctrl+S` | Toggle session browser |
+| `Ctrl+T` | Toggle repo map |
+| `Ctrl+C` | Copy current selection |
+| `Ctrl+R` | Clear screen |
+| `Esc` | Clear selection, or enter navigation mode |
+| `Esc` × 2 (within 500ms) | Rewind — undo last agent turn |
+| `↑` / `↓` *(input focused)* | Recall previous prompts |
+| `j` / `k` *(chat focused)* | Scroll down / up |
+| `g` / `G` *(chat focused)* | Scroll to top / follow latest (sticky scroll) |
+| `i` *(chat focused)* | Back to input focus |
+| `p` / `c` / `t` *(sidebar focused)* | Switch to Plan / Context / Tools tab |
 
 ## Slash commands
 
-| Command | Description |
-|---------|-------------|
-| `/help` | List all commands |
-| `/tools` | Show all 30 registered tools |
-| `/status` | Session state |
-| `/cost` | Token usage + estimated cost |
-| `/repo-map` | Trigger repo map |
-| `/mode` | Current permission mode |
-| `/lang en\|ko` | Switch response language |
-| `/agents` | List custom agents |
-| `/skills` | List skills |
-| `/mcp` | MCP server status |
-| `/hooks` | Configured hooks |
-| `/forget N` | Drop last N messages |
-| `/compact` | Manually compact context |
-| `/new-session` | Start fresh |
-| `/clear` | Clear display |
-| `/quit` | Exit |
+36 commands total. Run `/help` in-app for the current list; grouped here by purpose:
 
-## Built-in tools (30)
+| Group | Commands |
+|-------|----------|
+| Session | `/new`, `/sessions`, `/branch [list]` (fork session), `/undo`, `/rewind` |
+| Context | `/compact`, `/forget`, `/memory`, `/tree` (repo map), `/diff` |
+| Model & cost | `/model`, `/fast`, `/think`, `/tokens`, `/cost` |
+| Info & config | `/status`, `/config`, `/permissions`, `/doctor`, `/tools`, `/mcp`, `/hooks`, `/agents`, `/skills` |
+| Workflow | `/plan`, `/spec`, `/recipe`, `/init`, `/watch`, `/unwatch` |
+| UI | `/vim`, `/lang <ko\|en>`, `/clear`, `/help` |
+| Exit | `/exit`, `/quit` |
+
+## Built-in tools (36)
 
 ### File I/O
 | Tool | Description |
@@ -133,6 +151,7 @@ Options:
 | `glob` | Find files by pattern — `**/*.ts`, `src/**/*.mjs` |
 | `grep` | Regex search (ripgrep if installed, JS fallback) |
 | `search_code` | Keyword search across the repo |
+| `semantic_search` | Rank text candidates by relevance using Solar's Korean-optimized embeddings |
 | `list_files` | List a directory |
 | `repo_map` | Concise repo overview with key symbols |
 
@@ -167,10 +186,22 @@ Options:
 | `gh_pr_create` | Create a pull request |
 | `gh_pr_review` | Review a pull request |
 
+### Document AI & verification
+| Tool | Description |
+|------|-------------|
+| `read_document` | OCR + layout analysis for scanned/photographed PDFs and images (Upstage Document AI) |
+| `check_groundedness` | Verify a claim is actually supported by its source context (Upstage Groundedness Check API) |
+
+### Skills & tasks
+| Tool | Description |
+|------|-------------|
+| `load_skill` | Load a SKILL.md-format skill's full prompt on demand |
+| `todo_read` / `todo_write` | Read/write the in-session task checklist |
+
 ### Meta
 | Tool | Description |
 |------|-------------|
-| `run_subagent` | Spawn a scoped subagent |
+| `run_subagent` | Spawn a scoped subagent, optionally on an isolated git worktree |
 | `echo` | Echo text |
 
 ## Permission modes
@@ -206,9 +237,30 @@ The `discover` command must print a JSON array of tool specs:
 [{ "name": "my_tool", "description": "...", "risk": "low", "inputSchema": { "type": "object", "properties": {}, "additionalProperties": false } }]
 ```
 
+### Real MCP servers via `.mcp.json` (Claude Code-compatible)
+
+Drop a `.mcp.json` in the project root to connect real MCP servers automatically — both **stdio** and **Streamable HTTP** transports, standard JSON-RPC 2.0 `tools/list`/`tools/call`, tools exposed as `<server-name>__<tool-name>`:
+
+```json
+{
+  "mcpServers": {
+    "filesystem": {
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-filesystem", "."]
+    },
+    "remote-api": {
+      "url": "https://your-host.example.com/mcp",
+      "headers": { "Authorization": "Bearer ..." }
+    }
+  }
+}
+```
+
+`command` → stdio transport, `url` → Streamable HTTP transport (session + SSE handling included). Merges with `settings.json`'s `mcpServers`; a server that fails to connect is skipped with a warning, not a hard failure.
+
 ## Project context files
 
-Place an `UPSTAGE.md` in any directory — it is automatically merged into the system prompt when the agent runs there or in a subdirectory (analogous to Claude's `CLAUDE.md`).
+Place an `UPSTAGE.md` in any directory — it is automatically merged into the system prompt when the agent runs there or in a subdirectory (analogous to Claude's `CLAUDE.md`). Falls back to a directory's `AGENTS.md` (the cross-tool convention read by 30+ agents) when there's no `UPSTAGE.md`.
 
 ## Security
 

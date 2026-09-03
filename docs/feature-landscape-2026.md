@@ -1,5 +1,14 @@
 # Feature landscape 2026: what strengthens our identity
 
+> **Status note (2026-09-03):** written when `reasoning_effort` was "simply
+> never sent" (per this doc's own framing) — that's since been wired in
+> fully, capability-gated per model, by the 2026-09-02 Model Modernization
+> plan. Also written when the default model was `solar-pro2`; default is now
+> `solar-pro4`. Most of this doc's specific recommendations (Groundedness
+> Check, Document AI, AGENTS.md interop, Korean PII guardrail) shipped —
+> see `new-concepts-aug2026-pt2.md`'s opening line confirming Tier 1–3 items
+> are "all implemented."
+
 Research pass across the wider coding-agent field — Pi, Goose, Aider,
 Cline/Roo Code, Amp, OpenHands, Devin/Windsurf, plus the guardrails and
 Korean-compliance landscape — done to find features worth merging in, with

@@ -2,7 +2,7 @@
 
 > **English docs:** [README.en.md](./README.en.md)
 
-upstage-cli는 **Upstage Solar Pro2** 기반 에이전트형 터미널 UI(TUI)입니다. 코드 분석, 페어 프로그래밍, 자동화 작업을 터미널 안에서 일관된 흐름으로 지원합니다. 도구 30개, MCP 서버 연동, 평가 하네스(harness) 포함.
+upstage-cli는 **Upstage Solar Pro4** 기반 에이전트형 터미널 UI(TUI)입니다. Bun 위에서 네이티브로 렌더링되는 OpenTUI, 내장 도구 36개, MCP 클라이언트/서버 연동, 평가 하네스(harness)를 갖췄습니다. 모델별 기능 테이블을 통해 `solar-pro3`/`solar-pro2`도 지원합니다.
 
 ## 설치
 
@@ -25,10 +25,11 @@ PATH에 **[Bun](https://bun.sh) 1.3 이상**이 필요합니다 (TUI가 Bun 전�
 ## 빠른 시작
 
 ```bash
-export UPSTAGE_API_KEY=your_key
+export UPSTAGE_API_KEY=your_key   # console.upstage.ai 에서 발급
 
 upstage                            # 대화형 TUI 실행
 upstage -p "실패하는 테스트 고쳐줘"  # 단발 프롬프트 후 종료
+upstage ask "package.json 요약해줘"
 ```
 
 ## 기존 설치
@@ -44,27 +45,142 @@ bun start
 
 upstage-cli 실행에 중요한 환경 변수는 다음과 같습니다.
 
-*   `UPSTAGE_API_KEY`: Solar Pro2 모델 연동에 필요한 Upstage API 키
-*   `EDITOR`: 외부 편집기 실행 명령 (예: `vim`, `nano`, `code --wait`), 기본값 `vim`
-*   `SECURITY_OVERRIDE`: `true`로 설정하면 경로 기반 쓰기 보호를 해제 (주의 필요)
-*   `UPSTAGE_VERIFY_STAGES`: 검증 단계 순서를 쉼표로 지정 (기본값: `run_linter,run_typecheck,run_tests`)
-*   `UPSTAGE_DISCOVERY_COMMAND`: discovered tool 스펙(JSON 배열)을 출력하는 명령
-*   `UPSTAGE_DISCOVERY_INVOKE_COMMAND`: discovered tool 실행 명령 (미설정 시 `UPSTAGE_DISCOVERY_COMMAND` 재사용)
-*   `UPSTAGE_MCP_SERVERS_MODULE`: MCP 서버 배열을 export하는 모듈 경로(절대/상대 경로 모두 지원)
+| 변수 | 필수 여부 | 설명 |
+|---|---|---|
+| `UPSTAGE_API_KEY` | 필수 | Upstage API 키 — [console.upstage.ai](https://console.upstage.ai)에서 발급 |
+| `TAVILY_API_KEY` | 선택 | `web_search` 도구 활성화 — [app.tavily.com](https://app.tavily.com)에서 무료 발급 |
+| `EDITOR` | 선택 | `Ctrl+X`로 여는 외부 편집기 (기본값 `vim`) |
+| `SECURITY_OVERRIDE` | 선택 | `true`로 설정하면 경로 기반 쓰기 보호를 해제 (개발용, 주의 필요) |
+| `UPSTAGE_VERIFY_STAGES` | 선택 | 검증 단계 순서를 쉼표로 지정 (예: `run_linter,run_tests`) |
+| `UPSTAGE_DISCOVERY_COMMAND` | 선택 | discovered tool 스펙(JSON 배열)을 출력하는 명령 |
+| `UPSTAGE_DISCOVERY_INVOKE_COMMAND` | 선택 | discovered tool 실행 명령 (미설정 시 `UPSTAGE_DISCOVERY_COMMAND` 재사용) |
+| `UPSTAGE_MCP_SERVERS_MODULE` | 선택 | MCP 서버 배열을 export하는 모듈 경로 |
 
-루트 디렉터리에 `.env` 파일을 두고 관리할 수 있습니다.
+루트 디렉터리에 `.env` 파일을 두고 관리할 수 있습니다. 전체 `UPSTAGE_*` 환경 변수 목록(재시도/타임아웃/로깅/압축 등, 약 27개)은 `src/config/env.mjs`의 `ENV_SCHEMA`를 참고하세요.
 
-### 검증 단계 오버라이드
+## CLI 옵션
 
-패치 적용 후 실행되는 검증 단계를 제어하려면 아래처럼 설정합니다.
+`upstage --help`가 항상 최신 기준입니다. 현재 기준 전체 옵션:
 
-```bash
-UPSTAGE_VERIFY_STAGES=run_linter,run_tests
+```
+Usage: upstage [command] [options] [prompt]
+
+Commands:
+  chat              대화형 채팅 모드 (기본값)
+  ask               단발 프롬프트 모드
+  tui               풀스크린 터미널 UI
+
+Options:
+  -h, --help                도움말 표시
+  -p, --prompt <text>       프롬프트 실행 후 종료
+  -m, --model <model>       사용할 모델 (기본값 solar-pro4)
+  --no-stream               스트리밍 비활성화
+  --session <id>            세션 ID로 재개
+  --new-session             새 세션 시작
+  --reset-session           세션 초기화 후 재생성
+  --confirm-patches         패치 적용 전 확인 요구
+  --bridge-json             JSON 브리지 형식으로 출력
+  --permission-mode <mode>  권한 모드
+  --system-prompt <text>    시스템 프롬프트 재정의
+  --cwd <dir>                이 디렉터리에서 실행한 것처럼 동작 (다른 무엇보다
+                            먼저 process cwd를 변경)
+  --add-dir <dir>           UPSTAGE.md 탐색 추가 디렉터리
+  --max-turns <n>           최대 대화 턴 수
+  --max-time <sec>          최대 실행 시간(초) (기본값 180)
+  --allowedTools <tools>    허용 도구 목록(쉼표 구분)
+  --disallowedTools <tools> 차단 도구 목록(쉼표 구분)
+  --lang <code>             언어 (ko/en)
+  -v, --verbose             상세 출력
+  -d, --debug               디버그 모드
 ```
 
-허용 단계: `run_linter`, `run_typecheck`, `run_tests`
+## 대시보드 구성
 
-### 런타임 확장 로딩 (Discovery/MCP)
+upstage-cli 인터페이스는 두 영역으로 구성됩니다.
+
+1.  **채팅(왼쪽 패널)**: 요청 입력, 에이전트 응답 확인, 패치/디프 미리보기
+2.  **사이드바(오른쪽 패널)**: 작업 맥락과 상태 정보
+    *   **Plan**: 현재 작업을 원자적 단계로 분해한 계획
+    *   **Context**: 저장소 맵과 현재 맥락에 포함된 파일
+    *   **Tools**: 최근 도구 실행 및 관찰 결과
+
+## 키보드 단축키
+
+| 단축키 | 동작 |
+| :--- | :--- |
+| `Tab` | 자동완성 상위 항목 적용, 또는 포커스 순환 (입력 → 채팅 → 사이드바) |
+| `Shift+Tab` | 권한 모드 순환 |
+| `Ctrl+X` | 현재 입력을 외부 `$EDITOR`에서 열기 |
+| `Ctrl+E` | reasoning effort 순환 (low/auto/high) |
+| `Ctrl+S` | 세션 브라우저 토글 |
+| `Ctrl+T` | 저장소 맵 토글 |
+| `Ctrl+C` | 현재 선택 영역 복사 |
+| `Ctrl+R` | 화면 지우기 |
+| `Esc` | 선택 해제, 또는 내비게이션 모드 진입 |
+| `Esc` 연속 2회 (500ms 이내) | 되돌리기 — 직전 에이전트 턴 취소 |
+| `↑` / `↓` *(입력 포커스)* | 이전 프롬프트 불러오기 |
+| `j` / `k` *(채팅 포커스)* | 아래로/위로 스크롤 |
+| `g` / `G` *(채팅 포커스)* | 맨 위로 스크롤 / 최신 내용 따라가기 |
+| `i` *(채팅 포커스)* | 입력 포커스로 복귀 |
+| `p` / `c` / `t` *(사이드바 포커스)* | Plan / Context / Tools 탭 전환 |
+
+## Plan 모드
+
+복잡한 요청은 실행 전에 Plan 모드를 거칩니다. 에이전트가 문제를 단계별로 분해하고, 사이드바의 **Plan** 탭에서 진행 상황을 추적할 수 있습니다. 이 흐름은 작업의 투명성과 예측 가능성을 높입니다.
+
+## 보안 정책
+
+upstage-cli는 경로 범위 기반 쓰기 보호 정책을 적용합니다. 기본적으로 에이전트는 현재 작업 디렉터리(`process.cwd()`) 내부만 수정할 수 있습니다.
+
+*   **제한된 쓰기**: 신뢰 경로 밖 파일 수정은 차단되며, `SECURITY_OVERRIDE=true`일 때만 허용
+*   **확인 절차**: 셸 실행, 파일 쓰기 같은 고위험 작업은 상호작용 확인 절차를 통해 승인
+
+## 슬래시 명령어
+
+총 36개 명령어입니다. 앱 안에서 `/help`를 입력하면 현재 목록을 볼 수 있습니다. 용도별로 묶으면:
+
+| 그룹 | 명령어 |
+|-------|----------|
+| 세션 | `/new`, `/sessions`, `/branch [list]` (세션 분기), `/undo`, `/rewind` |
+| 컨텍스트 | `/compact`, `/forget`, `/memory`, `/tree` (저장소 맵), `/diff` |
+| 모델 & 비용 | `/model`, `/fast`, `/think`, `/tokens`, `/cost` |
+| 정보 & 설정 | `/status`, `/config`, `/permissions`, `/doctor`, `/tools`, `/mcp`, `/hooks`, `/agents`, `/skills` |
+| 워크플로우 | `/plan`, `/spec`, `/recipe`, `/init`, `/watch`, `/unwatch` |
+| UI | `/vim`, `/lang <ko\|en>`, `/clear`, `/help` |
+| 종료 | `/exit`, `/quit` |
+
+## 내장 도구 (36개)
+
+**파일 입출력**: `read_file`, `write_file`, `edit_file`, `multi_edit`, `delete_file`, `rename_file`, `create_patch`/`apply_patch`
+
+**검색 & 탐색**: `glob`, `grep`, `search_code`, `semantic_search` (Solar의 한국어 최적화 임베딩 기반 관련도 랭킹), `list_files`, `repo_map`
+
+**인텔리전스 (tree-sitter)**: `find_symbol`, `find_references`, `list_modules`, `index_health`
+
+**실행**: `run_shell`, `run_tests`, `run_linter`, `run_typecheck`, `run_verification`
+
+**웹**: `web_fetch`, `web_search` (Tavily 연동, `TAVILY_API_KEY` 필요)
+
+**GitHub**: `gh_issue_read`, `gh_issue_comment`, `gh_pr_create`, `gh_pr_review`
+
+**Document AI & 검증**: `read_document` (스캔/촬영된 PDF·이미지 OCR + 레이아웃 분석, Upstage Document AI), `check_groundedness` (주장이 실제 근거 컨텍스트에 부합하는지 검증, Upstage Groundedness Check API)
+
+**스킬 & 작업 관리**: `load_skill`, `todo_read`/`todo_write`
+
+**메타**: `run_subagent` (범위가 제한된 서브에이전트 실행, 격리된 git worktree 옵션 지원), `echo`
+
+## 권한 모드
+
+| 모드 | 동작 |
+|------|-----------|
+| `default` | 고위험 작업 시 상호작용 확인 |
+| `acceptEdits` | 파일 수정은 자동 승인, 셸 실행은 확인 |
+| `auto` | 작업 디렉터리 내에서 완전 자율 실행 |
+| `bypassPermissions` | 확인 없음 (주의해서 사용) |
+| `dontAsk` | 확인하지 않음; 사전 승인되지 않은 작업은 거부 |
+| `plan` | 읽기 전용 — 모든 쓰기 작업 차단 |
+
+## 런타임 확장 로딩 (Discovery/MCP)
 
 Discovery 도구 등록/실행 예시:
 
@@ -113,7 +229,7 @@ export default [
 ];
 ```
 
-#### `.mcp.json` 으로 실제 MCP 서버 연동 (Claude Code 호환)
+### `.mcp.json` 으로 실제 MCP 서버 연동 (Claude Code 호환)
 
 프로젝트 루트에 `.mcp.json` 을 두면 실제 MCP 서버를 자동으로 연결합니다.
 **stdio** 와 **Streamable HTTP** 두 전송을 모두 지원하며, 표준 JSON-RPC 2.0 로
@@ -137,71 +253,10 @@ export default [
 
 - `command` → stdio 전송, `url` → Streamable HTTP 전송(세션·SSE 응답 처리 포함).
 - `settings.json` 의 `mcpServers` 와 병합되며, 연결 실패한 서버는 경고 후 건너뜁니다.
-- upstage-cli 를 **반대로** Claude Code 의 서브에이전트로 쓰려면
-  [`docs/claude-code-integration.md`](./docs/claude-code-integration.md) 참고.
 
-## CLI 사용 예시
+## 프로젝트 컨텍스트 파일
 
-```bash
-upstage
-upstage chat
-upstage ask -p "저장소 구조를 분석해줘"
-upstage ask -p "이슈 #123을 고쳐줘" --confirm-patches
-```
-
-지원 옵션:
-
-*   `-h`, `--help`
-*   `-p`, `--prompt <text>`
-*   `--no-stream`
-*   `--model <model-name>` (기본값 `solar-pro2`; `solar-pro3`도 사용 가능 — `--model solar-pro3` 또는 `UPSTAGE_MODEL=solar-pro3`)
-*   `--session <session-id>`
-*   `--new-session`
-*   `--reset-session`
-*   `--confirm-patches`
-*   `--bridge-json`
-
-## 대시보드 구성
-
-upstage-cli 인터페이스는 두 영역으로 구성됩니다.
-
-1.  **채팅(왼쪽 패널)**: 요청 입력, 에이전트 응답 확인, 패치/디프 미리보기
-2.  **사이드바(오른쪽 패널)**: 작업 맥락과 상태 정보
-    *   **Plan**: 현재 작업을 원자적 단계로 분해한 계획
-    *   **Context**: 저장소 맵과 현재 맥락에 포함된 파일
-    *   **Tools**: 최근 도구 실행 및 관찰 결과
-
-## 키보드 단축키
-
-| 단축키 | 동작 |
-| :--- | :--- |
-| `Tab` | Input, Chat, Sidebar 간 포커스 순환 |
-| `Ctrl+S` | 세션 브라우저 토글 |
-| `Ctrl+T` | 저장소 맵 토글 |
-| `Ctrl+X` | 현재 입력을 외부 `EDITOR`에서 열기 |
-| `Esc` | 내비게이션 모드 진입 (`j`/`k` 스크롤) |
-| `Esc` (2회) | 세션 되돌리기 (직전 턴 취소) |
-| `i` | 내비게이션 모드에서 입력 포커스 이동 |
-
-## Plan 모드
-
-복잡한 요청은 실행 전에 Plan 모드를 거칩니다. 에이전트가 문제를 단계별로 분해하고, 사이드바의 **Plan** 탭에서 진행 상황을 추적할 수 있습니다. 이 흐름은 작업의 투명성과 예측 가능성을 높입니다.
-
-## 보안 정책
-
-upstage-cli는 경로 범위 기반 쓰기 보호 정책을 적용합니다. 기본적으로 에이전트는 현재 작업 디렉터리(`process.cwd()`) 내부만 수정할 수 있습니다.
-
-*   **제한된 쓰기**: 신뢰 경로 밖 파일 수정은 차단되며, `SECURITY_OVERRIDE=true`일 때만 허용
-*   **확인 절차**: 셸 실행, 파일 쓰기 같은 고위험 작업은 상호작용 확인 절차를 통해 승인
-
-## 슬래시 명령어
-
-*   `/new`: 새 세션 시작
-*   `/sessions`: 세션 브라우저 열기
-*   `/tree`: 저장소 맵 열기
-*   `/help`: 인앱 도움말 표시
-*   `/lang <ko|en>`: 실행 중 UI 언어 전환
-*   `/exit`: 애플리케이션 종료
+어느 디렉터리에든 `UPSTAGE.md`를 두면 해당 디렉터리(또는 하위 디렉터리)에서 에이전트가 실행될 때 시스템 프롬프트에 자동으로 병합됩니다 (Claude의 `CLAUDE.md`와 유사). `UPSTAGE.md`가 없는 디렉터리에서는 여러 에이전트 도구가 함께 쓰는 `AGENTS.md` 규약으로 대체 탐색합니다.
 
 ## 실제 기능 테스트 방법
 
@@ -218,7 +273,7 @@ npm test
 
 ```bash
 upstage ask -p "현재 디렉터리 파일 목록을 간단히 정리해줘"
-upstage ask -p "src/agent/loop.js 구조를 설명해줘" --no-stream
+upstage ask -p "src/agent/loop.mjs 구조를 설명해줘" --no-stream
 ```
 
 확인 포인트:
@@ -280,3 +335,7 @@ UPSTAGE_VERIFY_STAGES=run_linter,run_tests upstage ask -p "아주 작은 코드 
 
 * 확장 도구가 등록되어 노출되는지
 * 호출 시 JSON 결과가 정상 관찰되는지
+
+## 라이선스
+
+MIT © VectorSophie

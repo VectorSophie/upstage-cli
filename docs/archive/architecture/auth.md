@@ -1,5 +1,10 @@
 # upstage-cli Authentication Design
 
+> **SUPERSEDED (archived 2026-09-03):** none of this design was built. Real
+> auth is `UPSTAGE_API_KEY` env var only — no `upstage login` command, no
+> `config.toml`, no keychain integration exists anywhere in `src/`. Kept for
+> historical reference only.
+
 ## Goals
 
 - Simple API-key-first onboarding.
