@@ -196,6 +196,58 @@ discipline (Node's built-in test runner, `.test.mjs` files).
 
 ---
 
+## E. Future directions (long-horizon, no current timeline)
+
+Speculative/exploratory territory researched 2026-09-03 — not scheduled work, no task numbers. Each item notes what would actually trigger picking it up. Not written to a design spec since none of this is being implemented now.
+
+### Agent Client Protocol (ACP)
+- Real, maturing standard (Zed Industries, Aug 2025): JSON-RPC over stdio, agent runs as the ACP *server*, the editor is the ACP *client* hosting it. 25+ agents (Claude Code, Gemini CLI, opencode) and 12+ editor hosts (Zed, JetBrains, VS Code, Emacs, Neovim, Obsidian) as of 2026. Complementary to MCP, not competing — MCP is agent→tools, ACP is agent→editor; a single agent process typically speaks both at once.
+- **Relevance here:** the existing `upstage-bridge` NDJSON-over-stdio protocol (`src/bridge/`) is a bespoke one-off nothing consumes yet — no VS Code extension was ever built against it. Implementing ACP instead would make upstage-cli usable from every ACP editor for roughly the effort of finishing one bespoke extension.
+- **Trigger:** IDE/editor integration becomes a priority again.
+
+### Observability / logging export
+- Claude Code's OpenTelemetry approach is the closest thing to an emerging standard: root span per agent turn, child spans per tool call/model call/hook, metadata-only by default (prompt/tool content opt-in), point at any OTLP backend (Langfuse, SigNoz, Datadog, etc.).
+- **Relevance here:** `RuntimeEventBus`'s existing events (`AGENT_LIFECYCLE`, `TOOL_LIFECYCLE`, `TOKEN_USAGE`, `HOOK_LIFECYCLE`, all already start/end-paired with structured payloads) are already shaped like OTel spans — an exporter would be a translation layer, not a rewrite.
+- Cheap and independently valuable regardless: a `claude export`-style session→markdown command, since sessions already hold the full transcript.
+- **Trigger:** an actual need to debug/replay a session outside the TUI, or multi-machine/team usage makes centralized logging useful.
+
+### Remote server / session portability ("roaming agents")
+- Two live patterns worth studying together, since they answer the same underlying question:
+  - **opencode**: `opencode serve` — a real local HTTP+SSE server (Hono, OpenAPI REST), multiple clients (its own TUI, a web UI, IDE plugins) attach to one running instance. `opencode web` runs a browser-UI alternative to the TUI, bindable to `0.0.0.0` for LAN access (password-protected); `opencode attach` lets a terminal TUI and the web UI share one live session simultaneously.
+  - **Claude Code Remote Control**: *not* a server — the session keeps running entirely on the user's own machine; only chat messages/results cross an encrypted relay to a phone/browser. Filesystem, MCP servers, and env vars never leave the machine. This is also the "roaming agent" (mobile session portability) answer — Claude Code Mobile, Codex Mobile (via the ChatGPT app), and third-party tools like AgentsRoom all converge on this same relay-not-server shape.
+- **Security context that should weigh heavily on this decision:** real 2026 CVEs specifically target coding-agent execution surfaces — Claude Code CVE-2026-48124 (sandbox escape via a workspace hook file), Cursor CVE-2026-26268 (unauthenticated RCE from opening a malicious repo), CVE-2026-35603 (privilege escalation via a shared config folder). None are about remote exposure specifically, but opening any network listener on top of an agent that executes shell commands meaningfully raises the stakes.
+- **If ever built:** the Claude Code Remote Control shape (relay messages only, nothing executes remotely, filesystem never leaves the machine) is the safer pattern — closer to opencode's `attach` model than its full `serve` model.
+- **Trigger:** explicit user demand for cross-device session access. Requires a dedicated security review pass before any implementation plan, not just a design spec.
+
+### `/init` upgrade
+- Current `/init` (`src/ui/commands.mjs`) only creates empty `.upstage/{checkpoints,agents,skills}` directories — no codebase analysis. Claude Code's `/init` reads the repo and drafts a CLAUDE.md summarizing architecture/conventions.
+- **Relevance here:** this project already has the pieces (`repo_map`, `find_symbol`, the intelligence indexer) to do this properly. Small, self-contained, high-value whenever picked up — the cheapest item on this list.
+- Session **resume** is not a gap by comparison — `--session`/`--new-session`/`--reset-session` flags, session JSON persistence, and `SessionBrowser.mjs` already cover that territory.
+
+### Cross-session persistent memory (Antigravity's "Knowledge Items")
+- Antigravity's docs describe a three-pillar system: Skills (capability), Knowledge Items (persistent memory), Artifacts (work documentation). A dedicated "Knowledge Subagent" reviews each conversation afterward and distills curated facts into KIs — structured, indefinitely-persistent, distinct from session-bound conversation history.
+- **Relevance here:** a more structured version of what this Claude Code session's own `auto memory` system already does manually (typed memory files + an index). Worth studying Antigravity's KI structure if upstage-cli ever wants an agent-facing equivalent — e.g. a `/remember`-style command distilling facts from a completed task into `.upstage/memory/`.
+- **Trigger:** cross-session continuity for the agent itself (not just this session working on the repo) becomes a priority.
+
+### Other Antigravity ideas worth a look later
+- **Scheduled Tasks** — minute-granularity time-triggered agent runs (Antigravity uses Gemini 3.8 Flash specifically for these, presumably a cheaper/faster tier for routine triggered work).
+- **JSON Hooks at execution-lifecycle stages**, global or per-workspace — compare against this project's existing Claude-compatible hooks for gaps.
+- **Security presets per project** (Default/Full machine/Unrestricted) — a coarser, project-level analog to this project's per-tool/per-action-class policy engine; worth a look for UX simplification (one preset choice vs. many individual settings).
+- **VCS Panel** — git-native diff review, staging, and AI-generated commit messages as a dedicated UI surface, not just inline diffs in the chat pane.
+
+### Other opencode ideas worth a look later
+- **Plugin system** — a much richer event taxonomy (`command.executed`, `file.edited`, `session.created/compacted/deleted`, `tool.execute.before/after`, `permission.*`, `lsp.*`, `shell.env`) than a fixed hook-point list; worth comparing against this project's current hook lifecycle coverage.
+- **Custom Tools mechanism** — a separate, lighter-weight path (`.opencode/tools/`, a `tool()` helper with Zod schemas) distinct from both MCP and the full plugin system, for adding one function-shaped tool without standing up an MCP server.
+- **`opencode.json`'s `instructions` field** — supports glob-pattern local file references and remote URL includes (5s timeout) combined with AGENTS.md, richer than a single fixed project-instructions file.
+
+### Post-quantum cryptography (PQC) — investigated, verdict: non-issue for now
+- Node.js 22/24 already bundle OpenSSL 3.5.x, which negotiates hybrid ML-KEM key exchange automatically and by default — purely a transport-layer concern, no application code required.
+- Open unknown: Bun's TLS stack's PQC status specifically wasn't confirmed either way (Bun doesn't link OpenSSL the same way Node does).
+- Session files at rest and API-key storage are plaintext today, but that's a local-disk-encryption question, not a PQC one — irrelevant either way at this project's current threat model ("harvest now, decrypt later" targets long-lived sensitive data, not a coding CLI's calls to a public LLM API).
+- **Trigger:** only if Bun's TLS stack is confirmed to lag OpenSSL's PQC support, or this project starts handling genuinely sensitive long-lived data. Not a roadmap item otherwise.
+
+---
+
 ## References
 - [Best AI Coding Agents 2026 — Vellum](https://www.vellum.ai/blog/best-ai-coding-agents)
 - [State of AI Coding Agents 2026 — long-running autonomous loops](https://medium.com/@dave-patten/the-state-of-ai-coding-agents-2026-from-pair-programming-to-autonomous-ai-teams-b11f2b39232a)
@@ -203,3 +255,11 @@ discipline (Node's built-in test runner, `.test.mjs` files).
 - [Building a Claude-Code-like TUI (Agent SDK)](https://www.mager.co/blog/2026-03-14-claude-agent-sdk-tui/)
 - [Subagent tracing in TUIs (Ralph TUI / Claude Code)](https://ralph-tui.com/docs/plugins/agents/claude)
 - [Claude Code hooks reference (lifecycle events)](https://code.claude.com/docs/en/hooks)
+
+**Future directions section (2026-09-03):**
+- [Zed — Agent Client Protocol](https://zed.dev/acp) · [ACP Registry launch](https://zed.dev/blog/acp-registry) · [ACP vs MCP](https://mcp.directory/blog/agent-client-protocol-vs-mcp-2026)
+- [Claude Code OpenTelemetry docs](https://code.claude.com/docs/en/agent-sdk/observability) · [Claude Code Remote Control docs](https://code.claude.com/docs/en/remote-control) · [Simon Willison on Remote Control](https://simonwillison.net/2026/Feb/25/claude-code-remote-control/)
+- [opencode server docs](https://opencode.ai/docs/server/) · [opencode web docs](https://opencode.ai/docs/web/) · [opencode plugins](https://opencode.ai/docs/plugins/) · [opencode custom tools](https://opencode.ai/docs/custom-tools/) · [opencode rules/instructions](https://opencode.ai/docs/rules/) · [opencode enterprise](https://opencode.ai/docs/enterprise/)
+- [Antigravity features overview](https://antigravity.google/docs/features/) · [Antigravity browser subagent](https://antigravity.google/docs/ide/browser/) · [Antigravity Knowledge Items / context management](https://datalakehousehub.com/blog/2026-03-context-management-google-antigravity/)
+- Real 2026 coding-agent CVEs (context for the remote-server tradeoff): [Microsoft Security Blog — "When prompts become shells"](https://www.microsoft.com/en-us/security/blog/2026/05/07/prompts-become-shells-rce-vulnerabilities-ai-agent-frameworks/) · [CVE-2026-35603 writeup](https://cymulate.com/blog/cve-2026-35603-ai-coding-tools-privilege-escalation/)
+- PQC: [Node.js v24 post-quantum crypto](https://medium.com/@zaheet.work/node-js-v24-7-0-released-post-quantum-cryptography-modern-webcrypto-and-more-db78bf5a4400) · [Is your Node.js app quantum-safe?](https://dev.to/daan_acohen/is-your-nodejs-app-quantum-safe-tracing-pqc-in-tls-connections-10b8)
