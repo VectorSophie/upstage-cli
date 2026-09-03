@@ -3,7 +3,7 @@
 Everything in this `skills/` directory is upstage-cli's own MIT-licensed
 code **except** the 19 skills listed below, which are adapted from
 [NomaDamas/k-skill](https://github.com/NomaDamas/k-skill) — reused rather
-than re-invented, per `docs/skills-research-aug2026.md` §5 ("reuse an
+than re-invented, per `docs/archive/skills-research-aug2026.md` §5 ("reuse an
 existing, maintained, MIT-licensed library instead of writing our own
 clone"). Each adapted `SKILL.md` also carries an inline attribution note
 pointing at its exact source file.
