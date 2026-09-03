@@ -12,6 +12,7 @@ import { DEFAULT_POLICY, DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
+import { dispatch, isRouterCommand } from "./router.mjs";
 import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
@@ -424,7 +425,18 @@ async function runInteractive(registry, adapter, args, session, runtimeCache, se
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
+
+  // New namespaced commands from the 3.2.0 command tree (§6 of the release
+  // plan) are owned by the router. Only the exact first token is checked —
+  // `chat`/`ask`/`tui` and any other prompt text fall through unchanged to
+  // the existing `parseCliArgs` flow below, preserving today's behavior.
+  if (isRouterCommand(argv[0])) {
+    process.exitCode = await dispatch(argv);
+    return;
+  }
+
+  const args = parseArgs(argv);
 
   if (args.cwd) {
     const targetCwd = isAbsolute(args.cwd) ? args.cwd : resolve(process.cwd(), args.cwd);
