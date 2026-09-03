@@ -61,6 +61,7 @@ function mergeToolCall(collector, delta) {
 export async function accumulateStream(events, format = "openai", onToken) {
   const toolCalls = [];
   let content = "";
+  let reasoning = "";
   let usage = null;
 
   for await (const rawEvent of events) {
@@ -104,8 +105,18 @@ export async function accumulateStream(events, format = "openai", onToken) {
       content += delta.content;
       if (typeof onToken === "function") onToken(delta.content);
     }
+
+    // Field name for reasoning-trace deltas is unconfirmed for Upstage's API —
+    // this checks both `reasoning_content` (the convention used by DeepSeek-R1-style
+    // OpenAI-compatible APIs) and `reasoning` (a plausible alternative), preferring
+    // whichever is present. Best-effort guess, not a verified Upstage contract.
+    const reasoningDelta = delta.reasoning_content || delta.reasoning;
+    if (typeof reasoningDelta === "string" && reasoningDelta.length > 0) {
+      reasoning += reasoningDelta;
+    }
+
     mergeToolCall(toolCalls, delta);
   }
 
-  return { content, toolCalls: toolCalls.filter(Boolean), usage };
+  return { content, toolCalls: toolCalls.filter(Boolean), usage, reasoning: reasoning || null };
 }

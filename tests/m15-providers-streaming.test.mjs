@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 
-import { getProvider, getProviderByName, listProviders, checkProviderKeys } from "../src/core/providers.mjs";
+import { getProvider, getProviderByName, listProviders, checkProviderKeys, PROVIDERS } from "../src/core/providers.mjs";
 import { parseSSEChunk, accumulateStream } from "../src/core/streaming.mjs";
 import { normalizeUsage } from "../src/model/fetch-utils.mjs";
 import { UpstageAdapter } from "../src/model/upstage-adapter.mjs";
@@ -57,6 +57,19 @@ describe("getProvider", () => {
   it("routes vendor/model slugs to openrouter", () => {
     assert.equal(getProvider("openai/gpt-oss-120b").id, "openrouter");
     assert.equal(getProvider("meta-llama/llama-3.1-70b-instruct").id, "openrouter");
+  });
+});
+
+describe("PROVIDERS.upstage.models", () => {
+  it("lists solar-pro3 and solar-pro4 alongside the existing models", () => {
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro3"));
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro4"));
+    assert.ok(PROVIDERS.upstage.models.includes("solar-pro2"));
+  });
+
+  it("still routes solar-pro3 and solar-pro4 to the upstage provider", () => {
+    assert.equal(getProvider("solar-pro3").id, "upstage");
+    assert.equal(getProvider("solar-pro4").id, "upstage");
   });
 });
 
@@ -190,6 +203,29 @@ describe("accumulateStream — openai format", () => {
   });
 });
 
+describe("accumulateStream reasoning content", () => {
+  it("accumulates reasoning_content deltas separately from content", async () => {
+    async function* fakeEvents() {
+      yield 'data: {"choices":[{"delta":{"reasoning_content":"Let me "}}]}';
+      yield 'data: {"choices":[{"delta":{"reasoning_content":"think."}}]}';
+      yield 'data: {"choices":[{"delta":{"content":"The answer is 4."}}]}';
+      yield "data: [DONE]";
+    }
+    const result = await accumulateStream(fakeEvents(), "openai");
+    assert.equal(result.content, "The answer is 4.");
+    assert.equal(result.reasoning, "Let me think.");
+  });
+
+  it("returns null reasoning when no reasoning deltas are present", async () => {
+    async function* fakeEvents() {
+      yield 'data: {"choices":[{"delta":{"content":"hi"}}]}';
+      yield "data: [DONE]";
+    }
+    const result = await accumulateStream(fakeEvents(), "openai");
+    assert.equal(result.reasoning, null);
+  });
+});
+
 // ──────────────────────────────────────────────
 // accumulateStream — Gemini format
 // ──────────────────────────────────────────────
@@ -292,6 +328,20 @@ describe("OpenAIAdapter.isConfigured", () => {
   it("defaults baseUrl to api.openai.com when not given", () => {
     const adapter = new OpenAIAdapter({ apiKey: "sk-test" });
     assert.equal(adapter.baseUrl, "https://api.openai.com/v1");
+  });
+});
+
+describe("UpstageAdapter default model", () => {
+  it("defaults to solar-pro4 when no model or UPSTAGE_MODEL env var is set", () => {
+    const originalEnv = process.env.UPSTAGE_MODEL;
+    delete process.env.UPSTAGE_MODEL;
+    try {
+      const adapter = new UpstageAdapter({ apiKey: "test-key" });
+      assert.equal(adapter.model, "solar-pro4");
+    } finally {
+      if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL;
+      else process.env.UPSTAGE_MODEL = originalEnv;
+    }
   });
 });
 

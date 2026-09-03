@@ -7,6 +7,7 @@ import { renderMarkdown } from "./markdown.mjs";
 import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
 import { appendSpec, readSpecs } from "../core/spec.mjs";
 import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
+import { resolveTokenLimit } from "../agent/loop.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -159,7 +160,7 @@ export const COMMANDS = {
         `자동압축     : ${cfg.autoCompactEnabled ?? true}`,
         `파일체크포인트: ${cfg.fileCheckpointingEnabled ?? true}`,
         `압축임계값   : ${cfg.compactThreshold ?? 0.8}`,
-        `최대컨텍스트 : ${cfg.maxContextTokens ?? 65536}`,
+        `최대컨텍스트 : ${cfg.maxContextTokens ?? resolveTokenLimit(cfg.model)}`,
         `스트리밍     : ${cfg.stream ?? true}`,
         `언어         : ${cfg.language || "ko"}`,
       ];

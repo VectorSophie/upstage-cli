@@ -18,17 +18,16 @@ import {
 } from "../protocol/events.mjs";
 import { ContextManager } from "../core/context-manager.mjs";
 import { CheckpointManager } from "../core/checkpoints.mjs";
+import { getModelCapabilities } from "../model/model-capabilities.mjs";
 
-function resolveTokenLimit() {
+export function resolveTokenLimit(modelId) {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
   if (Number.isFinite(rawLimit) && rawLimit > 0) {
     return Math.floor(rawLimit);
   }
-  return 65_536;
+  return getModelCapabilities(modelId).contextLimit;
 }
 
-const SOLAR_PRO2_TOKEN_LIMIT = resolveTokenLimit();
-const SOLAR_PRO2_WARNING_THRESHOLD = Math.floor(SOLAR_PRO2_TOKEN_LIMIT * 0.8);
 const DEFAULT_MAX_CONVERSATION_MESSAGES = 40;
 const CONTEXT_EXCEEDED_RETRY_MESSAGES = 12;
 
@@ -84,6 +83,26 @@ function toFiniteNumber(value) {
   return numericValue;
 }
 
+// When settings.alwaysThinkingEnabled is true, the per-turn value computed
+// here is passed as the per-call reasoningEffort on every adapter.complete()
+// call, and upstage-adapter.mjs's effectiveReasoningEffort prefers that
+// per-call value (when the model supports it) over the adapter's
+// instance-level this.reasoningEffort — the one the TUI's Ctrl+E chip
+// mutates via setReasoningEffort(). So a user who manually cycles the TUI
+// chip while alwaysThinkingEnabled is on will see their choice silently
+// overridden on the very next turn. That precedence is intentional here
+// (settings-driven "always on" should win), not a bug to fix in this
+// function — just something to know before changing either side.
+function resolveReasoningEffort(settings) {
+  if (!settings?.alwaysThinkingEnabled) {
+    return undefined;
+  }
+  const budget = Number(settings.thinkingBudget);
+  // 5000 is an uncalibrated heuristic cutoff, not sourced from Upstage docs —
+  // revisit once real usage data or Upstage guidance is available.
+  return Number.isFinite(budget) && budget >= 5000 ? "high" : "low";
+}
+
 function normalizeTokenUsage(rawUsage) {
   if (!rawUsage || typeof rawUsage !== "object") {
     return null;
@@ -111,7 +130,7 @@ function normalizeTokenUsage(rawUsage) {
   };
 }
 
-function readSessionTokenBaseline(session) {
+function readSessionTokenBaseline(session, warningThreshold) {
   if (!session || !Array.isArray(session.runtimeEvents)) {
     return {
       totalTokens: 0,
@@ -136,7 +155,7 @@ function readSessionTokenBaseline(session) {
     }
   }
 
-  if (totalTokens > SOLAR_PRO2_WARNING_THRESHOLD) {
+  if (totalTokens > warningThreshold) {
     warningEmitted = true;
   }
 
@@ -147,8 +166,16 @@ function readSessionTokenBaseline(session) {
   };
 }
 
-function createTokenBudgeter(session) {
-  const baseline = readSessionTokenBaseline(session);
+// NOTE: the task spec's suggested replacement for this function dropped
+// totalCost/sessionTotalCost tracking entirely. That would break the cost
+// budget guardrail in processCompletionWithTools (`tokenBudgeter.totalCost()`
+// checked against `budget.maxCostUsd`, which DEFAULT_LOOP_BUDGET sets to a
+// real, always-active 5.0 cap) on every agent loop run. totalCost tracking
+// is orthogonal to the model-aware token-limit change this task is about, so
+// it's preserved here alongside the new `tokenLimit` parameter.
+function createTokenBudgeter(session, tokenLimit) {
+  const warningThreshold = Math.floor(tokenLimit * 0.8);
+  const baseline = readSessionTokenBaseline(session, warningThreshold);
   let sessionTotalTokens = baseline.totalTokens;
   let sessionTotalCost = baseline.totalCost || 0;
   let warningEmitted = baseline.warningEmitted;
@@ -170,10 +197,10 @@ function createTokenBudgeter(session) {
         ...normalizedUsage,
         sessionTotalTokens,
         sessionTotalCost,
-        limit: SOLAR_PRO2_TOKEN_LIMIT
+        limit: tokenLimit
       };
 
-      if (warningEmitted || sessionTotalTokens <= SOLAR_PRO2_WARNING_THRESHOLD) {
+      if (warningEmitted || sessionTotalTokens <= warningThreshold) {
         return {
           usage,
           warning: null
@@ -186,11 +213,11 @@ function createTokenBudgeter(session) {
         warning: {
           level: "warning",
           code: "TOKEN_CONTEXT_HIGH",
-          message: `Session context usage is above 80% of Solar Pro2 limit (${sessionTotalTokens}/${SOLAR_PRO2_TOKEN_LIMIT} tokens).`,
+          message: `Session context usage is above 80% of model limit (${sessionTotalTokens}/${tokenLimit} tokens).`,
           usage: {
             totalTokens: sessionTotalTokens,
-            threshold: SOLAR_PRO2_WARNING_THRESHOLD,
-            limit: SOLAR_PRO2_TOKEN_LIMIT
+            threshold: warningThreshold,
+            limit: tokenLimit
           }
         }
       };
@@ -344,13 +371,14 @@ async function fireBeforeToolSelectionHook(registry, session, { step, input, cwd
   });
 }
 
-async function requestModelCompletion({ adapter, messages, registry, stream, onToken, trace, session }) {
+async function requestModelCompletion({ adapter, messages, registry, stream, onToken, trace, session, reasoningEffort }) {
   try {
     const completion = await adapter.complete({
       messages,
       tools: registry.toModelTools(),
       stream,
-      onToken
+      onToken,
+      reasoningEffort
     });
     return {
       ok: true,
@@ -869,10 +897,12 @@ export async function* runAgentLoop({
     };
   }
 
-  const tokenBudgeter = createTokenBudgeter(session);
+  const tokenLimit = resolveTokenLimit(adapter?.model);
+  const tokenBudgeter = createTokenBudgeter(session, tokenLimit);
+  const reasoningEffort = resolveReasoningEffort(settings);
 
   const contextManager = new ContextManager(
-    settings?.maxContextTokens || SOLAR_PRO2_TOKEN_LIMIT,
+    settings?.maxContextTokens || tokenLimit,
     settings?.compactThreshold || 0.8
   );
 
@@ -1010,7 +1040,7 @@ export async function* runAgentLoop({
       }
 
       const context = await buildContext({ input, registry, cwd, runtimeCache });
-      const contextBlock = formatContextForModel(context);
+      const contextBlock = formatContextForModel(context, { modelId: adapter?.model });
 
       yield createEvent(AgentEventType.PLAN, { mode: "model", contextSummary: context.repoSummary, keywords: context.keywords });
 
@@ -1065,7 +1095,8 @@ export async function* runAgentLoop({
         stream,
         onToken,
         trace,
-        session
+        session,
+        reasoningEffort
       });
 
       if (stream && collectedContent) {
@@ -1111,7 +1142,8 @@ export async function* runAgentLoop({
             stream,
             onToken,
             trace,
-            session
+            session,
+            reasoningEffort
           });
           if (!retryCompletion.ok) {
             return retryCompletion.terminal;

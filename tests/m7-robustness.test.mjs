@@ -126,6 +126,152 @@ test("upstage adapter retries timeout errors", async () => {
   }
 });
 
+test("upstage adapter sends parallel_tool_calls for models that support it", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "read_file" } }],
+      stream: false
+    });
+    assert.equal(capturedBody.parallel_tool_calls, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter omits parallel_tool_calls for models that don't support it", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro2"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      tools: [{ type: "function", function: { name: "read_file" } }],
+      stream: false
+    });
+    assert.equal("parallel_tool_calls" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter sends reasoning_effort when requested on a supporting model", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "high"
+    });
+    assert.equal(capturedBody.reasoning_effort, "high");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter omits reasoning_effort on a non-supporting model even if requested", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro2"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "high"
+    });
+    assert.equal("reasoning_effort" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("upstage adapter ignores an invalid per-call reasoning_effort value on a supporting model", async () => {
+  const adapter = new UpstageAdapter({
+    apiKey: "test-key",
+    baseUrl: "https://api.example.test",
+    model: "solar-pro4"
+  });
+
+  const originalFetch = globalThis.fetch;
+  let capturedBody = null;
+  globalThis.fetch = async (_url, options) => {
+    capturedBody = JSON.parse(options.body);
+    return new Response(
+      JSON.stringify({ choices: [{ message: { content: "ok", tool_calls: [] } }] }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  };
+
+  try {
+    await adapter.complete({
+      messages: [{ role: "user", content: "hi" }],
+      stream: false,
+      reasoningEffort: "medium"
+    });
+    // Invalid value + no instance-level default set => falls through to unset => omitted.
+    assert.equal("reasoning_effort" in capturedBody, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent loop emits SYSTEM_WARNING after crossing token budget threshold", async () => {
   const registry = new ToolRegistry({
     allowHighRiskTools: true,
@@ -183,6 +329,33 @@ const warningEvents = events.filter((event) => event.type === "system_warning");
 
   const runtimeWarning = session.runtimeEvents.find((event) => event.type === "SYSTEM_WARNING");
   assert.ok(runtimeWarning);
+});
+
+test("resolveTokenLimit uses the active model's capability-table context limit", async () => {
+  const { resolveTokenLimit } = await import("../src/agent/loop.mjs");
+
+  const originalEnv = process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  try {
+    assert.equal(resolveTokenLimit("solar-pro4"), 512_000);
+    assert.equal(resolveTokenLimit("solar-pro2"), 65_536);
+    assert.equal(resolveTokenLimit(undefined), 65_536); // fallback
+  } finally {
+    if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+    else process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = originalEnv;
+  }
+});
+
+test("resolveTokenLimit still honors the UPSTAGE_MODEL_CONTEXT_LIMIT env override", async () => {
+  const { resolveTokenLimit } = await import("../src/agent/loop.mjs");
+  const originalEnv = process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+  process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = "99999";
+  try {
+    assert.equal(resolveTokenLimit("solar-pro4"), 99999);
+  } finally {
+    if (originalEnv === undefined) delete process.env.UPSTAGE_MODEL_CONTEXT_LIMIT;
+    else process.env.UPSTAGE_MODEL_CONTEXT_LIMIT = originalEnv;
+  }
 });
 
 test("agent loop retries once with compacted context on context_length_exceeded", async () => {

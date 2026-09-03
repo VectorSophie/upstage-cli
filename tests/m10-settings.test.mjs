@@ -11,12 +11,31 @@ import {
 import { loadUpstageMdFiles, buildSystemPrompt } from "../src/core/system-prompt.mjs";
 import { parseCliArgs, getUsageText } from "../src/config/cli-args.mjs";
 import { readEnv, getEnv, ENV_SCHEMA } from "../src/config/env.mjs";
+import { resolveTokenLimit } from "../src/agent/loop.mjs";
+import { ContextManager } from "../src/core/context-manager.mjs";
 
-test("settings schema provides solar-pro2 as default model", () => {
-  assert.equal(SETTINGS_SCHEMA.model, "solar-pro2");
+test("settings schema provides solar-pro4 as default model", () => {
+  assert.equal(SETTINGS_SCHEMA.model, "solar-pro4");
   assert.equal(SETTINGS_SCHEMA.language, "ko");
-  assert.equal(SETTINGS_SCHEMA.maxContextTokens, 65536);
+  assert.equal(SETTINGS_SCHEMA.maxContextTokens, null);
   assert.equal(SETTINGS_SCHEMA.permissions.defaultMode, "default");
+});
+
+test("SETTINGS_SCHEMA.maxContextTokens is unset by default so model-aware token limits aren't shadowed", () => {
+  assert.ok(!SETTINGS_SCHEMA.maxContextTokens, "maxContextTokens must be falsy so loop.mjs's settings?.maxContextTokens || tokenLimit fallback actually fires");
+});
+
+test("a fresh-install settings object lets ContextManager use solar-pro4's full 512K context instead of the stale 65536 default", () => {
+  // Mirrors loop.mjs:855-862 exactly, using a real default settings clone
+  // (not a hand-crafted object that conveniently omits maxContextTokens).
+  const settings = deepClone(SETTINGS_SCHEMA);
+  const tokenLimit = resolveTokenLimit("solar-pro4");
+  assert.equal(tokenLimit, 512_000);
+  const contextManager = new ContextManager(
+    settings?.maxContextTokens || tokenLimit,
+    settings?.compactThreshold || 0.8
+  );
+  assert.equal(contextManager.maxTokens, 512_000);
 });
 
 test("deepMerge merges nested objects recursively", () => {
@@ -85,7 +104,7 @@ test("applyEnvOverrides applies UPSTAGE_MAX_CONTEXT_TOKENS as number", () => {
 
 test("loadSettings merges project settings over defaults", async () => {
   const settings = await loadSettings({ cwd: process.cwd() });
-  assert.equal(settings.model, "solar-pro2");
+  assert.equal(settings.model, "solar-pro4");
   assert.equal(settings.language, "ko");
   assert.equal(typeof settings.permissions.defaultMode, "string");
 });

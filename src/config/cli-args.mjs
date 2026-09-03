@@ -142,7 +142,7 @@ Commands:
 Options:
   -h, --help                Show this help
   -p, --prompt <text>       Run prompt and exit
-  -m, --model <model>       Model to use (default: solar-pro2)
+  -m, --model <model>       Model to use (default: solar-pro4)
   --no-stream               Disable streaming
   --session <id>            Resume session by ID
   --new-session             Start a new session

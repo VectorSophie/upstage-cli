@@ -1,4 +1,5 @@
 ﻿import { retrieveRelevantChunks } from "../retriever/index.mjs";
+import { getModelCapabilities } from "../model/model-capabilities.mjs";
 
 function extractKeywords(prompt) {
   return Array.from(
@@ -11,7 +12,12 @@ function extractKeywords(prompt) {
   ).slice(0, 8);
 }
 
-const MAX_CONTEXT_CHARS = 24_000; // hard cap: keep well under Solar Pro2's 65k token limit
+// Ratio approximately preserved from the original hand-tuned Pro2-era budget:
+// 24,000 chars against a 65,536-token limit, assuming ~4 chars/token, is ~9%
+// of the token budget spent on injected repo context. Scaled proportionally
+// for models with larger context windows instead of staying fixed at 24k.
+const CONTEXT_CHARS_PER_TOKEN = 4;
+const CONTEXT_BUDGET_RATIO = 0.09;
 
 export async function buildContext({
   input,
@@ -159,7 +165,13 @@ export async function buildContext({
   };
 }
 
-export function formatContextForModel(context) {
+function resolveMaxContextChars(modelId) {
+  const { contextLimit } = getModelCapabilities(modelId);
+  return Math.floor(contextLimit * CONTEXT_CHARS_PER_TOKEN * CONTEXT_BUDGET_RATIO);
+}
+
+export function formatContextForModel(context, { modelId } = {}) {
+  const maxContextChars = resolveMaxContextChars(modelId);
   const lines = [];
   lines.push("Repository context:");
   lines.push(`- totalFiles: ${context.repoSummary.totalFiles}`);
@@ -194,8 +206,8 @@ export function formatContextForModel(context) {
     }
   }
   const result = lines.join("\n");
-  if (result.length > MAX_CONTEXT_CHARS) {
-    return result.slice(0, MAX_CONTEXT_CHARS) + "\n... (context truncated)";
+  if (result.length > maxContextChars) {
+    return result.slice(0, maxContextChars) + "\n... (context truncated)";
   }
   return result;
 }

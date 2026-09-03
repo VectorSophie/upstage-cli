@@ -5,7 +5,7 @@ export const PROVIDERS = {
     endpoint: "https://api.upstage.ai/v1/chat/completions",
     envKey: "UPSTAGE_API_KEY",
     altEnvKey: null,
-    models: ["solar-pro2", "solar-pro", "solar-mini"],
+    models: ["solar-pro4", "solar-pro3", "solar-pro2", "solar-pro", "solar-mini"],
     format: "openai"
   },
   openai: {
