@@ -43,9 +43,14 @@ import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
 import { getProvider } from "../core/providers.mjs";
+import pkg from "../../package.json" with { type: "json" };
 
-const PROTOCOL_VERSION = "2024-11-05";
-const SERVER_INFO = { name: "upstage-cli", version: "2.6.1" };
+// See src/tools/mcp/http-client.mjs's PROTOCOL_VERSION comment for context
+// (2026-07-28 spec rewrite). This server always speaks one version rather
+// than negotiating per-client; stdio has no per-request headers so we're
+// already "stateless" at the transport level.
+const PROTOCOL_VERSION = "2026-07-28";
+const SERVER_INFO = { name: "upstage-cli", version: pkg.version };
 
 function log(...args) {
   // Diagnostics go to stderr — stdout is JSON-RPC only.

@@ -4,10 +4,111 @@ on:
   push:
     tags:
       - "v*"
+  # Lets an already-tagged version be re-run (e.g. to retry just npm
+  # publishing after adding that job) without deleting/re-pushing the tag.
+  # Requires a `tag` input since workflow_dispatch has no ref-derived
+  # GITHUB_REF_NAME of its own.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v3.0.0) — must already exist"
+        required: true
 
 jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Validate
+        run: npm run ci
+
+      - name: Validate package
+        run: npm pack --dry-run
+
+  publish-npm:
+    name: Publish to npm
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # One real runner per target platform/arch, not a cross-compile matrix from
+  # a single host — @opentui/core's native rendering core ships a separate
+  # prebuilt addon per OS/arch as an optionalDependency, resolved dynamically
+  # at runtime; `bun install` only ever fetches the one matching the CURRENT
+  # host, so only a same-platform build can resolve it (see
+  # scripts/package-binary.mjs's top comment for the full explanation).
+  build-binaries:
+    name: Build ${{ matrix.name }}
+    needs: validate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: linux-x64
+          - os: ubuntu-24.04-arm
+            name: linux-arm64
+          # macos-13 (Intel) was retired Dec 2025; macos-15-intel is the
+          # current (and per GitHub, final) x64 macOS runner image.
+          - os: macos-15-intel
+            name: darwin-x64
+          - os: macos-15
+            name: darwin-arm64
+          - os: windows-latest
+            name: windows-x64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build and package
+        run: bun scripts/package-binary.mjs
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstage-${{ matrix.name }}
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+          if-no-files-found: error
+
   release:
-    name: Release ${{ github.ref_name }}
+    name: Release ${{ github.event.inputs.tag || github.ref_name }}
+    needs: [validate, build-binaries]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -16,25 +117,27 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Download all platform binaries
+        uses: actions/download-artifact@v4
         with:
-          node-version: 22
-          cache: npm
+          path: dist
+          pattern: "upstage-*"
+          merge-multiple: true
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Validate
-        run: npm run ci
-
-      - name: Validate package
-        run: npm pack --dry-run
+      - name: Resolve tag
+        id: tag
+        run: |
+          # workflow_dispatch has no ref-derived GITHUB_REF_NAME of its own
+          # (that'd be the branch it was dispatched against) — use the
+          # explicit input instead. A normal tag push keeps working as before.
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
       - name: Extract changelog entry
         id: changelog
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${{ steps.tag.outputs.tag }}"
+          VERSION="${VERSION#v}"
           NOTES=$(awk "/^## \[${VERSION}\]/{flag=1; next} /^## \[/{flag=0} flag" CHANGELOG.md)
           echo "notes<<EOF" >> $GITHUB_OUTPUT
           echo "$NOTES" >> $GITHUB_OUTPUT
@@ -42,14 +145,58 @@ jobs:
 
       - name: Create GitHub Release
         uses: actions/github-script@v7
+        env:
+          # Passed as an env var, not spliced into the script's JS source via
+          # ${{ }} — the changelog text is Markdown full of backtick code
+          # spans, and any backtick in a `${{ }}`-substituted value inside a
+          # JS template literal terminates it early and corrupts the rest of
+          # the script into invalid JS (this broke the very first release
+          # that got this far, v3.0.0 — every earlier tag failed at the
+          # Validate step first, so this was latent and never triggered).
+          RELEASE_NOTES: ${{ steps.changelog.outputs.notes }}
+          TAG_NAME: ${{ steps.tag.outputs.tag }}
         with:
           script: |
-            await github.rest.repos.createRelease({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              tag_name: context.ref.replace('refs/tags/', ''),
-              name: context.ref.replace('refs/tags/', ''),
-              body: `${{ steps.changelog.outputs.notes }}`,
-              draft: false,
-              prerelease: context.ref.includes('-')
-            });
+            const fs = require("fs");
+            const path = require("path");
+            const tag = process.env.TAG_NAME;
+
+            // Idempotent: a manual workflow_dispatch re-run against an
+            // already-released tag (e.g. to retry npm publishing alone)
+            // shouldn't fail here trying to create a duplicate release.
+            let release;
+            try {
+              const existing = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tag
+              });
+              release = existing;
+              console.log(`Release ${tag} already exists, skipping creation.`);
+            } catch (err) {
+              if (err.status !== 404) throw err;
+              release = await github.rest.repos.createRelease({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_name: tag,
+                name: tag,
+                body: process.env.RELEASE_NOTES || "",
+                draft: false,
+                prerelease: tag.includes('-')
+              });
+            }
+
+            const existingAssets = new Set((release.data.assets || []).map(a => a.name));
+            for (const file of fs.readdirSync("dist")) {
+              if (existingAssets.has(file)) {
+                console.log(`Asset ${file} already attached, skipping.`);
+                continue;
+              }
+              await github.rest.repos.uploadReleaseAsset({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                release_id: release.data.id,
+                name: file,
+                data: fs.readFileSync(path.join("dist", file))
+              });
+            }

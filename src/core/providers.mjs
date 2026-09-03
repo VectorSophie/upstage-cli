@@ -25,6 +25,18 @@ export const PROVIDERS = {
     altEnvKey: "GOOGLE_API_KEY",
     models: ["gemini-2.0-flash", "gemini-2.5-pro", "gemini-1.5-flash", "gemini-1.5-pro"],
     format: "gemini"
+  },
+  openrouter: {
+    id: "openrouter",
+    name: "OpenRouter",
+    // OpenAI-compatible chat completions API, routing to 300+ models
+    // (including free-tier ones) from one key — handy for testing this
+    // harness against a non-Upstage model without a paid API key.
+    endpoint: "https://openrouter.ai/api/v1/chat/completions",
+    envKey: "OPENROUTER_API_KEY",
+    altEnvKey: null,
+    models: [],
+    format: "openai"
   }
 };
 
@@ -34,6 +46,11 @@ export function getProvider(model) {
   if (lower.startsWith("solar")) return PROVIDERS.upstage;
   if (lower.startsWith("gpt") || lower.startsWith("o1") || lower.startsWith("o3")) return PROVIDERS.openai;
   if (lower.startsWith("gemini")) return PROVIDERS.gemini;
+  // OpenRouter's model catalog is entirely "vendor/model" slugs
+  // (openai/gpt-oss-120b, meta-llama/llama-3.1-70b, ...) — no native
+  // Upstage/OpenAI/Gemini model name looks like that, so this is
+  // unambiguous without needing an explicit --provider flag.
+  if (lower.includes("/")) return PROVIDERS.openrouter;
   return PROVIDERS.upstage;
 }
 
@@ -49,6 +66,7 @@ export function checkProviderKeys() {
   return {
     upstage: Boolean(process.env.UPSTAGE_API_KEY),
     openai: Boolean(process.env.OPENAI_API_KEY),
-    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
+    gemini: Boolean(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY),
+    openrouter: Boolean(process.env.OPENROUTER_API_KEY)
   };
 }

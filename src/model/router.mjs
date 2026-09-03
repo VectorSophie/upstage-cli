@@ -23,6 +23,11 @@ export class ModelRouter {
     return this._pro.model;
   }
 
+  setReasoningEffort(value) {
+    this._pro.setReasoningEffort?.(value);
+    this._fast.setReasoningEffort?.(value);
+  }
+
   async complete(options) {
     const complexity = estimateTaskComplexity(options.messages || []);
     const adapter = complexity === "simple" ? this._fast : this._pro;

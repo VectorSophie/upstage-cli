@@ -1,6 +1,6 @@
 import { checkInjection } from "./injection-check.mjs";
 import { validatePath } from "./path-check.mjs";
-import { requiresPermission, formatToolSummary } from "./prompt.mjs";
+import { requiresPermission } from "./prompt.mjs";
 
 const PERMISSION_MODES = new Set([
   "default",

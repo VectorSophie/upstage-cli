@@ -115,17 +115,20 @@ function readSessionTokenBaseline(session) {
   if (!session || !Array.isArray(session.runtimeEvents)) {
     return {
       totalTokens: 0,
+      totalCost: 0,
       warningEmitted: false
     };
   }
 
   let totalTokens = 0;
+  let totalCost = 0;
   let warningEmitted = false;
   for (const event of session.runtimeEvents) {
     if (event?.type === "TOKEN_USAGE") {
       const usage = normalizeTokenUsage(event.usage);
       if (usage) {
         totalTokens += usage.totalTokens;
+        totalCost += usage.cost;
       }
     }
     if (event?.type === "SYSTEM_WARNING" && event?.code === "TOKEN_CONTEXT_HIGH") {
@@ -139,6 +142,7 @@ function readSessionTokenBaseline(session) {
 
   return {
     totalTokens,
+    totalCost,
     warningEmitted
   };
 }
@@ -146,9 +150,13 @@ function readSessionTokenBaseline(session) {
 function createTokenBudgeter(session) {
   const baseline = readSessionTokenBaseline(session);
   let sessionTotalTokens = baseline.totalTokens;
+  let sessionTotalCost = baseline.totalCost || 0;
   let warningEmitted = baseline.warningEmitted;
 
   return {
+    totalCost() {
+      return sessionTotalCost;
+    },
     consume(usageInput) {
       const normalizedUsage = normalizeTokenUsage(usageInput);
       if (!normalizedUsage) {
@@ -156,10 +164,12 @@ function createTokenBudgeter(session) {
       }
 
       sessionTotalTokens += normalizedUsage.totalTokens;
+      sessionTotalCost += normalizedUsage.cost;
 
       const usage = {
         ...normalizedUsage,
         sessionTotalTokens,
+        sessionTotalCost,
         limit: SOLAR_PRO2_TOKEN_LIMIT
       };
 
@@ -628,7 +638,7 @@ async function* executeToolCallsPhase({
   };
 }
 
-async function* runVerificationGenerator(registry, cwd, session, runtimeCache) {
+async function* runVerificationGenerator(registry, cwd, session, _runtimeCache) {
   emitRuntime(registry, session, "VERIFY_RESULT", { stage: "start" });
   yield createEvent(AgentEventType.VERIFY_START, {});
   yield createEvent(AgentEventType.THINKING, {
@@ -768,6 +778,21 @@ async function* processCompletionWithTools({
     yield evt;
   }
 
+  // Cost guardrail (§2.2): a hard stop, same shape/convention as the
+  // tool-call and wall-time budgets just below — separate from the
+  // tokenBudgeter's context-window warning, which only ever warns and
+  // never actually stops anything.
+  if (typeof budget.maxCostUsd === "number" && tokenBudgeter.totalCost() > budget.maxCostUsd) {
+    return {
+      ok: false,
+      state: AgentState.FAIL,
+      stopReason: StopReason.BUDGET_EXHAUSTED,
+      response: `Stopped: cost budget exhausted ($${tokenBudgeter.totalCost().toFixed(4)} > $${budget.maxCostUsd}).`,
+      trace,
+      session
+    };
+  }
+
   if (toolCallList.length === 0) {
     appendHistory(session, { role: "assistant", content: completion.content || "No content returned." });
     return {
@@ -887,7 +912,8 @@ export async function* runAgentLoop({
     tools: registry?.toModelTools ? registry.toModelTools() : [],
     override: systemPromptOverride,
     addDirs,
-    language: settings?.language
+    language: settings?.language,
+    skills: runtimeCache?.skillsLoader?.list?.() || []
   });
 
   // UserPromptSubmit hook — may block the prompt or inject additional context.

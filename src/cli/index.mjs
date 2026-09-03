@@ -1,5 +1,4 @@
-#!/usr/bin/env node
-import readline from "node:readline";
+#!/usr/bin/env bun
 import process from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -9,7 +8,7 @@ import {
 } from "../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
-import { DEFAULT_POLICY } from "../config/defaults.mjs";
+import { DEFAULT_POLICY, DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
@@ -19,18 +18,27 @@ import { GeminiAdapter } from "../model/gemini-adapter.mjs";
 import { ModelRouter } from "../model/router.mjs";
 import { getProvider } from "../core/providers.mjs";
 
-function createBaseAdapter({ model } = {}) {
+function createBaseAdapter({ model, reasoningEffort } = {}) {
   const provider = getProvider(model);
   if (provider.id === "openai") return new OpenAIAdapter({ model });
+  if (provider.id === "openrouter") {
+    return new OpenAIAdapter({
+      model,
+      apiKey: process.env.OPENROUTER_API_KEY,
+      baseUrl: "https://openrouter.ai/api/v1"
+    });
+  }
   if (provider.id === "gemini") return new GeminiAdapter({ model });
-  return new UpstageAdapter({ model: model || undefined });
+  // reasoning_effort is a Solar Pro2-specific parameter; only the Upstage
+  // adapter understands it, so it's never passed to the other providers.
+  return new UpstageAdapter({ model: model || undefined, reasoningEffort });
 }
 
-function createAdapter({ model } = {}) {
-  const proAdapter = createBaseAdapter({ model });
+function createAdapter({ model, reasoningEffort } = {}) {
+  const proAdapter = createBaseAdapter({ model, reasoningEffort });
   const fastModel = process.env.UPSTAGE_FAST_MODEL;
   if (fastModel && fastModel !== proAdapter.model) {
-    const fastAdapter = createBaseAdapter({ model: fastModel });
+    const fastAdapter = createBaseAdapter({ model: fastModel, reasoningEffort });
     return new ModelRouter({ proAdapter, fastAdapter });
   }
   return proAdapter;
@@ -42,7 +50,6 @@ import {
 import { createPermissionChecker } from "../permissions/checker.mjs";
 import {
   createSession,
-  listSessions,
   loadLatestSession,
   loadSession,
   resetSession,
@@ -50,18 +57,9 @@ import {
 } from "../runtime/session.mjs";
 import {
   canUseFullscreenTui,
-  createChatScreen,
-  enterFullscreenTui,
   exitFullscreenTui,
-  renderEvent,
-  renderFileTree,
-  renderHelpKorean,
-  renderMainHeader,
-  renderSessionList,
-  renderTaskSummary,
-  renderToolList
-} from "../ui/tui.mjs";
-import { getDefaultCommands, rankCommands } from "../ui/command-palette.mjs";
+  renderEvent
+} from "../ui/plain-event-renderer.mjs";
 import { AgentLoader } from "../agents/loader.mjs";
 import { SkillsLoader } from "../skills/loader.mjs";
 import { HookEngine } from "../hooks/engine.mjs";
@@ -95,6 +93,7 @@ function parseArgs(argv) {
   if (result.cwd) compat.cwd = result.cwd;
   if (result.addDirs?.length) compat.addDirs = result.addDirs;
   if (result.maxTurns) compat.maxTurns = result.maxTurns;
+  if (result.maxTimeSec) compat.maxTimeSec = result.maxTimeSec;
   if (result.language) compat.language = result.language;
   if (result.verbose) compat.verbose = result.verbose;
   if (result.debug) compat.debug = result.debug;
@@ -204,18 +203,11 @@ async function loadOrCreateSession(args, cwd) {
 }
 
 async function executePrompt({ prompt, registry, adapter, stream, session, args, runtimeCache, rl, settings }) {
-  const screen = args.__screen || null;
   const bridgeJson = args.bridgeJson === true;
   let streamedAnyToken = false;
   const emitBridge = (payload) => {
     process.stdout.write(`${JSON.stringify(payload)}\n`);
   };
-  if (screen) {
-    screen.setStatus("추론 중");
-    screen.clearAssistant();
-    screen.pushUserMessage(prompt);
-    screen.redraw();
-  }
   const approvalHandler =
     args.confirmPatches && args.command === "chat" && rl
       ? createInteractiveApprovalHandler({
@@ -223,9 +215,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
           onEvent: (event) => {
             if (bridgeJson) {
               emitBridge({ type: "event", event });
-            } else if (screen) {
-              screen.onEvent(event);
-              screen.redraw();
             } else {
               renderEvent(event);
             }
@@ -237,9 +226,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
             onEvent: (event) => {
               if (bridgeJson) {
                 emitBridge({ type: "event", event });
-              } else if (screen) {
-                screen.onEvent(event);
-                screen.redraw();
               } else {
                 renderEvent(event);
               }
@@ -254,9 +240,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
         streamedAnyToken = true;
         if (bridgeJson) {
           emitBridge({ type: "token", token });
-        } else if (screen) {
-          screen.appendAssistantToken(token);
-          screen.redraw();
         } else {
           process.stdout.write(token);
         }
@@ -267,9 +250,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "TOOL", tool: event.tool, args: event.args };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -279,9 +259,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "OBSERVATION", tool: event.tool, ok: event.ok, result: event.result };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -291,9 +268,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "THINKING", thought: event.thought };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -303,9 +277,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "PLAN", mode: event.mode, contextSummary: event.contextSummary, keywords: event.keywords };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -315,9 +286,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "PATCH_PREVIEW", patch: event.patch };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -327,9 +295,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "TOKEN_USAGE", usage: event.usage, model: event.model, source: event.source };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -339,9 +304,6 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "SYSTEM_WARNING", level: event.level, code: event.code, message: event.message, usage: event.usage };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
@@ -351,16 +313,13 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       const legacyEvent = { type: "VERIFY_RESULT", stage: event.type === "verify_start" ? "start" : "end" };
       if (bridgeJson) {
         emitBridge({ type: "event", event: legacyEvent });
-      } else if (screen) {
-        screen.onEvent(legacyEvent);
-        screen.redraw();
       } else {
         renderEvent(legacyEvent);
       }
       return;
     }
     if (event.type === "critic") {
-      if (!bridgeJson && !screen) {
+      if (!bridgeJson) {
         const stage = event.stage || "";
         if (stage === "start") process.stderr.write("\n[critic] running tests...\n");
         else if (stage === "pass") process.stderr.write("[critic] tests pass ✓\n");
@@ -369,7 +328,7 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       return;
     }
     if (event.type === "replan") {
-      if (!bridgeJson && !screen) {
+      if (!bridgeJson) {
         process.stderr.write(`\n[replan] trigger=${event.trigger} count=${event.count}\n`);
       }
       return;
@@ -379,6 +338,13 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       // Known event types we intentionally suppress in plain output mode
       return;
     }
+  };
+
+  const budget = {
+    ...DEFAULT_LOOP_BUDGET,
+    ...Object.fromEntries(Object.entries(settings.loopBudget || {}).filter(([, v]) => v != null)),
+    ...(args.maxTurns ? { maxSteps: args.maxTurns } : {}),
+    ...(args.maxTimeSec ? { maxWallTimeMs: args.maxTimeSec * 1000 } : {})
   };
 
   let result;
@@ -392,6 +358,7 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
     session,
     runtimeCache,
     settings,
+    budget,
     systemPromptOverride: args.systemPrompt || null,
     addDirs: args.addDirs || []
   });
@@ -405,17 +372,12 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
     handleEvent(next.value);
   }
 
-  if (stream && streamedAnyToken) {
-    if (!screen && !bridgeJson) {
-      process.stdout.write("\n");
-    }
+  if (stream && streamedAnyToken && !bridgeJson) {
+    process.stdout.write("\n");
   }
   if (!streamedAnyToken || !result.ok) {
     if (bridgeJson) {
       emitBridge({ type: "assistant", text: result.response });
-    } else if (screen) {
-      screen.setAssistantFinal(result.response);
-      screen.redraw();
     } else {
       console.log(result.response);
     }
@@ -428,14 +390,7 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
       stopReason: result.stopReason,
       sessionId: result.session?.id || session.id
     });
-  } else if (screen) {
-    screen.pushSolarMessage(result.response);
-    screen.setStatus(result.ok ? "완료" : "실패");
-    screen.setStopReason(result.stopReason);
-    screen.log(`[stop_reason=${result.stopReason}]`);
-    screen.redraw();
   } else {
-
     console.log(`[stop_reason=${result.stopReason}]`);
   }
   await saveSession(result.session || session);
@@ -445,11 +400,16 @@ async function executePrompt({ prompt, registry, adapter, stream, session, args,
 }
 
 import React from "react";
-import { render } from "ink";
+import { createCliRenderer } from "@opentui/core";
+import { createRoot } from "@opentui/react";
 import App from "../ui/App.mjs";
+import { THEME } from "../ui/colors.mjs";
 
-async function runInteractive(registry, adapter, args, session, runtimeCache, settings) {
-  const { waitUntilExit } = render(React.createElement(App, {
+async function runInteractive(registry, adapter, args, session, runtimeCache, settings, onRenderer) {
+  const renderer = await createCliRenderer({ exitOnCtrlC: false, useKittyKeyboard: null, backgroundColor: THEME.background });
+  onRenderer?.(renderer);
+  const exited = new Promise((resolve) => renderer.once("destroy", resolve));
+  createRoot(renderer).render(React.createElement(App, {
     sessionId: session.id,
     registry,
     adapter,
@@ -458,7 +418,8 @@ async function runInteractive(registry, adapter, args, session, runtimeCache, se
     runtimeCache,
     settings
   }));
-  await waitUntilExit();
+  await exited;
+  onRenderer?.(null);
 }
 
 async function main() {
@@ -490,12 +451,23 @@ async function main() {
   }
 
   let restored = false;
+  // Set while the OpenTUI renderer is mounted (see runInteractive). destroy()
+  // is the authoritative terminal-state reversal — it undoes everything the
+  // renderer itself turned on (mouse tracking, kitty-keyboard protocol,
+  // synchronized-update mode, alt-screen, cursor), not just alt-screen like
+  // the legacy exitFullscreenTui() fallback below. It must be used here
+  // rather than left to fire on its own: OpenTUI wires its own cleanup to
+  // `beforeExit`, which Node/Bun skips entirely once something calls
+  // process.exit() explicitly, as onFatal does a few lines down.
+  let activeRenderer = null;
   const restoreTerminal = () => {
     if (restored) {
       return;
     }
     restored = true;
-    if (canUseFullscreenTui()) {
+    if (activeRenderer) {
+      activeRenderer.destroy();
+    } else if (canUseFullscreenTui()) {
       exitFullscreenTui();
     }
   };
@@ -571,7 +543,10 @@ async function main() {
     permissionChecker,
     hookEngine
   });
-  const adapter = createAdapter({ model: args.model || settings.model || undefined });
+  const adapter = createAdapter({
+    model: args.model || settings.model || undefined,
+    reasoningEffort: settings.reasoningEffort && settings.reasoningEffort !== "auto" ? settings.reasoningEffort : undefined
+  });
   const session = await loadOrCreateSession(args, process.cwd());
   await saveSession(session);
   hookEngine.runSessionStart(session.id || "");
@@ -600,7 +575,7 @@ async function main() {
     return;
   }
 
-  await runInteractive(registry, adapter, args, session, runtimeCache, settings);
+  await runInteractive(registry, adapter, args, session, runtimeCache, settings, (r) => { activeRenderer = r; });
   await hookEngine.runSessionEnd(session.id || "", "exit");
   process.off("uncaughtException", onFatal);
   process.off("unhandledRejection", onFatal);

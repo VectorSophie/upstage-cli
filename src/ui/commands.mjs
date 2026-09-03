@@ -6,6 +6,7 @@ import os from "node:os";
 import { renderMarkdown } from "./markdown.mjs";
 import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
 import { appendSpec, readSpecs } from "../core/spec.mjs";
+import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -299,7 +300,7 @@ export const COMMANDS = {
     description: "사용자 정의 에이전트 목록",
     handler(_args, state) {
       const loader = state?._agentLoader;
-      if (!loader) return { response: "에이전트 로더 없음 (Phase 6에서 활성화)" };
+      if (!loader) return { response: "에이전트 로더가 초기화되지 않았습니다." };
       const agents = loader.list?.() || [];
       if (agents.length === 0) return { response: "로드된 에이전트 없음 (.upstage/agents/ 에 정의 추가)" };
       return { response: `에이전트 (${agents.length}개):\n${agents.map((a) => `  • ${a.name}: ${a.description || ""}`).join("\n")}` };
@@ -310,10 +311,14 @@ export const COMMANDS = {
     description: "사용 가능한 스킬 목록",
     handler(_args, state) {
       const loader = state?._skillsLoader;
-      if (!loader) return { response: "스킬 로더 없음 (Phase 6에서 활성화)" };
+      if (!loader) return { response: "스킬 로더가 초기화되지 않았습니다." };
       const skills = loader.list?.() || [];
       if (skills.length === 0) return { response: "로드된 스킬 없음 (.upstage/skills/ 에 정의 추가)" };
-      return { response: `스킬 (${skills.length}개):\n${skills.map((s) => `  • ${s.name}: ${s.description || ""}`).join("\n")}` };
+      return {
+        response: `스킬 (${skills.length}개) — /<이름> 으로 직접 실행:\n${skills
+          .map((s) => `  • /${s.name}${s.license ? ` [${s.license}]` : ""}: ${s.description || ""}`)
+          .join("\n")}`
+      };
     }
   },
 
@@ -347,6 +352,78 @@ export const COMMANDS = {
     }
   },
 
+  "/recipe": {
+    description: "재사용 가능한 프롬프트 템플릿 (사용법: /recipe save <이름> <템플릿...> · /recipe run <이름> [key=value...] · /recipe list)",
+    async handler(args, state) {
+      const cwd = state?._session?.workspace?.cwd || process.cwd();
+      const sub = (args?.[0] || "").toLowerCase();
+
+      if (sub === "list") {
+        const recipes = await listRecipes(cwd);
+        if (recipes.length === 0) return { response: "저장된 레시피가 없습니다. /recipe save <이름> <템플릿> 으로 추가하세요." };
+        const lines = recipes.map((r) => `  ${r.name.padEnd(20)} ${r.description || r.template.slice(0, 50)}`);
+        return { response: `레시피 (${recipes.length}개):\n${lines.join("\n")}` };
+      }
+
+      if (sub === "save") {
+        const name = args[1];
+        const template = args.slice(2).join(" ");
+        if (!name || !template) return { response: "사용법: /recipe save <이름> <템플릿...> (템플릿 안에 {{param}} 사용 가능)" };
+        try {
+          await saveRecipe(cwd, name, { template });
+          return { response: `📝 레시피 저장됨: ${name}` };
+        } catch (err) {
+          return { response: `레시피 저장 실패: ${err.message}` };
+        }
+      }
+
+      if (sub === "run") {
+        const { name, params } = parseRecipeRunArgs(args.slice(1));
+        if (!name) return { response: "사용법: /recipe run <이름> [key=value...]" };
+        const recipe = await loadRecipe(cwd, name);
+        if (!recipe) return { response: `레시피를 찾을 수 없습니다: ${name}` };
+        const rendered = renderRecipe(recipe, params);
+        return { response: `__run_recipe__`, runPrompt: rendered };
+      }
+
+      return { response: "사용법: /recipe save <이름> <템플릿...> · /recipe run <이름> [key=value...] · /recipe list" };
+    }
+  },
+
+  "/watch": {
+    description: "파일의 // ai! 주석을 감지해 자동 실행 (watch mode) — /unwatch 로 중지",
+    handler(_args, state) {
+      if (state?._watching) return { response: "이미 감시 중입니다. /unwatch 로 먼저 중지하세요." };
+      return { response: "__watch_start__", startWatch: true };
+    }
+  },
+
+  "/unwatch": {
+    description: "watch mode 중지",
+    handler(_args, state) {
+      if (!state?._watching) return { response: "감시 중이 아닙니다." };
+      return { response: "__watch_stop__", stopWatch: true };
+    }
+  },
+
+  "/branch": {
+    description: "현재 세션을 분기 (지금까지의 대화를 복사해 새 세션 시작) — /branch list 로 분기 목록 확인",
+    async handler(args, state) {
+      if ((args?.[0] || "").toLowerCase() === "list") {
+        const current = state?._session;
+        if (!current) return { response: "세션 정보 없음" };
+        const { listSessions } = await import("../runtime/session.mjs");
+        const all = await listSessions();
+        const rootId = current.parentSessionId || current.id;
+        const related = all.filter((s) => s.id === rootId || s.parentSessionId === rootId || s.id === current.parentSessionId);
+        if (related.length <= 1) return { response: "분기된 세션이 없습니다." };
+        const lines = related.map((s) => `  ${s.id === current.id ? "→" : " "} ${s.id.slice(0, 8)}  ${new Date(s.updatedAt).toLocaleString("ko-KR")}${s.parentSessionId ? "  (분기)" : "  (원본)"}`);
+        return { response: `세션 분기 (${related.length}개):\n\n${lines.join("\n")}` };
+      }
+      return { response: "__branch_session__", branchSession: true };
+    }
+  },
+
   "/exit": {
     description: "종료",
     handler(_args, _state) {
@@ -376,6 +453,19 @@ export async function executeCommand(input, state) {
 
   const def = COMMANDS[cmd];
   if (!def) {
+    // Fall back to a user/project-defined skill (src/skills/loader.mjs) —
+    // `/summarize some text` runs the "summarize" skill the same way
+    // `/recipe run` does, before falling through to "unknown command".
+    // Manual invocation this way; the load_skill tool is the autonomous
+    // path for the model to reach for the same skills on its own.
+    const skill = state?._skillsLoader?.get?.(cmd.slice(1));
+    if (skill) {
+      try {
+        return { response: "__run_skill__", runPrompt: state._skillsLoader.run(skill.name, args.join(" ")) };
+      } catch (err) {
+        return { response: `스킬 실행 오류: ${err.message}` };
+      }
+    }
     const close = getCompletions(cmd);
     const hint = close.length > 0 ? ` (혹시 ${close[0]}?)` : "";
     return { response: `알 수 없는 명령어: ${cmd}${hint}` };

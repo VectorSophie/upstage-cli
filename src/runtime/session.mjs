@@ -89,7 +89,8 @@ function toSessionMeta(session) {
   return {
     id: session.id,
     updatedAt: Number(session.updatedAt) || Date.now(),
-    workspace: session.workspace || { cwd: null }
+    workspace: session.workspace || { cwd: null },
+    parentSessionId: session.parentSessionId || null
   };
 }
 
@@ -109,7 +110,8 @@ async function readSessionIndex() {
       .map((item) => ({
         id: item.id,
         updatedAt: Number(item.updatedAt) || 0,
-        workspace: item.workspace || { cwd: null }
+        workspace: item.workspace || { cwd: null },
+        parentSessionId: item.parentSessionId || null
       }));
     return sortSessionMeta(normalized);
   } catch {
@@ -152,6 +154,30 @@ export function createSession(cwd) {
     history: [],
     toolResults: [],
     appliedPatches: [],
+    runtimeEvents: []
+  };
+}
+
+// Session forking (docs/feature-landscape-2026.md §3.2, Pi's tree-structured
+// sessions): a scoped version — fork into a genuinely new, independently
+// resumable/branchable session that starts from a copy of the current
+// history, rather than the bigger "rewrite storage as a tree + tree
+// navigator UI" version other agents have. `parentSessionId` links it back;
+// `listSessions()` metadata carries that field, so branches of a session
+// are just `listSessions().filter(s => s.parentSessionId === id)` — no
+// separate index/storage needed.
+export function forkSession(parentSession) {
+  const id = crypto.randomUUID();
+  return {
+    id,
+    parentSessionId: parentSession.id,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    workspace: { ...(parentSession.workspace || {}) },
+    preferences: { ...(parentSession.preferences || {}) },
+    history: [...(parentSession.history || [])],
+    toolResults: [...(parentSession.toolResults || [])],
+    appliedPatches: [...(parentSession.appliedPatches || [])],
     runtimeEvents: []
   };
 }

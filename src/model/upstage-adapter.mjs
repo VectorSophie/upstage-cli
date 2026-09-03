@@ -15,12 +15,26 @@ async function readJsonResponse(response) {
   };
 }
 
+const VALID_REASONING_EFFORTS = new Set(["low", "high"]);
+
 export class UpstageAdapter {
   constructor(options = {}) {
     this.baseUrl = options.baseUrl || DEFAULT_BASE_URL;
     this.model = options.model || DEFAULT_MODEL;
     this.apiKey = options.apiKey || process.env.UPSTAGE_API_KEY || "";
     this.temperature = typeof options.temperature === "number" ? options.temperature : 0.1;
+    // Solar Pro2 is a hybrid reasoning model with a real reasoning_effort
+    // switch (Upstage's own Solar Pro2 Prompting Handbook: "high" makes it
+    // reason step-by-step with verification, ~3x slower; "low" skips that
+    // for simple tasks, ~70% fewer output tokens). null/"auto" omits the
+    // field entirely and lets the model pick its own default — this is
+    // the one lever no other coding agent has, since none of them run on
+    // a model with this exact hybrid-effort API.
+    this.reasoningEffort = VALID_REASONING_EFFORTS.has(options.reasoningEffort) ? options.reasoningEffort : null;
+  }
+
+  setReasoningEffort(value) {
+    this.reasoningEffort = VALID_REASONING_EFFORTS.has(value) ? value : null;
   }
 
   isConfigured() {
@@ -50,6 +64,9 @@ export class UpstageAdapter {
       temperature: this.temperature,
       stream
     };
+    if (this.reasoningEffort) {
+      payload.reasoning_effort = this.reasoningEffort;
+    }
 
     const response = await fetchWithRetry(() =>
       fetch(`${this.baseUrl}/chat/completions`, {

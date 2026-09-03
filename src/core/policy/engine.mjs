@@ -1,4 +1,5 @@
 import { resolve, sep } from "node:path";
+import { scanKoreanPII, summarizeFindings } from "../../permissions/korean-pii-check.mjs";
 
 const DEFAULT_ACTION_CLASS_BY_RISK = {
   low: "read",
@@ -53,6 +54,14 @@ function isWithinTrustedRoot(absolutePath, trustedRoot) {
     ? trustedRoot
     : `${trustedRoot}${sep}`;
   return absolutePath.startsWith(trustedRootWithSeparator);
+}
+
+function flattenArgStrings(args, depth = 0) {
+  if (depth > 3 || args === null || typeof args === "undefined") return "";
+  if (typeof args === "string") return args;
+  if (Array.isArray(args)) return args.map((v) => flattenArgStrings(v, depth + 1)).join("\n");
+  if (typeof args === "object") return Object.values(args).map((v) => flattenArgStrings(v, depth + 1)).join("\n");
+  return "";
 }
 
 function isSecurityOverrideEnabled() {
@@ -169,9 +178,26 @@ export class PolicyEngine {
       };
     }
 
+    // Korean PII guardrail (docs/feature-landscape-2026.md §2.1): scan
+    // write/network calls for RRN/business-registration/card/phone
+    // patterns and force a confirmation gate — redact-or-block-outright
+    // would be too aggressive for legitimate cases (test fixtures, docs
+    // with masked examples), so this surfaces it for a human decision
+    // rather than silently mutating or refusing the write.
+    const piiFindings = (actionClass === "write" || actionClass === "network")
+      ? scanKoreanPII(flattenArgStrings(args))
+      : [];
+    // §2.3 PIPA awareness: same detector, but named distinctly when the
+    // action class is "network" specifically — Korean personal data about
+    // to leave the machine is a materially different risk (PIPA Article
+    // 28-8 cross-border transfer) than data merely being written to a
+    // local file, even though the underlying pattern match is identical.
+    const pipaWarning = actionClass === "network" && piiFindings.some((f) => f.verified);
+
     const requiresConfirmation =
       rule.requiresConfirmation ||
-      (tool?.risk === "high" && this.requireConfirmationForHighRisk);
+      (tool?.risk === "high" && this.requireConfirmationForHighRisk) ||
+      piiFindings.length > 0;
 
     return {
       allowed: true,
@@ -182,7 +208,10 @@ export class PolicyEngine {
         tool: tool?.name,
         args,
         policy: requiresConfirmation ? "confirmation_required" : "allowed_without_confirmation",
-        cwd: context.cwd || null
+        cwd: context.cwd || null,
+        pii: piiFindings.length > 0
+          ? { findings: piiFindings, counts: summarizeFindings(piiFindings), pipaWarning }
+          : null
       }
     };
   }

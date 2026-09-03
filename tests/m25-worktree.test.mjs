@@ -33,10 +33,8 @@ test("isGitRepo distinguishes repos from plain dirs", async () => {
 
 test("create/diff/remove an isolated worktree", async () => {
   const repo = await makeRepo();
-  let wtPath;
   try {
     const wt = createWorktree(repo);
-    wtPath = wt.path;
     assert.equal(existsSync(wt.path), true);
     assert.equal(isGitRepo(wt.path), true);
 

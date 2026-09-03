@@ -1,59 +1,65 @@
-﻿import React from 'react';
-import { Box, Text } from 'ink';
+import React from "react";
+import { useAppContext } from "@opentui/react";
 import { THEME } from "../colors.mjs";
+import { modeLabel, modeColor } from "../mode-cycle.mjs";
+import { reasoningEffortLabel, reasoningEffortColor } from "../reasoning-cycle.mjs";
 import { t } from "../../i18n/index.mjs";
 
-export const StatusBar = ({ statusKey, tokenUsage, approvalMode, systemWarning, language }) => {
-  const getModeColor = () => {
-    if (approvalMode === 'plan') return THEME.accent;
-    if (approvalMode === 'auto') return THEME.secondary;
-    return THEME.dim;
-  };
-
-  const modeKey = approvalMode === 'plan' || approvalMode === 'auto' ? approvalMode : 'default';
-  const statusLabel = t(`status.${statusKey || 'idle'}`);
+export const StatusBar = ({ statusKey, tokenUsage, approvalMode, systemWarning, language, onModeClick, reasoningEffort, onReasoningClick }) => {
+  const { renderer } = useAppContext();
+  const setPointer = (style) => renderer?.setMousePointer?.(style);
+  const statusLabel = t(`status.${statusKey || "idle"}`);
 
   return React.createElement(
-    Box,
-    { 
-      borderStyle: "single", 
-      borderColor: THEME.dim, 
-      paddingX: 1, 
-      justifyContent: "space-between",
-      marginBottom: 0
+    "box",
+    {
+      flexDirection: "row",
+      paddingX: 1,
+      justifyContent: "space-between"
     },
     React.createElement(
-      Box,
-      null,
+      "box",
+      { flexDirection: "row" },
+      // Click to cycle mode — same action Shift+Tab already triggers.
       React.createElement(
-        Box,
-        { marginRight: 2 },
-        React.createElement(
-          Text,
-          { color: getModeColor(), bold: true },
-          ` ▶ ${t(`statusBar.mode.${modeKey}`)} `
-        )
+        "text",
+        {
+          fg: modeColor(approvalMode), bold: true,
+          onMouseUp: onModeClick,
+          onMouseOver: () => setPointer("pointer"),
+          onMouseOut: () => setPointer("default")
+        },
+        `▶ ${modeLabel(approvalMode)}  `
       ),
-      React.createElement(Text, { dimColor: true }, `${t('statusBar.status')}: `),
+      // Click to cycle Solar Pro2's reasoning_effort — same action Ctrl+E triggers.
       React.createElement(
-        Text,
-        { color: statusKey === 'idle' ? THEME.secondary : THEME.accent },
+        "text",
+        {
+          fg: reasoningEffortColor(reasoningEffort), bold: true,
+          onMouseUp: onReasoningClick,
+          onMouseOver: () => setPointer("pointer"),
+          onMouseOut: () => setPointer("default")
+        },
+        `${reasoningEffortLabel(reasoningEffort)}  `
+      ),
+      React.createElement("text", { fg: THEME.text.dim }, `${t("statusBar.status")}: `),
+      React.createElement(
+        "text",
+        { fg: statusKey === "idle" ? THEME.secondary : THEME.accent },
         statusLabel
       )
     ),
     React.createElement(
-      Box,
-      null,
+      "box",
+      { flexDirection: "row" },
       React.createElement(
-        Text,
-        { color: THEME.text.dim },
-        `${t('statusBar.tokens')}: ${tokenUsage.total.toLocaleString()} | ${t('statusBar.cost')}: $${tokenUsage.cost.toFixed(4)} | ${t('statusBar.language')}: ${String(language || '').toUpperCase()}`
+        "text",
+        { fg: THEME.text.dim },
+        `${t("statusBar.tokens")}: ${tokenUsage.total.toLocaleString()} | ${t("statusBar.cost")}: $${tokenUsage.cost.toFixed(4)} | ${t("statusBar.language")}: ${String(language || "").toUpperCase()}`
       ),
-      systemWarning ? React.createElement(
-        Text,
-        { color: THEME.text.warning },
-        ` | ${t('statusBar.warn')}`
-      ) : null
+      systemWarning
+        ? React.createElement("text", { fg: THEME.text.warning }, ` | ${t("statusBar.warn")}`)
+        : null
     )
   );
 };

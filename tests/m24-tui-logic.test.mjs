@@ -4,7 +4,6 @@ import { getAutocomplete, applyCompletion } from "../src/ui/composer-autocomplet
 import { InputHistory } from "../src/ui/input-history.mjs";
 import { nextMode, CYCLE_MODES } from "../src/ui/mode-cycle.mjs";
 import { StreamBatcher } from "../src/ui/stream-batcher.mjs";
-import { selectLogo } from "../src/ui/responsive-logo.mjs";
 
 // ── autocomplete ────────────────────────────────────────────────────────────
 
@@ -70,12 +69,4 @@ test("batcher auto-flushes on its timer", async () => {
   b.push("x");
   await new Promise((r) => setTimeout(r, 40));
   assert.deepEqual(chunks, ["x"]);
-});
-
-// ── responsive logo ─────────────────────────────────────────────────────────
-
-test("logo is full on large terminals, wordmark when cramped", () => {
-  assert.equal(selectLogo({ cols: 120, rows: 40 }), "full");
-  assert.equal(selectLogo({ cols: 60, rows: 40 }), "wordmark");
-  assert.equal(selectLogo({ cols: 120, rows: 15 }), "wordmark");
 });

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
 import { createInterface } from "node:readline";
+import pkg from "../../../package.json" with { type: "json" };
 
 /**
  * StdioMcpClient — a real MCP client over the stdio transport.
@@ -14,8 +15,10 @@ import { createInterface } from "node:readline";
  *   new StdioMcpClient({ command: "npx", args: ["-y", "@modelcontextprotocol/server-filesystem", "."] })
  */
 
-const PROTOCOL_VERSION = "2024-11-05";
-const CLIENT_INFO = { name: "upstage-cli", version: "2.6.1" };
+// See http-client.mjs's PROTOCOL_VERSION comment — same reasoning, offer our
+// best-supported version, servers negotiate down as needed.
+const PROTOCOL_VERSION = "2026-07-28";
+const CLIENT_INFO = { name: "upstage-cli", version: pkg.version };
 
 export class StdioMcpClient {
   constructor({ command, args = [], env = {}, cwd, name = "mcp", timeoutMs = 30000 } = {}) {

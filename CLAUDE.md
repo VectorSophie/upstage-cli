@@ -5,21 +5,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-# Run the CLI interactively
+# Run the CLI interactively (requires Bun — the TUI's native renderer needs it)
 npm run dev
-# or: node src/cli/index.mjs
+# or: bun src/cli/index.mjs
 
 # Run tests (uses Node.js built-in test runner, no Jest)
 npm test
 
 # Run a single test file
-node --test tests/policy-engine.test.mjs
+node --test tests/m10-ui-input-routing.test.mjs
+
+# TUI render tests — need the Bun-native renderer, run separately
+npm run test:ui
 
 # Syntax check (no bundler/compiler needed — zero build step)
 npm run check
 ```
 
-There is no build step. All source is `.mjs` ESM — Node runs it directly.
+There is no build step. All source is `.mjs` ESM. The CLI itself runs on
+**Bun** (`engines.bun >=1.3.0`, `bin` shebangs are `#!/usr/bin/env bun`) —
+business-logic tests/lint/check still run under Node, since they have no
+Bun/native-renderer dependency.
 
 ## Environment
 
@@ -43,7 +49,7 @@ src/cli/index.mjs           (arg parsing, session load, registry init)
 
 ### Agent loop as async generator
 
-`loop.mjs` is an `async function*` that yields typed `AgentEvent` objects (`stream_token`, `tool_start`, `tool_result`, `thinking`, `patch_preview`, `token_usage`, …). Both the React/Ink TUI and the plain CLI consume the same generator — the TUI re-renders on each yield, the CLI handler prints each event. This is the core architectural pattern: production of events is decoupled from consumption.
+`loop.mjs` is an `async function*` that yields typed `AgentEvent` objects (`stream_token`, `tool_start`, `tool_result`, `thinking`, `patch_preview`, `token_usage`, …, 20 types total per `src/protocol/events.mjs`). Both the React/OpenTUI TUI and the plain CLI consume the same generator — the TUI re-renders on each yield, the CLI handler prints each event. This is the core architectural pattern: production of events is decoupled from consumption.
 
 ### Tool registry
 
@@ -82,7 +88,7 @@ Before each model call, `src/agent/context-builder.mjs` extracts keywords from t
 
 ### Interactive TUI
 
-Built with React + Ink (`src/ui/`). The `App.mjs` component subscribes to agent events and re-renders on each yield. Layout: chat pane (left) + sidebar with Plan / Context / Tools tabs (right). Composer supports external editor (`$EDITOR`, Ctrl+X). Navigation follows a vim-like modal model (Esc toggles).
+Built with React + [OpenTUI](https://opentui.com) (`@opentui/core` + `@opentui/react`, `src/ui/`) — a native Zig rendering core, the same engine opencode ships on. Components are OpenTUI's lowercase JSX-intrinsic tags (`box`, `text`, `input`, `select`, `scrollbox`, `diff`, …), used via `React.createElement('box', ...)` — no JSX/Babel, consistent with the zero-build-step approach. The `App.mjs` component subscribes to agent events (via `event-consumer.mjs`) and re-renders on each yield. Layout: chat pane (left, a `scrollbox`) + sidebar with Plan / Context / Tools tabs (right). Composer supports external editor (`$EDITOR`, Ctrl+X). Navigation follows a vim-like modal model (Esc toggles). Runs under Bun — OpenTUI's native renderer requires it.
 
 ### Project context files
 

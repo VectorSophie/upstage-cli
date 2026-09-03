@@ -1,5 +1,5 @@
-import { readdir, stat } from "node:fs/promises";
-import { join, relative, resolve } from "node:path";
+import { readdir } from "node:fs/promises";
+import { join, relative } from "node:path";
 import { resolveWorkspacePath } from "../lib/fs-utils.mjs";
 
 function globToRegex(pattern) {

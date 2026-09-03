@@ -46,7 +46,8 @@
       "WebFetch(domain:medium.com)",
       "WebFetch(domain:antigravity.google)",
       "Bash(gh api *)",
-      "Bash(npm view *)"
+      "Bash(npm view *)",
+      "Read(//tmp/claude-1000/-home-vectorsophie-Desktop-Workspace-upstage-cli/**)"
     ]
   }
 }

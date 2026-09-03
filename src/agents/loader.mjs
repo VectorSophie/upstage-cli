@@ -1,6 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { join, extname, basename } from "node:path";
+import { join, extname } from "node:path";
 import os from "node:os";
 import { parseAgentDefinition } from "./parser.mjs";
 
