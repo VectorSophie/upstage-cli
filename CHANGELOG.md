@@ -4,7 +4,29 @@ All notable changes to upstage-cli are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
+
+## [3.1.0] - 2026-09-03
 ### Added
+- **Solar Pro4 is now the default model** (`solar-pro4`, up from `solar-pro2`)
+  everywhere the CLI resolves a model — the adapter's own default, the
+  settings schema, CLI help text, this repo's own tracked project config, and
+  the TUI's display fallback all agree. A new per-model capability table
+  (`src/model/model-capabilities.mjs`) drives context limits (512K for Pro4
+  vs. 65,536 for Pro2/Pro3), `parallel_tool_calls` support, `reasoning_effort`
+  support, and structured-output support, with a conservative Pro2-level
+  fallback for unrecognized model ids.
+- **Model-aware context/token limits.** Conversation-history auto-compaction
+  and the token-budget warning threshold now scale with the active model's
+  real context window instead of a hardcoded Pro2-era 65,536-token ceiling;
+  the repo-context character budget injected into each turn scales
+  proportionally too.
+- **`parallel_tool_calls` and `reasoning_effort` wired into requests**, gated
+  by the capability table so unsupported models never receive fields they
+  don't understand; a new per-call `reasoning_effort` override composes
+  cleanly with the pre-existing instance-level reasoning-effort toggle
+  (Ctrl+E status-bar chip) rather than replacing it.
+- **Reasoning content parsed from responses** (both streaming and
+  non-streaming), stored alongside the final answer for future surfacing.
 - **Parallel independent tool calls** — when a single model turn requests
   multiple "low risk" (read-only) tools, the agent loop now runs them
   concurrently via `Promise.all` instead of one at a time; write/exec tools
