@@ -89,13 +89,26 @@ export function hasApiKey() {
  * EXIT-CODE MAPPING DECISION for the fallback: for six of these seven
  * commands (parse/ocr/extract/schema/classify/embed — everything routed
  * through `upstageRequest`/client.mjs), a plain (non-`UpstageApiError`) throw
- * from the underlying service function can ONLY be client-side validation
+ * from the underlying service function is EITHER client-side validation
  * performed before any network call (bad file path/type/size, invalid
- * `type`/categories count, too many schema-sample paths, ...) — client.mjs's
- * `upstageRequest` itself wraps every genuine network/API-level failure as
- * `UpstageApiError`. That makes a plain Error from these six modules
- * unambiguously a usage mistake, not an "unexpected" failure, so their
- * command files call this with the default `fallbackCode: 2`.
+ * `type`/categories count, too many schema-sample paths, ...) — the common
+ * case — OR, rarely, a post-2xx response-shape mismatch: extraction.mjs's
+ * `extractStructured`/`generateSchema`, classification.mjs, and
+ * embeddings.mjs each also throw a plain `Error("...unexpected response
+ * shape")` AFTER a successful round-trip, if Upstage's real response doesn't
+ * match this repo's synthetic-tool-call shape assumption (documented as
+ * not-yet-live-verified in each of those modules' headers). That second case
+ * genuinely isn't a usage mistake, but `client.mjs`'s `upstageRequest` has no
+ * way to distinguish it from client-side validation from the outside either
+ * — both surface as the same plain `Error` shape. Mapping the fallback to
+ * exit 2 is therefore a deliberately accepted approximation (right far more
+ * often than not) rather than a confirmed classification; it should be
+ * revisited once a future task live-verifies these three modules' actual
+ * response shapes against the real API and can tell the two cases apart
+ * properly (e.g. by having them throw `UpstageApiError` for a genuine
+ * shape-mismatch instead of a plain `Error`) rather than continuing to guess.
+ * Their command files call this with the default `fallbackCode: 2` in the
+ * meantime.
  *
  * `groundedness` is the deliberate exception: `checkGroundedness()` calls
  * `UpstageAdapter.complete()` directly (see groundedness.mjs's own header for
