@@ -144,5 +144,13 @@ export async function upstageRequest({
     });
   }
 
-  return response.json();
+  try {
+    return await response.json();
+  } catch (error) {
+    throw new UpstageApiError("Upstage API returned a non-JSON success response", {
+      status: response.status,
+      retryable: false,
+      code: error.name
+    });
+  }
 }

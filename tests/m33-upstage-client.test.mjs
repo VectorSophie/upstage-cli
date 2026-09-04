@@ -215,3 +215,117 @@ test("upstageRequest supports an absolute URL passed as path", async () => {
     }
   );
 });
+
+test("upstageRequest throws UpstageApiError with a non-JSON success response, without a raw SyntaxError", async () => {
+  await withMockFetch(
+    async () =>
+      new Response("not json at all", {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      }),
+    async () => {
+      await assert.rejects(
+        () =>
+          upstageRequest({
+            path: "/embeddings",
+            body: { input: "x" },
+            apiKey: "test-key",
+            baseUrl: "https://api.example.test"
+          }),
+        (err) => {
+          assert.ok(err instanceof UpstageApiError);
+          assert.equal(err.status, 200);
+          assert.equal(err.retryable, false);
+          return true;
+        }
+      );
+    }
+  );
+});
+
+test("upstageRequest rejects a missing/empty path before any network call", async () => {
+  let calls = 0;
+  await withMockFetch(
+    async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    },
+    async () => {
+      await assert.rejects(
+        () => upstageRequest({ apiKey: "test-key" }),
+        (err) => {
+          assert.ok(err instanceof UpstageApiError);
+          return true;
+        }
+      );
+      assert.equal(calls, 0, "fetch must not be called when path is missing");
+    }
+  );
+});
+
+test("upstageRequest rejects a multipart request missing fileField.buffer before any network call", async () => {
+  let calls = 0;
+  await withMockFetch(
+    async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          upstageRequest({
+            path: "/document-digitization",
+            isMultipart: true,
+            formFields: { model: "document-parse" },
+            fileField: { filename: "test.pdf", contentType: "application/pdf" },
+            apiKey: "test-key"
+          }),
+        (err) => {
+          assert.ok(err instanceof UpstageApiError);
+          return true;
+        }
+      );
+      assert.equal(calls, 0, "fetch must not be called when fileField.buffer is missing");
+    }
+  );
+});
+
+test("upstageRequest aborts the underlying fetch when timeoutMs elapses", async () => {
+  let sawSignal = false;
+  let signalWasAborted = false;
+  await withMockFetch(
+    (_url, options) => {
+      sawSignal = options.signal instanceof AbortSignal;
+      // With immediate-fake timers, setTimeout(() => controller.abort(), ms) may run
+      // synchronously before fetch is even invoked, so the signal can already be
+      // aborted by the time we get here — handle both orderings.
+      return new Promise((_resolve, reject) => {
+        const rejectAborted = () => {
+          signalWasAborted = true;
+          const abortError = new Error("This operation was aborted");
+          abortError.name = "AbortError";
+          reject(abortError);
+        };
+        if (options.signal.aborted) rejectAborted();
+        else options.signal.addEventListener("abort", rejectAborted);
+        // Otherwise never resolves on its own — only the abort should settle this promise.
+      });
+    },
+    () =>
+      withImmediateTimers(async () => {
+        await assert.rejects(
+          () =>
+            upstageRequest({
+              path: "/embeddings",
+              body: { input: "x" },
+              apiKey: "test-key",
+              baseUrl: "https://api.example.test",
+              timeoutMs: 5
+            }),
+          () => true
+        );
+        assert.ok(sawSignal, "fetch should receive an AbortSignal");
+        assert.ok(signalWasAborted, "the signal should have been aborted after timeoutMs");
+      })
+  );
+});
