@@ -43,8 +43,27 @@ async function resolveSettings(cwd, settings) {
   return settings || (await loadSettings({ cwd }));
 }
 
+/** Resolves settings (unless already given) and loads the merged server
+ *  configs — the `resolveSettings` + `loadMcpServerConfigs` pairing every
+ *  subcommand below needs before it can do anything else. */
+async function loadConfigs(cwd, settings) {
+  const resolved = await resolveSettings(cwd, settings);
+  return loadMcpServerConfigs(cwd, resolved, { onLog: () => {} });
+}
+
 function findConfig(configs, name) {
   return configs.find((c) => c.name === name) || null;
+}
+
+/** Common "resolve <name> to one existing config, or a usage error" pattern
+ *  shared by `tools`/`show` (both require exactly one named server up
+ *  front). `test` does NOT use this — an absent name there means "test all
+ *  configured servers", not an error, so it has its own inline handling. */
+function requireConfig(configs, name) {
+  if (!name) return { error: "missing required <name> argument", code: 2 };
+  const cfg = findConfig(configs, name);
+  if (!cfg) return { error: `no MCP server named '${name}' configured`, code: 2 };
+  return { cfg };
 }
 
 function parsePositionalsAndFlags(rest) {
@@ -60,8 +79,7 @@ function parsePositionalsAndFlags(rest) {
  * closeAll() for cleanup. Shared by `list`/`status`.
  */
 async function connectAll(cwd, settings) {
-  const resolved = await resolveSettings(cwd, settings);
-  const configs = await loadMcpServerConfigs(cwd, resolved, { onLog: () => {} });
+  const configs = await loadConfigs(cwd, settings);
   const { servers, closeAll } = await connectConfiguredServers(configs, {
     cwd,
     timeoutMs: CONNECT_TIMEOUT_MS,
@@ -166,7 +184,7 @@ export async function runMcpListCommand(rest = []) {
 
 /** A narrower summary than `list` — just name + status, no transport or
  *  tool count. Returns `[{ name, status }]`. */
-export async function gatherMcpStatusRows({ cwd = process.cwd(), settings } = {}) {
+export async function gatherMcpStatus({ cwd = process.cwd(), settings } = {}) {
   const { configs, byName, closeAll } = await connectAll(cwd, settings);
   const rows = configs.map((cfg) => ({
     name: cfg.name,
@@ -206,7 +224,7 @@ export async function runMcpStatusCommand(rest = []) {
     return 0;
   }
   const { json } = parsePositionalsAndFlags(rest);
-  const rows = await gatherMcpStatusRows({ cwd: process.cwd() });
+  const rows = await gatherMcpStatus({ cwd: process.cwd() });
   process.stdout.write(json ? formatStatusJson(rows) : formatStatusHuman(rows));
   return 0;
 }
@@ -217,8 +235,7 @@ export async function runMcpStatusCommand(rest = []) {
  *  when `name` is omitted. Returns `{ results: [{name, transport, status,
  *  error}] }` on success, or `{ error, code }` for a bad `name`. */
 export async function gatherMcpTestResults({ cwd = process.cwd(), settings, name } = {}) {
-  const resolved = await resolveSettings(cwd, settings);
-  const configs = await loadMcpServerConfigs(cwd, resolved, { onLog: () => {} });
+  const configs = await loadConfigs(cwd, settings);
 
   let targets = configs;
   if (name) {
@@ -284,10 +301,11 @@ export async function runMcpTestCommand(rest = []) {
   }
   const { results } = outcome;
   process.stdout.write(json ? formatTestJson(results) : formatTestHuman(results));
-  if (results.length === 0) return 0;
   // Unlike `doctor`/`skills install`, `test`'s entire job is a pass/fail
   // verdict — a caller scripting against it needs a non-zero exit when a
-  // targeted server actually failed, not just a report.
+  // targeted server actually failed, not just a report. `[].every(...)` is
+  // vacuously true, so zero configured servers naturally exits 0 here too,
+  // with no separate early-return needed.
   return results.every((r) => r.status === "pass") ? 0 : 1;
 }
 
@@ -297,12 +315,10 @@ export async function runMcpTestCommand(rest = []) {
  *  `{ result: { server, toolCount, tools: [{name, description}] } }` or
  *  `{ error, code }` (2 = bad/missing name, 1 = connection/list failure). */
 export async function gatherMcpTools({ cwd = process.cwd(), settings, name } = {}) {
-  if (!name) return { error: "missing required <name> argument", code: 2 };
-
-  const resolved = await resolveSettings(cwd, settings);
-  const configs = await loadMcpServerConfigs(cwd, resolved, { onLog: () => {} });
-  const cfg = findConfig(configs, name);
-  if (!cfg) return { error: `no MCP server named '${name}' configured`, code: 2 };
+  const configs = await loadConfigs(cwd, settings);
+  const found = requireConfig(configs, name);
+  if (found.error) return found;
+  const { cfg } = found;
 
   const { connected, client, error, closeAll } = await connectOne(cfg, cwd);
   if (!connected) {
@@ -395,12 +411,10 @@ function buildShowConfig(cfg) {
  *  connects to anything). `result.env`/`result.headers` values are ALWAYS
  *  the fixed string "***" — see `redactValues()` above. */
 export async function gatherMcpShow({ cwd = process.cwd(), settings, name } = {}) {
-  if (!name) return { error: "missing required <name> argument", code: 2 };
-  const resolved = await resolveSettings(cwd, settings);
-  const configs = await loadMcpServerConfigs(cwd, resolved, { onLog: () => {} });
-  const cfg = findConfig(configs, name);
-  if (!cfg) return { error: `no MCP server named '${name}' configured`, code: 2 };
-  return { result: buildShowConfig(cfg) };
+  const configs = await loadConfigs(cwd, settings);
+  const found = requireConfig(configs, name);
+  if (found.error) return found;
+  return { result: buildShowConfig(found.cfg) };
 }
 
 export function formatShowHuman(shown) {

@@ -16,9 +16,9 @@ import { createServer } from "node:http";
 
 import {
   gatherMcpList, formatListHuman, formatListJson, runMcpListCommand,
-  gatherMcpStatusRows, formatStatusHuman, formatStatusJson,
-  gatherMcpTestResults, formatTestHuman, formatTestJson,
-  gatherMcpTools, formatToolsHuman, formatToolsJson,
+  gatherMcpStatus, formatStatusHuman, formatStatusJson, runMcpStatusCommand,
+  gatherMcpTestResults, formatTestHuman, formatTestJson, runMcpTestCommand,
+  gatherMcpTools, formatToolsHuman, formatToolsJson, runMcpToolsCommand,
   gatherMcpShow, formatShowHuman, formatShowJson
 } from "../src/cli/commands/mcp.mjs";
 
@@ -37,6 +37,21 @@ function withTempDir(run) {
       .then(() => run(dir))
       .finally(() => rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 }))
   );
+}
+
+// For the `runMcpXCommand` CLI entry points, which read `process.cwd()`
+// themselves rather than taking a `cwd` parameter (unlike the `gatherMcp*`
+// core functions above). Same technique as tests/m33-doctor.test.mjs's
+// `withCwd`. Deliberately NOT paired with stdout capture across these same
+// awaits — see that file's own comment on why intercepting
+// `process.stdout.write` across a real async boundary in `node --test`
+// risks corrupting the TAP stream for other tests; exit-code assertions
+// only, content assertions go through the already-covered pure
+// `format*Human`/`format*Json` functions instead.
+function withCwd(dir, run) {
+  const original = process.cwd;
+  process.cwd = () => dir;
+  return Promise.resolve().then(run).finally(() => { process.cwd = original; });
 }
 
 /** A minimal Streamable-HTTP MCP server exposing one tool ("ping"), same
@@ -98,6 +113,27 @@ function withThreeServerFixture(run) {
           "stdio-ok": { command: process.execPath, args: [MOCK_STDIO] },
           "http-ok": { url },
           "stdio-broken": { command: "this-binary-does-not-exist-mcp-cli-test", args: [] }
+        }
+      }));
+      await run(dir);
+    } finally {
+      server.close();
+    }
+  });
+}
+
+/** Same shape as `withThreeServerFixture` but with ONLY the two servers
+ *  that connect successfully — used to exercise `runMcpTestCommand`'s
+ *  all-pass exit-code path (0), which the 3-server fixture can never hit
+ *  since it always includes a deliberately-broken server. */
+function withTwoGoodServersFixture(run) {
+  return withTempDir(async (dir) => {
+    const { url, server } = await startMockHttpServer();
+    try {
+      await writeFile(join(dir, ".mcp.json"), JSON.stringify({
+        mcpServers: {
+          "stdio-ok": { command: process.execPath, args: [MOCK_STDIO] },
+          "http-ok": { url }
         }
       }));
       await run(dir);
@@ -182,7 +218,7 @@ test("runMcpListCommand: --help prints usage and exits 0 without connecting to a
 
 test("mcp status: connected/failed per server, genuinely narrower than list (no transport/toolCount fields)", () =>
   withThreeServerFixture(async (dir) => {
-    const rows = await gatherMcpStatusRows({ cwd: dir, settings: {} });
+    const rows = await gatherMcpStatus({ cwd: dir, settings: {} });
     assert.equal(rows.length, 3);
     const byName = Object.fromEntries(rows.map((r) => [r.name, r.status]));
     assert.equal(byName["stdio-ok"], "connected");
@@ -196,7 +232,7 @@ test("mcp status: connected/failed per server, genuinely narrower than list (no 
 
 test("mcp status human output: exactly one line per configured server", () =>
   withThreeServerFixture(async (dir) => {
-    const rows = await gatherMcpStatusRows({ cwd: dir, settings: {} });
+    const rows = await gatherMcpStatus({ cwd: dir, settings: {} });
     const lines = formatStatusHuman(rows).trim().split("\n");
     assert.equal(lines.length, 3);
   })
@@ -204,11 +240,20 @@ test("mcp status human output: exactly one line per configured server", () =>
 
 test("mcp status --json round-trips to [{name, status}]", () =>
   withThreeServerFixture(async (dir) => {
-    const rows = await gatherMcpStatusRows({ cwd: dir, settings: {} });
+    const rows = await gatherMcpStatus({ cwd: dir, settings: {} });
     const parsed = JSON.parse(formatStatusJson(rows));
     assert.equal(parsed.length, 3);
     assert.ok(parsed.every((r) => "name" in r && "status" in r));
   })
+);
+
+test("runMcpStatusCommand: real exit code 0 for both the plain and --json output branches", () =>
+  withThreeServerFixture((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpStatusCommand([]), 0);
+      assert.equal(await runMcpStatusCommand(["--json"]), 0);
+    })
+  )
 );
 
 // ── test: re-run connection for one or all servers, real error messages ──
@@ -233,6 +278,13 @@ test("mcp test <name>: failure reports the ACTUAL underlying error, not a bare '
     // StdioMcpClient's real spawn-failure message names the server and the
     // failure mode — this is the "actual error message" the task requires.
     assert.match(r.error, /stdio-broken|failed to start|ENOENT|exited/i);
+    // Stronger check than the regex above: config.mjs's raw onLog message is
+    // `could not connect server '<name>': <the actual message>` — assert
+    // connectOne()'s prefix-stripping actually ran (r.error must NOT still
+    // start with that raw prefix). Without this, a regression that silently
+    // broke the stripping would still pass the regex above, since all of
+    // those substrings also appear inside the un-stripped raw message.
+    assert.doesNotMatch(r.error, /^could not connect server/);
   })
 );
 
@@ -264,6 +316,48 @@ test("formatTestHuman/formatTestJson surface the error text for a failed server"
     const json = JSON.parse(formatTestJson(outcome.results));
     assert.equal(json[0].error, outcome.results[0].error);
   })
+);
+
+// The exact line this exercises — `runMcpTestCommand`'s deliberate
+// deviation from doctor's "checks are data, always exit 0" convention
+// (`results.every((r) => r.status === "pass") ? 0 : 1`) — had zero direct
+// end-to-end coverage before these four tests: everything above calls
+// `gatherMcpTestResults` (the data-gathering core), never the CLI entry
+// point itself, so a regression in that exit-code line would have gone
+// uncaught by this suite.
+
+test("runMcpTestCommand: real exit code 0 when every targeted server passes", () =>
+  withTwoGoodServersFixture((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpTestCommand([]), 0);
+    })
+  )
+);
+
+test("runMcpTestCommand: real exit code 1 when at least one targeted server fails", () =>
+  withThreeServerFixture((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpTestCommand([]), 1);
+    })
+  )
+);
+
+test("runMcpTestCommand: real exit code 0 with zero configured servers (no early-return needed — vacuous .every())", () =>
+  withTempDir((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpTestCommand([]), 0);
+    })
+  )
+);
+
+test("runMcpTestCommand: --json output branch still returns the same real exit codes", () =>
+  withThreeServerFixture((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpTestCommand(["--json"]), 1, "mixed pass/fail across all servers");
+      assert.equal(await runMcpTestCommand(["stdio-ok", "--json"]), 0, "single passing server");
+      assert.equal(await runMcpTestCommand(["stdio-broken", "--json"]), 1, "single failing server");
+    })
+  )
 );
 
 // ── tools: connect to one server, list its tools ─────────────────────────
@@ -317,6 +411,18 @@ test("formatToolsHuman lists each tool with its description and a count line", (
     const json = JSON.parse(formatToolsJson(outcome.result));
     assert.equal(json.toolCount, 2);
   })
+);
+
+test("runMcpToolsCommand: real exit codes — 0 for a working server (plain and --json), 2 for missing name, 1 for a connection failure", () =>
+  withThreeServerFixture((dir) =>
+    withCwd(dir, async () => {
+      assert.equal(await runMcpToolsCommand(["stdio-ok"]), 0);
+      assert.equal(await runMcpToolsCommand(["stdio-ok", "--json"]), 0);
+      assert.equal(await runMcpToolsCommand([]), 2, "missing <name> is a usage error");
+      assert.equal(await runMcpToolsCommand(["does-not-exist"]), 2, "unknown <name> is a usage error");
+      assert.equal(await runMcpToolsCommand(["stdio-broken"]), 1, "a real connection failure is not a usage error");
+    })
+  )
 );
 
 // ── show: security-critical — NEVER a real secret value, adversarial ─────
