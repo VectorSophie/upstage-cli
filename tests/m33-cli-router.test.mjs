@@ -35,11 +35,14 @@ test("dispatch routes a namespaced leaf command to its handler", async () => {
 });
 
 test("dispatch routes a top-level leaf command (no subcommands) to its handler", async () => {
+  // Uses "version" (still a stub as of this test) rather than "doctor" —
+  // Task 12.3 replaced the doctor stub with a real implementation, which is
+  // covered separately by tests/m33-doctor.test.mjs.
   const io = captureStdio();
   try {
-    const code = await dispatch(["doctor"]);
+    const code = await dispatch(["version"]);
     assert.equal(code, 1);
-    assert.match(io.err.join(""), /upstage doctor: not yet implemented/);
+    assert.match(io.err.join(""), /upstage version: not yet implemented/);
   } finally {
     io.restore();
   }

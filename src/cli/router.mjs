@@ -32,6 +32,8 @@
 // already have this exact property today via `parseCliArgs`, and it has not been
 // a reported problem, so the same tradeoff is accepted here rather than solved.
 
+import { runDoctorCommand } from "./commands/doctor.mjs";
+
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
   return async function handler(rest) {
@@ -59,7 +61,21 @@ function namespace(name, subNames) {
 }
 
 export const COMMANDS = {
-  doctor: leaf(["doctor"]),
+  // Task 12.3 — real implementation (src/cli/commands/doctor.mjs), not a
+  // stub. `runDoctorCommand` itself handles -h/--help, so it's wired
+  // directly as the leaf's handler rather than going through `leaf()`.
+  doctor: {
+    handler: runDoctorCommand,
+    usage: [
+      "Usage: upstage doctor [options]",
+      "",
+      "  Runs a read-only diagnostic sweep (Core/Upstage/Project/Extensions/Security/Verification).",
+      "  Individual checks may report warn/fail — this never affects the command's own exit code.",
+      "",
+      "Options:",
+      "  --json    Output as JSON"
+    ].join("\n")
+  },
   init: leaf(["init"]),
   version: leaf(["version"]),
   update: leaf(["update"]),
@@ -109,6 +125,14 @@ function formatUsage(path, node) {
       "Subcommands:",
       ...names.map((n) => `  ${n}`)
     ].join("\n");
+  }
+  // A leaf that has a real implementation (not `stubHandler`) can carry its
+  // own `usage` string so router-level `-h`/`--help` interception (which
+  // fires before the handler itself ever runs, see `dispatch()` below)
+  // doesn't print the generic "(not yet implemented)" placeholder for a
+  // command that's actually implemented.
+  if (typeof node?.usage === "string") {
+    return node.usage;
   }
   return `Usage: ${prefix} [options]\n\n  (not yet implemented)`;
 }
