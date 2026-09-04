@@ -41,6 +41,7 @@ import { runSchemaCommand } from "./commands/schema.mjs";
 import { runClassifyCommand } from "./commands/classify.mjs";
 import { runEmbedCommand } from "./commands/embed.mjs";
 import { runGroundednessCommand } from "./commands/groundedness.mjs";
+import { runSkillsInstallCommand } from "./commands/skills-install.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -115,7 +116,30 @@ export const COMMANDS = {
 
   mcp: namespace("mcp", ["list", "status", "test", "tools", "show", "add", "remove"]),
   tools: namespace("tools", ["list", "show"]),
-  skills: namespace("skills", ["list", "show", "install"]),
+  // `list`/`show` remain stubs; `install` is Task 7.9's real implementation
+  // (src/cli/commands/skills-install.mjs), wired directly the same way
+  // `parse`/`ocr`/etc. above are (its own -h/--help handling, own usage
+  // string), rather than through the generic `namespace()`/`leaf()` helpers.
+  skills: {
+    subcommands: {
+      list: leaf(["skills", "list"]),
+      show: leaf(["skills", "show"]),
+      install: {
+        handler: runSkillsInstallCommand,
+        usage: [
+          "Usage: upstage skills install [--target claude|upstage] [--json]",
+          "",
+          "  Installs the first-party `upstage-utilities` skill into on-disk skill",
+          "  director(y/ies) — by default both .upstage/skills/ and .claude/skills/.",
+          "",
+          "Options:",
+          "  --target <name>   Install to only this target (claude|upstage) instead",
+          "                    of the default pair",
+          "  --json            Output a machine-readable summary as JSON"
+        ].join("\n")
+      }
+    }
+  },
   agents: namespace("agents", ["list", "show"]),
   plugins: namespace("plugins", ["list", "show", "install"]),
   sessions: namespace("sessions", ["list", "show", "resume", "export"]),

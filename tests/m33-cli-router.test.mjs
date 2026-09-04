@@ -73,7 +73,11 @@ test("namespaced commands' subcommands all resolve to handlers", async () => {
     models: ["list", "info"],
     mcp: ["list", "status", "test", "tools", "show", "add", "remove"],
     tools: ["list", "show"],
-    skills: ["list", "show", "install"],
+    // "install" excluded here — Task 7.9 replaced that stub with a real
+    // implementation (src/cli/commands/skills-install.mjs), covered
+    // separately by tests/m33-skills-install.test.mjs, same as
+    // doctor/init/parse/etc. above.
+    skills: ["list", "show"],
     agents: ["list", "show"],
     plugins: ["list", "show", "install"],
     sessions: ["list", "show", "resume", "export"],
