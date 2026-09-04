@@ -186,6 +186,26 @@ test("classifyDocument rejects an empty or single-item categories list before an
   );
 });
 
+test("classifyDocument rejects non-string/empty-string category entries before any network call", async () => {
+  const path = fixture("doc6b.pdf");
+  let calls = 0;
+  await withApiKey(() =>
+    withMockFetch(
+      async () => {
+        calls += 1;
+        return jsonResponse(REALISTIC_RESPONSE);
+      },
+      async () => {
+        await assert.rejects(() => classifyDocument({ path, categories: ["invoice", 123] }), /non-empty string/);
+        await assert.rejects(() => classifyDocument({ path, categories: ["invoice", ""] }), /non-empty string/);
+        await assert.rejects(() => classifyDocument({ path, categories: ["invoice", "   "] }), /non-empty string/);
+        await assert.rejects(() => classifyDocument({ path, categories: ["invoice", null] }), /non-empty string/);
+        assert.equal(calls, 0, "invalid category entries must fail before any fetch call");
+      }
+    )
+  );
+});
+
 test("classifyDocument rejects a categories list over 1,000 entries before any network call", async () => {
   const path = fixture("doc7.pdf");
   let calls = 0;

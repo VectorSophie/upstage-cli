@@ -26,6 +26,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { extname } from "node:path";
 import { upstageRequest } from "./client.mjs";
+import { SUPPORTED_EXTENSIONS } from "./documents.mjs";
 
 const ENDPOINT = "/document-classification";
 const MODEL = "document-classify";
@@ -37,22 +38,6 @@ const MODEL = "document-classify";
 export const MIN_CATEGORIES = 2;
 export const MAX_CATEGORIES = 1000;
 
-// Classification isn't documented as restricted to a narrower file-type set
-// than Document Parse/OCR, so — unlike documents.mjs's SUPPORTED_EXTENSIONS,
-// which is specific to the document-digitization endpoint's documented
-// formats — this is deliberately just a best-effort Content-Type guess for
-// the multipart part, not an enforced allowlist. An unrecognized extension
-// still gets uploaded (as application/octet-stream) rather than rejected
-// client-side.
-const CONTENT_TYPE_BY_EXTENSION = {
-  ".pdf": "application/pdf",
-  ".png": "image/png",
-  ".jpg": "image/jpeg",
-  ".jpeg": "image/jpeg",
-  ".tiff": "image/tiff",
-  ".tif": "image/tiff",
-  ".heic": "image/heic"
-};
 const DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
 function validateCategories(categories) {
@@ -69,6 +54,13 @@ function validateCategories(categories) {
       `classifyDocument() supports at most ${MAX_CATEGORIES} categories (Upstage's documented cap), got ${categories.length}`
     );
   }
+  categories.forEach((category, i) => {
+    if (typeof category !== "string" || !category.trim()) {
+      throw new Error(
+        `classifyDocument() requires every category to be a non-empty string, got ${JSON.stringify(category)} at index ${i}`
+      );
+    }
+  });
 }
 
 async function loadFile(path) {
@@ -76,7 +68,14 @@ async function loadFile(path) {
     throw new Error(`File not found: ${path}`);
   }
   const buffer = await readFile(path);
-  const contentType = CONTENT_TYPE_BY_EXTENSION[extname(path).toLowerCase()] || DEFAULT_CONTENT_TYPE;
+  // Reuses documents.mjs's extension→MIME table (same 7 extensions apply
+  // here) so the two modules can't independently drift, as
+  // solar-embedding's stale duplicate model names once did (see
+  // embeddings.mjs's header) — but unlike documents.mjs's loadFile,
+  // classification isn't documented as restricted to this format set, so an
+  // unrecognized extension still gets uploaded (as application/octet-stream)
+  // rather than rejected client-side.
+  const contentType = SUPPORTED_EXTENSIONS[extname(path).toLowerCase()] || DEFAULT_CONTENT_TYPE;
   return { buffer, contentType, filename: path.split(/[/\\]/).pop() };
 }
 
