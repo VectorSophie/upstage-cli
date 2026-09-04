@@ -51,9 +51,14 @@ Run `upstage --help` for the authoritative list. As of this writing:
 Usage: upstage [command] [options] [prompt]
 
 Commands:
-  chat              Interactive chat mode (default)
-  ask               One-shot prompt mode
-  tui               Fullscreen terminal UI
+  chat              Launch the fullscreen TUI (default — same as running
+                    upstage with no command, and same as "tui")
+  tui               Launch the fullscreen TUI (same as "chat" / no command)
+  ask               One-shot prompt mode — run headlessly and exit, no TUI
+
+  "chat", "tui", and running upstage with no command are three names for the
+  same fullscreen-TUI entry point, not separate modes. "ask" (or passing a
+  prompt/-p) is the only genuinely different, non-interactive mode.
 
 Options:
   -h, --help                Show this help
@@ -79,8 +84,10 @@ Options:
   -d, --debug               Debug mode
 
 Examples:
-  upstage                        Start interactive REPL
-  upstage -p "Fix bug in app"    Run prompt and exit
+  upstage                        Launch the fullscreen TUI
+  upstage chat                   Same as above ("chat" = "tui" = no command)
+  upstage tui                    Same as above
+  upstage -p "Fix bug in app"    Run prompt and exit (no TUI)
   upstage ask "Read package.json"
   upstage --lang en -p "hello"   English mode
 ```

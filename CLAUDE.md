@@ -35,7 +35,7 @@ Bun/native-renderer dependency.
 
 ## Architecture
 
-The codebase is a terminal-based agentic coding assistant. A single CLI invocation routes to either an interactive TUI or a non-interactive one-shot prompt.
+The codebase is a terminal-based agentic coding assistant. A single CLI invocation routes to either the fullscreen TUI or a non-interactive one-shot prompt. `upstage` (no command), `upstage chat`, and `upstage tui` are three names for the same TUI entry point — `src/cli/index.mjs`'s `main()` sends all three (anything that isn't `ask` and has no prompt) through the same `runInteractive()` call, which always mounts the same OpenTUI `App` component. There is no separate lightweight "chat" mode. `upstage ask` (or any invocation with a prompt, e.g. `-p`) is the one genuinely different path — headless, no TUI.
 
 ### Request flow
 
@@ -45,7 +45,7 @@ src/cli/index.mjs           (arg parsing, session load, registry init)
       → src/model/upstage-adapter.mjs    (Solar API, streaming — model-aware via model-capabilities.mjs)
       → src/tools/registry.mjs           (tool lookup, policy check, execution)
       → src/core/events/bus.mjs          (audit-trail event bus)
-  → src/ui/App.mjs (TUI) OR stdout (ask mode)
+  → src/ui/App.mjs (TUI: default/chat/tui) OR stdout (ask mode)
 ```
 
 ### Agent loop as async generator
@@ -93,7 +93,7 @@ Before each model call, `src/agent/context-builder.mjs` extracts keywords from t
 
 ### Interactive TUI
 
-Built with React + [OpenTUI](https://opentui.com) (`@opentui/core` + `@opentui/react`, `src/ui/`) — a native Zig rendering core, the same engine opencode ships on. Components are OpenTUI's lowercase JSX-intrinsic tags (`box`, `text`, `input`, `select`, `scrollbox`, `diff`, …), used via `React.createElement('box', ...)` — no JSX/Babel, consistent with the zero-build-step approach. The `App.mjs` component subscribes to agent events (via `event-consumer.mjs`) and re-renders on each yield. Layout: chat pane (left, a `scrollbox`) + sidebar with Plan / Context / Tools tabs (right). Composer supports external editor (`$EDITOR`, Ctrl+X). Navigation follows a vim-like modal model (Esc toggles). Runs under Bun — OpenTUI's native renderer requires it.
+Reached via `upstage`, `upstage chat`, or `upstage tui` — all three launch this same component; see the naming note above. Built with React + [OpenTUI](https://opentui.com) (`@opentui/core` + `@opentui/react`, `src/ui/`) — a native Zig rendering core, the same engine opencode ships on. Components are OpenTUI's lowercase JSX-intrinsic tags (`box`, `text`, `input`, `select`, `scrollbox`, `diff`, …), used via `React.createElement('box', ...)` — no JSX/Babel, consistent with the zero-build-step approach. The `App.mjs` component subscribes to agent events (via `event-consumer.mjs`) and re-renders on each yield. Layout: chat pane (left, a `scrollbox`) + sidebar with Plan / Context / Tools tabs (right). Composer supports external editor (`$EDITOR`, Ctrl+X). Navigation follows a vim-like modal model (Esc toggles). Runs under Bun — OpenTUI's native renderer requires it.
 
 ### Project context files
 
