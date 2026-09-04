@@ -42,6 +42,13 @@ import { runClassifyCommand } from "./commands/classify.mjs";
 import { runEmbedCommand } from "./commands/embed.mjs";
 import { runGroundednessCommand } from "./commands/groundedness.mjs";
 import { runSkillsInstallCommand } from "./commands/skills-install.mjs";
+import {
+  runMcpListCommand,
+  runMcpStatusCommand,
+  runMcpTestCommand,
+  runMcpToolsCommand,
+  runMcpShowCommand
+} from "./commands/mcp.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -114,7 +121,79 @@ export const COMMANDS = {
   models: namespace("models", ["list", "info"]),
   context: leaf(["context"]),
 
-  mcp: namespace("mcp", ["list", "status", "test", "tools", "show", "add", "remove"]),
+  // Task 12.4 — real implementations (src/cli/commands/mcp.mjs) for
+  // list/status/test/tools/show, not stubs. Each handler manages its own
+  // -h/--help, so it's wired directly (same pattern as `doctor`/`init`
+  // above) rather than through `leaf()`. `add`/`remove` remain stubs —
+  // out of this task's scope.
+  mcp: {
+    subcommands: {
+      list: {
+        handler: runMcpListCommand,
+        usage: [
+          "Usage: upstage mcp list [--json]",
+          "",
+          "  Lists every configured MCP server with its transport, connection status,",
+          "  and tool count. A server that fails to connect is shown with",
+          "  STATUS=failed, TOOLS=- and does NOT abort the listing.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, transport, status, toolCount}]"
+        ].join("\n")
+      },
+      status: {
+        handler: runMcpStatusCommand,
+        usage: [
+          "Usage: upstage mcp status [--json]",
+          "",
+          "  A narrower, single-line-per-server summary of MCP server connectivity",
+          "  (name + connected/failed only).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, status}]"
+        ].join("\n")
+      },
+      test: {
+        handler: runMcpTestCommand,
+        usage: [
+          "Usage: upstage mcp test [<name>] [--json]",
+          "",
+          "  Re-attempts connection for one named MCP server, or all configured",
+          "  servers if <name> is omitted. Reports pass/fail with the actual",
+          "  connection error for any failure.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, transport, status, error}]"
+        ].join("\n")
+      },
+      tools: {
+        handler: runMcpToolsCommand,
+        usage: [
+          "Usage: upstage mcp tools <name> [--json]",
+          "",
+          "  Connects to one named MCP server and lists its tools (name +",
+          "  description + count).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: {server, toolCount, tools: [{name, description}]}"
+        ].join("\n")
+      },
+      show: {
+        handler: runMcpShowCommand,
+        usage: [
+          "Usage: upstage mcp show <name> [--json]",
+          "",
+          "  Prints one server's configuration with env/header VALUES redacted to",
+          "  key-presence only. The actual secret value is never printed.",
+          "",
+          "Options:",
+          "  --json   Output as JSON (same redaction applies)"
+        ].join("\n")
+      },
+      add: leaf(["mcp", "add"]),
+      remove: leaf(["mcp", "remove"])
+    }
+  },
   tools: namespace("tools", ["list", "show"]),
   // `list`/`show` remain stubs; `install` is Task 7.9's real implementation
   // (src/cli/commands/skills-install.mjs), wired directly the same way

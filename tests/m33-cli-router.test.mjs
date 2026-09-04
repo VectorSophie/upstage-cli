@@ -24,11 +24,14 @@ function captureStdio() {
 // --- dispatch to a namespaced leaf ---
 
 test("dispatch routes a namespaced leaf command to its handler", async () => {
+  // Uses "mcp add" (still a stub) rather than "mcp list" — Task 12.4
+  // replaced list/status/test/tools/show with real implementations, which
+  // are covered separately by tests/m33-cli-mcp.test.mjs.
   const io = captureStdio();
   try {
-    const code = await dispatch(["mcp", "list"]);
+    const code = await dispatch(["mcp", "add"]);
     assert.equal(code, 1); // stub handler: not-yet-implemented, non-zero exit
-    assert.match(io.err.join(""), /upstage mcp list: not yet implemented/);
+    assert.match(io.err.join(""), /upstage mcp add: not yet implemented/);
   } finally {
     io.restore();
   }
@@ -71,7 +74,11 @@ test("namespaced commands' subcommands all resolve to handlers", async () => {
     config: ["list", "get", "set", "path", "edit"],
     auth: ["status", "test"],
     models: ["list", "info"],
-    mcp: ["list", "status", "test", "tools", "show", "add", "remove"],
+    // "list"/"status"/"test"/"tools"/"show" excluded here — Task 12.4
+    // replaced those stubs with real implementations
+    // (src/cli/commands/mcp.mjs), covered separately by
+    // tests/m33-cli-mcp.test.mjs, same as skills/install below.
+    mcp: ["add", "remove"],
     tools: ["list", "show"],
     // "install" excluded here — Task 7.9 replaced that stub with a real
     // implementation (src/cli/commands/skills-install.mjs), covered
@@ -150,11 +157,13 @@ test("--help at the root of a namespace prints that namespace's usage (exit 0, s
 });
 
 test("-h at a namespaced leaf prints that leaf's usage (exit 0, stdout)", async () => {
+  // "mcp show" now has a real implementation (Task 12.4) with its own usage
+  // string wired into the router table, rather than the generic stub text.
   const io = captureStdio();
   try {
     const code = await dispatch(["mcp", "show", "-h"]);
     assert.equal(code, 0);
-    assert.match(io.out.join(""), /Usage: upstage mcp show \[options\]/);
+    assert.match(io.out.join(""), /Usage: upstage mcp show <name>/);
   } finally {
     io.restore();
   }
@@ -171,12 +180,15 @@ test("--help at a top-level leaf command prints usage (exit 0, stdout)", async (
   }
 });
 
-test("--help passed to a leaf's stub handler after positional args still shows usage", async () => {
+test("--help passed to a leaf's real handler after positional args still shows usage", async () => {
+  // Reaches runMcpShowCommand itself (not router-level interception, since
+  // "myserver" precedes "--help"), which handles --help the same way
+  // doctor/init/skills-install do.
   const io = captureStdio();
   try {
     const code = await dispatch(["mcp", "show", "myserver", "--help"]);
     assert.equal(code, 0);
-    assert.match(io.out.join(""), /Usage: upstage mcp show \[options\]/);
+    assert.match(io.out.join(""), /Usage: upstage mcp show <name>/);
   } finally {
     io.restore();
   }
