@@ -23,14 +23,16 @@ const DEFAULT_FILE_FIELD_NAME = "document";
 // the file with its own Content-Disposition + Content-Type, terminated by
 // the closing boundary line.
 //
-// `fileField` is normally a single {buffer, filename, contentType, fieldName?}
-// object (the original, still-most-common shape), but extraction.mjs's
-// schema-generation call needs up to 3 sample documents in one multipart
-// request — so this also accepts an array of that same shape, emitting one
-// file part per entry (all under the same default field name unless each
-// entry overrides it). This is a minimal, backward-compatible extension:
-// every existing caller keeps passing a single object and sees no change.
-function buildMultipartBody(formFields, fileField) {
+// `fileFieldEntries` is always an already-normalized array by the time it
+// reaches here — extraction.mjs's schema-generation call needs up to 3
+// sample documents in one multipart request, so upstageRequest() normalizes
+// a caller-supplied single object OR array into one array before validating
+// it, and passes that same array straight through, emitting one file part
+// per entry (all under the same default field name unless an entry
+// overrides it). Normalizing once (rather than re-deriving the array here
+// too) keeps there being exactly one place that decides what "the files"
+// are for a given request.
+function buildMultipartBody(formFields, fileFieldEntries) {
   const boundary = `----upstage-cli-${Date.now().toString(16)}-${Math.random().toString(16).slice(2)}`;
   const parts = [];
   for (const [name, value] of Object.entries(formFields || {})) {
@@ -38,8 +40,7 @@ function buildMultipartBody(formFields, fileField) {
       Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`)
     );
   }
-  const fileFields = Array.isArray(fileField) ? fileField : [fileField];
-  for (const file of fileFields) {
+  for (const file of fileFieldEntries) {
     const fieldName = file.fieldName || DEFAULT_FILE_FIELD_NAME;
     parts.push(
       Buffer.from(
@@ -119,11 +120,15 @@ export async function upstageRequest({
   let requestBody;
 
   if (isMultipart) {
-    const fileFieldEntries = Array.isArray(fileField) ? fileField : [fileField];
+    // Normalize once: a caller-supplied single file object OR an array of
+    // them both become this one array, which is then both validated and
+    // passed on to buildMultipartBody() — no second re-derivation of "the
+    // files" from the raw fileField value.
+    const fileFieldEntries = fileField === undefined ? [] : Array.isArray(fileField) ? fileField : [fileField];
     if (fileFieldEntries.length === 0 || fileFieldEntries.some((file) => !file || !file.buffer)) {
       throw new UpstageApiError("multipart request requires fileField.buffer", { retryable: false });
     }
-    const { boundary, body: multipartBody } = buildMultipartBody(formFields, fileField);
+    const { boundary, body: multipartBody } = buildMultipartBody(formFields, fileFieldEntries);
     headers["Content-Type"] = `multipart/form-data; boundary=${boundary}`;
     requestBody = multipartBody;
   } else if (body !== undefined) {

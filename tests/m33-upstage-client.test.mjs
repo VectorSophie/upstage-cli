@@ -290,6 +290,103 @@ test("upstageRequest rejects a multipart request missing fileField.buffer before
   );
 });
 
+test("upstageRequest supports an array of files, emitting one file part per entry", async () => {
+  let seenOptions;
+  await withMockFetch(
+    async (_url, options) => {
+      seenOptions = options;
+      return new Response(JSON.stringify({ schema: {} }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    },
+    async () => {
+      await upstageRequest({
+        path: "/information-extraction",
+        isMultipart: true,
+        formFields: { model: "schema-generate" },
+        fileField: [
+          { buffer: Buffer.from("one"), filename: "a.pdf", contentType: "application/pdf" },
+          { buffer: Buffer.from("two"), filename: "b.pdf", contentType: "application/pdf" }
+        ],
+        apiKey: "test-key",
+        baseUrl: "https://api.example.test"
+      });
+
+      const bodyText = Buffer.from(seenOptions.body).toString("utf8");
+      assert.match(
+        bodyText,
+        /Content-Disposition: form-data; name="document"; filename="a\.pdf"\r\nContent-Type: application\/pdf/
+      );
+      assert.match(
+        bodyText,
+        /Content-Disposition: form-data; name="document"; filename="b\.pdf"\r\nContent-Type: application\/pdf/
+      );
+      assert.ok(bodyText.includes("one"));
+      assert.ok(bodyText.includes("two"));
+      // Exactly two file parts, not more/fewer.
+      assert.equal((bodyText.match(/name="document"/g) || []).length, 2);
+    }
+  );
+});
+
+test("upstageRequest rejects an empty fileField array before any network call", async () => {
+  let calls = 0;
+  await withMockFetch(
+    async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          upstageRequest({
+            path: "/information-extraction",
+            isMultipart: true,
+            formFields: { model: "schema-generate" },
+            fileField: [],
+            apiKey: "test-key"
+          }),
+        (err) => {
+          assert.ok(err instanceof UpstageApiError);
+          return true;
+        }
+      );
+      assert.equal(calls, 0, "fetch must not be called when fileField array is empty");
+    }
+  );
+});
+
+test("upstageRequest rejects a fileField array with an entry missing .buffer before any network call", async () => {
+  let calls = 0;
+  await withMockFetch(
+    async () => {
+      calls += 1;
+      return new Response("{}", { status: 200 });
+    },
+    async () => {
+      await assert.rejects(
+        () =>
+          upstageRequest({
+            path: "/information-extraction",
+            isMultipart: true,
+            formFields: { model: "schema-generate" },
+            fileField: [
+              { buffer: Buffer.from("ok"), filename: "a.pdf", contentType: "application/pdf" },
+              { filename: "b.pdf", contentType: "application/pdf" }
+            ],
+            apiKey: "test-key"
+          }),
+        (err) => {
+          assert.ok(err instanceof UpstageApiError);
+          return true;
+        }
+      );
+      assert.equal(calls, 0, "fetch must not be called when any fileField entry is missing .buffer");
+    }
+  );
+});
+
 test("upstageRequest aborts the underlying fetch when timeoutMs elapses", async () => {
   let sawSignal = false;
   let signalWasAborted = false;

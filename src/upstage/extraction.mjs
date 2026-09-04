@@ -66,23 +66,35 @@ function buildResponseFormat(schema) {
   };
 }
 
+// Shared by normalizeExtractionResponse() and normalizeGeneratedSchema()
+// below — both responses are (best-effort, not live-verified — see the
+// module header's caveat, shared with classification.mjs's identical
+// pattern) read from the same synthetic
+// tool_calls[0].function.arguments shape, JSON-parsed when the API sends
+// arguments as a string rather than an already-parsed object. Returns
+// `undefined` (rather than throwing) when nothing usable is found, so each
+// caller can decide its own fallback/error message.
+function extractToolCallArguments(data) {
+  let args = data?.tool_calls?.[0]?.function?.arguments;
+  if (typeof args === "string") {
+    try {
+      args = JSON.parse(args);
+    } catch {
+      return undefined;
+    }
+  }
+  return args && typeof args === "object" ? args : undefined;
+}
+
 // See the module header's "not live-verified" caveat — best-effort reading
 // of the same synthetic tool-call response shape classification.mjs
 // documented, applied here to an arbitrary caller-supplied schema instead of
 // a fixed document_type field. Verify against a real API call before relying
 // on this in production — see plan §3/§13.
 function normalizeExtractionResponse(data) {
-  const toolCall = data?.tool_calls?.[0];
-  let args = toolCall?.function?.arguments;
-  if (typeof args === "string") {
-    try {
-      args = JSON.parse(args);
-    } catch {
-      args = undefined;
-    }
-  }
+  const args = extractToolCallArguments(data);
 
-  if (!args || typeof args !== "object") {
+  if (!args) {
     throw new Error("Upstage extraction API returned an unexpected response shape");
   }
 
@@ -96,7 +108,11 @@ function normalizeExtractionResponse(data) {
  * @param {object} options
  * @param {string} options.path - absolute or relative path to the file to extract from.
  * @param {object} options.schema - a JSON Schema object describing the fields to extract.
- * @returns {Promise<object>} the extracted data, parsed to match `schema`.
+ * @returns {Promise<object>} the extracted data itself, shaped however the
+ *   caller's `schema` defines it — unwrapped (unlike generateSchema()'s
+ *   `{schema}` envelope, which wraps because the schema IS the whole result;
+ *   here the result's shape is caller-defined, so there's nothing generic to
+ *   wrap it in).
  * @throws {Error} if `path` or `schema` is missing, or the file doesn't exist.
  */
 export async function extractStructured({ path, schema } = {}) {
@@ -191,16 +207,8 @@ function normalizeGeneratedSchema(data) {
     return data.schema;
   }
 
-  const toolCall = data?.tool_calls?.[0];
-  let args = toolCall?.function?.arguments;
-  if (typeof args === "string") {
-    try {
-      args = JSON.parse(args);
-    } catch {
-      args = undefined;
-    }
-  }
-  if (args && typeof args === "object") {
+  const args = extractToolCallArguments(data);
+  if (args) {
     return args;
   }
 
