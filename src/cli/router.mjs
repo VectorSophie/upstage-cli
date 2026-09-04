@@ -34,6 +34,13 @@
 
 import { runDoctorCommand } from "./commands/doctor.mjs";
 import { runInitCommand } from "./commands/init.mjs";
+import { runParseCommand } from "./commands/parse.mjs";
+import { runOcrCommand } from "./commands/ocr.mjs";
+import { runExtractCommand } from "./commands/extract.mjs";
+import { runSchemaCommand } from "./commands/schema.mjs";
+import { runClassifyCommand } from "./commands/classify.mjs";
+import { runEmbedCommand } from "./commands/embed.mjs";
+import { runGroundednessCommand } from "./commands/groundedness.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -113,13 +120,97 @@ export const COMMANDS = {
   plugins: namespace("plugins", ["list", "show", "install"]),
   sessions: namespace("sessions", ["list", "show", "resume", "export"]),
 
-  parse: leaf(["parse"]),
-  ocr: leaf(["ocr"]),
-  extract: leaf(["extract"]),
-  schema: leaf(["schema"]),
-  classify: leaf(["classify"]),
-  embed: leaf(["embed"]),
-  groundedness: leaf(["groundedness"]),
+  // Task 7.8 — real implementations (src/cli/commands/*.mjs), not stubs.
+  // Each handler manages its own -h/--help, so it's wired directly (same
+  // pattern as `doctor`/`init` above) rather than through `leaf()`.
+  parse: {
+    handler: runParseCommand,
+    usage: [
+      "Usage: upstage parse <file> [--format md|html|text] [--mode standard|enhanced|auto] [--ocr auto|force] [--json]",
+      "",
+      "  Parses a document (PDF/image) into structured layout elements via Upstage's Document Parse model.",
+      "",
+      "Options:",
+      "  --format   Output content format (default: md)",
+      "  --mode     Parse mode (default: standard)",
+      "  --ocr      OCR behavior (default: auto)",
+      "  --json     Output the raw result as JSON"
+    ].join("\n")
+  },
+  ocr: {
+    handler: runOcrCommand,
+    usage: [
+      "Usage: upstage ocr <file> [--json]",
+      "",
+      "  Runs OCR-only digitization on a document (PDF/image) via Upstage's dedicated OCR model.",
+      "",
+      "Options:",
+      "  --json     Output the raw result as JSON"
+    ].join("\n")
+  },
+  extract: {
+    handler: runExtractCommand,
+    usage: [
+      "Usage: upstage extract <file> --schema <json|@file> [--json]",
+      "",
+      "  Extracts structured data from a document matching a JSON Schema, via Upstage's",
+      "  Universal Extraction model.",
+      "",
+      "Options:",
+      "  --schema   Required. Inline JSON Schema text, or @path/to/schema.json.",
+      "  --json     Output the raw result as JSON"
+    ].join("\n")
+  },
+  schema: {
+    handler: runSchemaCommand,
+    usage: [
+      "Usage: upstage schema <files...> [--json]",
+      "",
+      "  Generates a JSON Schema from 1 to 3 sample documents, via Upstage's schema-generation model.",
+      "",
+      "Options:",
+      "  --json     Output the raw result as JSON"
+    ].join("\n")
+  },
+  classify: {
+    handler: runClassifyCommand,
+    usage: [
+      "Usage: upstage classify <file> --categories <a,b,c> [--json]",
+      "",
+      "  Classifies a document into one of a caller-supplied set of categories, via",
+      "  Upstage's Document Classification model.",
+      "",
+      "Options:",
+      "  --categories   Required. Comma-separated candidate labels (2 to 1000).",
+      "  --json         Output the raw result as JSON"
+    ].join("\n")
+  },
+  embed: {
+    handler: runEmbedCommand,
+    usage: [
+      "Usage: upstage embed <text> [--type query|passage] [--json]",
+      "",
+      "  Embeds a single text via Upstage's Solar embeddings.",
+      "",
+      "Options:",
+      "  --type   query|passage (default: query)",
+      "  --json   Output the raw result as JSON"
+    ].join("\n")
+  },
+  groundedness: {
+    handler: runGroundednessCommand,
+    usage: [
+      "Usage: upstage groundedness --context <text|@file> --answer <text|@file> [--json]",
+      "",
+      "  Verifies that an answer/claim is supported by its source context, via Upstage's",
+      "  Groundedness Check.",
+      "",
+      "Options:",
+      "  --context   Required. Inline text, or @path/to/context.txt.",
+      "  --answer    Required. Inline text, or @path/to/answer.txt.",
+      "  --json      Output the raw result as JSON"
+    ].join("\n")
+  },
 
   acp: leaf(["acp"])
 };
