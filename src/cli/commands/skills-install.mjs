@@ -36,19 +36,31 @@
 //
 // IDEMPOTENCY / USER-CONTENT PROTECTION (installOne, below):
 // - Destination missing entirely -> create directories + write; "created".
-// - Destination exists with content byte-identical to the canonical source
-//   -> overwrite anyway (a functional no-op) and report "unchanged" — keeps
-//   re-running trivially safe, no duplication, no error.
+// - Destination exists with content byte-identical (full string equality,
+//   not just a length/hash check) to the canonical source -> skip the write
+//   entirely and report "unchanged". Deliberately does NOT rewrite an
+//   already-identical file: doing so would still bump its mtime on every
+//   idempotent re-run for no functional reason — a real side effect a file
+//   watcher/backup tool/sync client would see as "this file changed" when
+//   nothing actually did. (Exact-string equality is fragile to pure
+//   line-ending/trailing-whitespace churn from an editor re-save — e.g. a
+//   no-op CRLF normalization would read as "different" here — but that's a
+//   deliberate simplicity tradeoff, not an oversight; a real diff/normalize
+//   step is more machinery than this command's stated scope warrants.)
 // - Destination exists with DIFFERENT content (hand-edited by a user, or an
 //   older generated version) -> print a warning to stderr — the task's own
 //   "a simple content-diff check is enough, not a full merge" allowance, so
 //   this only reports that + how much the two differ (byte lengths), not a
 //   line-by-line diff — and then STILL overwrites with the canonical
-//   content. A non-interactive CLI has no prompt to block on; leaving a
-//   stale/conflicting file in place with no way to reconcile it short of
-//   deleting it by hand would be worse than a loud warning plus a
-//   deterministic outcome. Reports "overwritten" in that case, distinct
-//   from "unchanged", so a caller/test can tell the two apart.
+//   content, since a non-interactive CLI has no prompt to block on and
+//   leaving a stale/conflicting file in place with no way to reconcile it
+//   short of deleting it by hand would be worse than a loud warning plus a
+//   deterministic outcome. The warning is worded to say the overwrite is
+//   happening now (not "about to happen" or advice the reader could still
+//   act on before it's too late — by the time stderr is flushed, the write
+//   has already happened synchronously on the next line). Reports
+//   "overwritten" in that case, distinct from "unchanged", so a caller/test
+//   can tell the two apart.
 //
 // EXIT CODES: 0 for every completed install (created/unchanged/overwritten
 // alike) — the warning is surfaced via stderr text and the per-target
@@ -85,6 +97,9 @@ function resolveSourcePath() {
   return fallbackSourcePath();
 }
 
+// Deliberately just these two, with no raw-path escape hatch for other
+// agent harnesses (see this file's header) — a conscious simplicity call
+// for this task's scope, not an oversight.
 const TARGETS = {
   upstage: (cwd) => join(cwd, ".upstage", "skills", SKILL_NAME, "SKILL.md"),
   claude: (cwd) => join(cwd, ".claude", "skills", SKILL_NAME, "SKILL.md")
@@ -132,14 +147,18 @@ export function installOne(destPath, sourceContent) {
   if (existsSync(destPath)) {
     const existing = readFileSync(destPath, "utf8");
     if (existing === sourceContent) {
-      writeFileSync(destPath, sourceContent, "utf8");
+      // No-op: skip the write entirely. Rewriting an already-identical file
+      // would still bump its mtime for no functional reason (see this
+      // file's header comment) — a real, observable side effect on every
+      // idempotent re-run that this command must not cause.
       return { path: destPath, status: "unchanged" };
     }
     process.stderr.write(
       `upstage skills install: ${destPath} already exists with different content ` +
         `(${existing.length} bytes on disk vs ${sourceContent.length} bytes generated) — ` +
-        "overwriting with the canonical upstage-utilities skill. If you hand-edited this " +
-        "file and want to keep those edits, save a copy before re-running.\n"
+        "this file is being overwritten now with the canonical upstage-utilities skill. " +
+        "If you want to preserve edits like these in the future, copy the file before " +
+        "re-running this command.\n"
     );
     writeFileSync(destPath, sourceContent, "utf8");
     return { path: destPath, status: "overwritten" };
@@ -153,6 +172,11 @@ export function formatHuman(results) {
   return results.map((r) => `${r.status}: ${r.path}`).join("\n") + "\n";
 }
 
+/** Matches doctor.mjs's formatHuman/formatJson pairing for consistency. */
+export function formatJson(results) {
+  return JSON.stringify(results);
+}
+
 export async function runSkillsInstallCommand(rest = []) {
   if (rest.includes("-h") || rest.includes("--help")) {
     printUsage();
@@ -161,6 +185,10 @@ export async function runSkillsInstallCommand(rest = []) {
 
   const json = rest.includes("--json");
 
+  // Hand-rolled rather than upstage-command-helpers.mjs's parseArgs()
+  // deliberately — that helper's own header scopes it to "the seven
+  // Document-AI CLI commands"; this command's one flag doesn't warrant
+  // pulling in a shared parser meant for a different command family.
   let targetNames = DEFAULT_TARGET_NAMES;
   const targetIdx = rest.indexOf("--target");
   if (targetIdx !== -1) {
@@ -189,6 +217,6 @@ export async function runSkillsInstallCommand(rest = []) {
   const cwd = process.cwd();
   const results = targetNames.map((name) => installOne(TARGETS[name](cwd), sourceContent));
 
-  process.stdout.write(json ? JSON.stringify(results) : formatHuman(results));
+  process.stdout.write(json ? formatJson(results) : formatHuman(results));
   return 0;
 }
