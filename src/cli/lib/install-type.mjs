@@ -61,9 +61,18 @@ export function readDevLinkMarker(markerPath = getDevLinkMarkerPath()) {
  *
  * Check order (deliberate — see module docstring):
  *   1. dev-link marker (unambiguous, written by our own dev-link scripts)
- *   2. npm-install path-shape heuristic (`node_modules` in `execPath`)
+ *   2. npm-install path-shape heuristic (`node_modules` in the *invoked
+ *      script path*, `argv[1]` — NOT `execPath`. `execPath` is the
+ *      interpreter binary's own location (e.g. wherever the user's `bun`
+ *      lives), which tells you nothing about where the package that invoked
+ *      it was installed; this repo's `#!/usr/bin/env bun` shebang means an
+ *      npm global install runs as `bun <npm-root>/node_modules/.../index.mjs`,
+ *      so the `node_modules` signal lives in argv[1], not execPath)
  *   3. standalone-binary path-shape heuristic (a `bun build --compile`
- *      executable named `upstage`/`upstage.exe`, outside any `node_modules`)
+ *      executable named `upstage`/`upstage.exe`, outside any `node_modules`
+ *      — here `execPath` *is* the right signal, since a compiled binary's
+ *      execPath and "script path" are the same thing, per the same pattern
+ *      `src/skills/loader.mjs` already relies on)
  *   4. `unknown` — e.g. running via plain `bun src/cli/index.mjs` in this
  *      repo with no dev-link marker present (a maintainer who hasn't run
  *      dev-link.sh yet)
@@ -71,22 +80,29 @@ export function readDevLinkMarker(markerPath = getDevLinkMarkerPath()) {
  * @param {object} [options]
  * @param {string} [options.markerPath] override for testing.
  * @param {string} [options.execPath] override for testing; defaults to `process.execPath`.
+ * @param {string} [options.scriptPath] override for testing; defaults to `process.argv[1]`.
  * @returns {{ type: "dev-link" } & { repoRoot: string, linkedAt: string | null }
  *         | { type: "standalone" | "npm" | "unknown" }}
  */
-export function detectInstallType({ markerPath = getDevLinkMarkerPath(), execPath = process.execPath } = {}) {
+export function detectInstallType({
+  markerPath = getDevLinkMarkerPath(),
+  execPath = process.execPath,
+  scriptPath = process.argv[1]
+} = {}) {
   const marker = readDevLinkMarker(markerPath);
   if (marker) {
     return { type: "dev-link", repoRoot: marker.repoRoot, linkedAt: marker.linkedAt };
   }
 
-  const normalized = String(execPath).replace(/\\/g, "/");
+  const normalizedScriptPath = String(scriptPath || "").replace(/\\/g, "/");
 
-  if (normalized.includes("/node_modules/")) {
+  if (normalizedScriptPath.includes("/node_modules/")) {
     return { type: "npm" };
   }
 
-  if (/\/upstage(\.exe)?$/i.test(normalized)) {
+  const normalizedExecPath = String(execPath).replace(/\\/g, "/");
+
+  if (/\/upstage(\.exe)?$/i.test(normalizedExecPath)) {
     return { type: "standalone" };
   }
 

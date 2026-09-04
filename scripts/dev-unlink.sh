@@ -9,6 +9,17 @@
 # wrapper (e.g. a production install's symlink).
 set -euo pipefail
 
+for arg in "$@"; do
+  case "$arg" in
+    -h|--help)
+      echo "Usage: $0"
+      echo "Removes the dev-link wrapper + marker written by scripts/dev-link.sh."
+      exit 0
+      ;;
+    *) echo "Unknown argument: $arg" >&2; exit 1 ;;
+  esac
+done
+
 BIN_DIR="${UPSTAGE_BIN_DIR:-$HOME/.local/bin}"
 WRAPPER="$BIN_DIR/upstage"
 MARKER_FILE="$HOME/.upstage-cli/dev-link.json"

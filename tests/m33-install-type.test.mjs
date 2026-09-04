@@ -97,33 +97,68 @@ test("detectInstallType reports dev-link when a valid marker is present, regardl
   });
 });
 
-test("detectInstallType prefers the dev-link marker over an npm-shaped execPath (unambiguous signal wins)", () => {
+test("detectInstallType prefers the dev-link marker over an npm-shaped scriptPath (unambiguous signal wins)", () => {
   return withTempDir((dir) => {
     const markerPath = join(dir, "dev-link.json");
     writeFileSync(markerPath, JSON.stringify({ repoRoot: "/home/user/upstage-cli", linkedAt: null }));
     const result = detectInstallType({
       markerPath,
-      execPath: "/usr/lib/node_modules/@jackochesstern/upstage-cli/node_modules/.bin/node"
+      scriptPath: "/usr/lib/node_modules/@jackochesstern/upstage-cli/src/cli/index.mjs"
     });
     assert.equal(result.type, "dev-link");
   });
 });
 
-test("detectInstallType reports npm when execPath contains node_modules and no marker exists", () => {
+test("detectInstallType reports npm when the invoked scriptPath (argv[1]) contains node_modules and no marker exists", () => {
+  // execPath is deliberately left as a plain bun binary path here — execPath is the
+  // interpreter's own location (irrelevant to how the package was installed), not the
+  // invoked script's location. Only scriptPath (argv[1]) should drive this signal.
   return withTempDir((dir) => {
     const markerPath = join(dir, "missing-marker.json");
     const result = detectInstallType({
       markerPath,
-      execPath: "/usr/lib/node_modules/@jackochesstern/upstage-cli/bin/node"
+      execPath: "/usr/local/bin/bun",
+      scriptPath: "/usr/lib/node_modules/@jackochesstern/upstage-cli/src/cli/index.mjs"
     });
     assert.deepEqual(result, { type: "npm" });
+  });
+});
+
+test("detectInstallType reports npm for a Windows-style npm-global scriptPath", () => {
+  return withTempDir((dir) => {
+    const markerPath = join(dir, "missing-marker.json");
+    const result = detectInstallType({
+      markerPath,
+      execPath: "C:\\Users\\dev\\.bun\\bin\\bun.exe",
+      scriptPath: "C:\\Users\\dev\\AppData\\Roaming\\npm\\node_modules\\@jackochesstern\\upstage-cli\\src\\cli\\index.mjs"
+    });
+    assert.deepEqual(result, { type: "npm" });
+  });
+});
+
+test("detectInstallType does NOT report npm just because execPath (the interpreter binary) happens to contain node_modules", () => {
+  // Regression test for the bug this suite previously had: execPath is the interpreter's
+  // own path, unrelated to where the invoked script/package lives, and must not drive
+  // npm detection on its own.
+  return withTempDir((dir) => {
+    const markerPath = join(dir, "missing-marker.json");
+    const result = detectInstallType({
+      markerPath,
+      execPath: "/usr/lib/node_modules/@jackochesstern/upstage-cli/node_modules/.bin/node",
+      scriptPath: "/home/user/some-project/index.mjs"
+    });
+    assert.deepEqual(result, { type: "unknown" });
   });
 });
 
 test("detectInstallType reports standalone for a compiled binary named upstage outside node_modules", () => {
   return withTempDir((dir) => {
     const markerPath = join(dir, "missing-marker.json");
-    const result = detectInstallType({ markerPath, execPath: "/home/user/.local/share/upstage-cli/upstage" });
+    const result = detectInstallType({
+      markerPath,
+      execPath: "/home/user/.local/share/upstage-cli/upstage",
+      scriptPath: "/home/user/.local/share/upstage-cli/upstage"
+    });
     assert.deepEqual(result, { type: "standalone" });
   });
 });
@@ -131,22 +166,33 @@ test("detectInstallType reports standalone for a compiled binary named upstage o
 test("detectInstallType reports standalone for upstage.exe on Windows-style paths", () => {
   return withTempDir((dir) => {
     const markerPath = join(dir, "missing-marker.json");
-    const result = detectInstallType({ markerPath, execPath: "C:\\Users\\dev\\.local\\share\\upstage-cli\\upstage.exe" });
+    const result = detectInstallType({
+      markerPath,
+      execPath: "C:\\Users\\dev\\.local\\share\\upstage-cli\\upstage.exe",
+      scriptPath: "C:\\Users\\dev\\.local\\share\\upstage-cli\\upstage.exe"
+    });
     assert.deepEqual(result, { type: "standalone" });
   });
 });
 
-test("detectInstallType reports unknown for a plain bun/node execPath with no marker (e.g. running from a repo checkout that isn't dev-linked)", () => {
+test("detectInstallType reports unknown for a plain bun/node execPath and scriptPath with no marker (e.g. running from a repo checkout that isn't dev-linked)", () => {
   return withTempDir((dir) => {
     const markerPath = join(dir, "missing-marker.json");
-    const result = detectInstallType({ markerPath, execPath: "/usr/local/bin/bun" });
+    const result = detectInstallType({ markerPath, execPath: "/usr/local/bin/bun", scriptPath: "/home/user/upstage-cli/src/cli/index.mjs" });
     assert.deepEqual(result, { type: "unknown" });
   });
 });
 
-test("detectInstallType defaults markerPath/execPath to the real environment when not overridden", () => {
-  // Just verify it doesn't throw and returns a recognizable shape when called
-  // with no arguments at all (exercises the real getDevLinkMarkerPath()/process.execPath path).
-  const result = detectInstallType();
-  assert.ok(["dev-link", "standalone", "npm", "unknown"].includes(result.type));
+test("detectInstallType defaults markerPath/execPath/scriptPath to the real environment when not overridden, given a guaranteed-nonexistent marker path", () => {
+  // Pass an explicit, guaranteed-nonexistent markerPath so this test stays hermetic —
+  // it must not depend on whatever ~/.upstage-cli/dev-link.json (if any) happens to
+  // exist on the machine running the suite. execPath/scriptPath are left defaulted
+  // to exercise the real process.execPath/process.argv[1] path at least once.
+  return withTempDir((dir) => {
+    const markerPath = join(dir, "definitely-does-not-exist.json");
+    const result = detectInstallType({ markerPath });
+    assert.ok(["dev-link", "standalone", "npm", "unknown"].includes(result.type));
+    // With this markerPath, "dev-link" is impossible (nothing was written there).
+    assert.notEqual(result.type, "dev-link");
+  });
 });
