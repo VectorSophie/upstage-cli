@@ -10,9 +10,13 @@ license: MIT
 # Groundedness check
 
 The `check_groundedness` tool sends `(context, answer)` to a dedicated
-Upstage verification model (`solar-1-mini-answer-verification`) and
-returns `"grounded"`, `"notGrounded"`, or `"notSure"` — a second,
-independent judgment, not the same model re-reading its own output.
+Upstage verification model — see `src/upstage/groundedness.mjs`'s header
+comment for the current model id and its provenance, rather than citing
+one here, since that's a second copy of the same fact that can silently
+drift out of sync (the same stale-duplicate problem `UPSTAGE_EMBED_MODEL`
+once had) — and returns `"grounded"`, `"notGrounded"`, or `"notSure"` — a
+second, independent judgment, not the same model re-reading its own
+output.
 
 **When this skill applies:**
 - Summarizing a long file, PR diff, or search result before stating a
