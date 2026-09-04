@@ -133,7 +133,13 @@ function findKeySymbols(index) {
   return results;
 }
 
-function detectFrameworks(pkg) {
+// Named for what it actually returns — ALL declared dependencies
+// (dependencies + devDependencies), not a filtered "frameworks only" list.
+// Dev/lint tooling ends up under "## Runtime & Frameworks" alongside real
+// runtime deps too; that's an intentional simplification (this repo has no
+// reliable, generic way to tell "framework" from "tooling" from package.json
+// alone), not a bug — hence the plain name rather than `detectFrameworks`.
+function listDependencies(pkg) {
   if (!pkg) return [];
   const deps = { ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) };
   return Object.keys(deps).sort();
@@ -164,7 +170,7 @@ export async function buildGeneratedContent(cwd) {
   const topModules = mostDependedUponModules(index); // reads importsByFile, unaffected by the symbol-name bug
   const dirs = aggregateDirectories(cleanIndex);
   const keySymbols = findKeySymbols(cleanIndex);
-  const frameworks = detectFrameworks(pkg);
+  const dependencies = listDependencies(pkg);
 
   const lines = [];
   lines.push(
@@ -268,7 +274,7 @@ export async function buildGeneratedContent(cwd) {
   // Runtime & Frameworks
   lines.push("## Runtime & Frameworks");
   lines.push("");
-  lines.push(frameworks.length > 0 ? frameworks.map((f) => `\`${f}\``).join(", ") : "_No dependencies declared in `package.json`._");
+  lines.push(dependencies.length > 0 ? dependencies.map((d) => `\`${d}\``).join(", ") : "_No dependencies declared in `package.json`._");
 
   return lines.join("\n").replace(/\n+$/, "\n");
 }

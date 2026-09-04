@@ -215,7 +215,15 @@ export const COMMANDS = {
         const result = await generateUpstageMd({ cwd, refresh, dryRun });
 
         if (dryRun) {
-          return { response: `__dry_run__ (${result.path} — 아무 것도 기록되지 않음)\n\n${result.block}` };
+          // NOTE: must NOT start with "__" — App.mjs:376 suppresses any
+          // `result.response` starting with "__" from ever reaching the
+          // chat (that's the mechanism internal sentinels like "__clear__"/
+          // "__new_session__" rely on to stay invisible, since those all
+          // short-circuit via dedicated boolean flags before that check).
+          // A dry-run preview has no such flag — it's meant to be seen — so
+          // the human-readable label below must not accidentally collide
+          // with that prefix convention.
+          return { response: `[dry-run] ${result.path} — 아무 것도 기록되지 않음. 생성될 내용 미리보기:\n\n${result.block}` };
         }
 
         const ACTION_KO = {

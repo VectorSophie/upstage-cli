@@ -8,15 +8,53 @@ import {
   generateUpstageMd,
   mergeGeneratedBlock,
   buildGeneratedContent,
+  aggregateDirectories,
+  mostDependedUponModules,
   MARKER_START,
   MARKER_END
 } from "../src/agent/init-generator.mjs";
+import { runInitCommand, formatDryRunOutput, formatWriteSummary } from "../src/cli/commands/init.mjs";
+import { executeCommand } from "../src/ui/commands.mjs";
 
 function withTempDir(run) {
   const dir = mkdtempSync(join(tmpdir(), "upstage-init-gen-"));
   return Promise.resolve()
     .then(() => run(dir))
     .finally(() => rmSync(dir, { recursive: true, force: true }));
+}
+
+function withCwd(dir, run) {
+  const original = process.cwd;
+  process.cwd = () => dir;
+  return Promise.resolve().then(run).finally(() => { process.cwd = original; });
+}
+
+// Captures real stdout SYNCHRONOUSLY only — i.e. `run` must not cross a real
+// `await`. node --test uses process.stdout as its own result-reporting
+// channel; overriding process.stdout.write across a real async boundary was
+// tried here (to assert on runInitCommand's actual printed output for the
+// non-help paths) and empirically caused 8 *unrelated* tests elsewhere in
+// this same file to silently vanish from the report entirely (not fail, not
+// "cancelled" — just never reported), almost certainly by swallowing the
+// test runner's own in-flight protocol writes during the intercepted
+// window. tests/m33-doctor.test.mjs's own comment already flags this exact
+// risk for runDoctorCommand and deliberately avoids it the same way; this
+// file initially didn't heed that warning closely enough and hit it in
+// practice. The fix: runInitCommand's stdout-writing is now a thin wrapper
+// around pure formatters (formatDryRunOutput/formatWriteSummary, exported
+// from src/cli/commands/init.mjs) — tests assert on THOSE directly, fed by
+// a real generateUpstageMd() result, and only use this synchronous-only
+// capture for the --help path (which never awaits real I/O).
+function captureStdioSync(run) {
+  const outChunks = [];
+  const origOut = process.stdout.write.bind(process.stdout);
+  process.stdout.write = (chunk) => { outChunks.push(String(chunk)); return true; };
+  try {
+    run();
+  } finally {
+    process.stdout.write = origOut;
+  }
+  return outChunks.join("");
 }
 
 function writeFixturePackageJson(dir, overrides = {}) {
@@ -259,5 +297,203 @@ test("--refresh produces the same result as the default (no staleness heuristic;
 
     assert.equal(withoutRefresh.action, withRefresh.action);
     assert.equal(withoutRefresh.content, withRefresh.content);
+  });
+});
+
+// ── aggregateDirectories / mostDependedUponModules: direct unit coverage ──
+// (previously only exercised indirectly through buildGeneratedContent)
+
+test("aggregateDirectories groups files and symbols by directory, sorted by file count descending", () => {
+  const index = {
+    fileSignatures: {
+      "src/a/one.mjs": {},
+      "src/a/two.mjs": {},
+      "src/b/three.mjs": {}
+    },
+    symbols: [
+      { name: "fnOne", file: "src/a/one.mjs" },
+      { name: "fnTwo", file: "src/a/two.mjs" },
+      { name: "fnTwo", file: "src/a/two.mjs" }, // duplicate name — sample should dedupe
+      { name: "fnThree", file: "src/b/three.mjs" }
+    ]
+  };
+  const rows = aggregateDirectories(index);
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].dir, "src/a");
+  assert.equal(rows[0].fileCount, 2);
+  assert.equal(rows[0].symbolCount, 3);
+  assert.deepEqual(rows[0].sample.sort(), ["fnOne", "fnTwo"]); // deduped
+  assert.equal(rows[1].dir, "src/b");
+  assert.equal(rows[1].fileCount, 1);
+});
+
+test("aggregateDirectories respects the limit option", () => {
+  const fileSignatures = {};
+  for (let i = 0; i < 5; i += 1) fileSignatures[`src/dir${i}/file.mjs`] = {};
+  const rows = aggregateDirectories({ fileSignatures, symbols: [] }, { limit: 2 });
+  assert.equal(rows.length, 2);
+});
+
+test("mostDependedUponModules ranks files by internal incoming-import count, descending", () => {
+  const index = {
+    importsByFile: {
+      "src/a.mjs": ["src/core.mjs"],
+      "src/b.mjs": ["src/core.mjs", "src/util.mjs"],
+      "src/c.mjs": ["src/core.mjs"]
+    }
+  };
+  const top = mostDependedUponModules(index);
+  assert.equal(top[0].file, "src/core.mjs");
+  assert.equal(top[0].count, 3);
+  assert.equal(top[1].file, "src/util.mjs");
+  assert.equal(top[1].count, 1);
+});
+
+test("mostDependedUponModules returns an empty array when there are no import edges", () => {
+  const top = mostDependedUponModules({ importsByFile: {} });
+  assert.deepEqual(top, []);
+});
+
+// ── runInitCommand (src/cli/commands/init.mjs): CLI adapter coverage ──────
+// Mirrors tests/m33-doctor.test.mjs's coverage of runDoctorCommand's exit
+// codes/output shape — this file previously had zero coverage of the CLI
+// adapter itself (only the shared generator was tested).
+
+test("runInitCommand -h/--help prints usage and exits 0 without running checks (fully synchronous — safe to capture)", async () => {
+  // Same pattern as tests/m33-doctor.test.mjs's equivalent --help test:
+  // runInitCommand's --help branch never awaits real I/O before resolving,
+  // so this synchronous capture window is safe (see captureStdioSync above).
+  let code;
+  const out = captureStdioSync(() => {
+    runInitCommand(["--help"]).then((c) => { code = c; });
+  });
+  assert.match(out, /Usage: upstage init/);
+  // The .then callback above runs on a microtask; give it a tick.
+  await Promise.resolve();
+  assert.equal(code, 0);
+});
+
+test("runInitCommand (no flags) creates UPSTAGE.md and exits 0", () => {
+  return withTempDir((dir) => withCwd(dir, async () => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const code = await runInitCommand([]);
+    assert.equal(code, 0);
+    assert.equal(existsSync(join(dir, "UPSTAGE.md")), true);
+  }));
+});
+
+test("runInitCommand --dry-run exits 0 and writes nothing to disk", () => {
+  return withTempDir((dir) => withCwd(dir, async () => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const code = await runInitCommand(["--dry-run"]);
+    assert.equal(code, 0);
+    assert.equal(existsSync(join(dir, "UPSTAGE.md")), false, "--dry-run must not write UPSTAGE.md");
+  }));
+});
+
+test("runInitCommand --refresh behaves the same as the default (documented no-op alias)", () => {
+  return withTempDir((dir) => withCwd(dir, async () => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    assert.equal(await runInitCommand([]), 0);
+    assert.equal(await runInitCommand(["--refresh"]), 0);
+    assert.equal(existsSync(join(dir, "UPSTAGE.md")), true);
+  }));
+});
+
+// formatDryRunOutput/formatWriteSummary: the pure formatters runInitCommand
+// wraps around process.stdout.write — this is what actually verifies
+// runInitCommand's OUTPUT CONTENT (not just its exit code/side effects),
+// fed by a real generateUpstageMd() result, with no stdout interception
+// needed at all (see captureStdioSync's comment above for why that matters).
+
+test("formatDryRunOutput includes the path, a dry-run label, and the real generated content preview", () => {
+  return withTempDir(async (dir) => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+    const result = await generateUpstageMd({ cwd: dir, dryRun: true });
+
+    const out = formatDryRunOutput(result);
+    assert.match(out, /dry-run/i);
+    assert.match(out, new RegExp(result.path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.match(out, /## Architecture/);
+    assert.match(out, /fixture-project/);
+  });
+});
+
+test("formatWriteSummary reports the correct action label for created vs. updated", () => {
+  return withTempDir(async (dir) => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const created = await generateUpstageMd({ cwd: dir });
+    assert.match(formatWriteSummary(created), /Created UPSTAGE\.md/);
+
+    const updated = await generateUpstageMd({ cwd: dir });
+    assert.match(formatWriteSummary(updated), /Updated the generated block/);
+  });
+});
+
+// ── /init TUI slash command (src/ui/commands.mjs): adapter coverage ───────
+//
+// Regression coverage for the bug flagged in code review: App.mjs:376 drops
+// any `result.response` that starts with "__" from the visible chat (that's
+// the exact mechanism `__clear__`/`__new_session__` rely on to stay
+// invisible — they all short-circuit via a dedicated boolean flag BEFORE
+// that check). The original /init --dry-run implementation built its
+// response as `` `__dry_run__ (...)\n\n${block}` `` with no such flag, so it
+// was silently swallowed by that same suppression and never reached the
+// user. These tests assert the dry-run response does NOT start with "__"
+// (which would have caught the bug directly) and DOES contain the preview.
+
+function makeInitState(cwd) {
+  return {
+    messages: [],
+    _session: { id: "t", createdAt: Date.now(), history: [], toolResults: [], workspace: { cwd } }
+  };
+}
+
+test("/init creates UPSTAGE.md and returns a plain (non-sentinel) chat response", () => {
+  return withTempDir(async (dir) => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const result = await executeCommand("/init", makeInitState(dir));
+    assert.ok(!result.response.startsWith("__"), `response must not start with "__" (App.mjs would swallow it): ${result.response.slice(0, 40)}`);
+    assert.match(result.response, /UPSTAGE\.md/);
+    assert.equal(existsSync(join(dir, "UPSTAGE.md")), true);
+  });
+});
+
+test("/init --dry-run returns the generated content preview as a plain response (not swallowed by App.mjs's \"__\" sentinel suppression) and writes nothing to disk", () => {
+  return withTempDir(async (dir) => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const result = await executeCommand("/init --dry-run", makeInitState(dir));
+    // This is the exact assertion that catches the reported bug: App.mjs
+    // only appends result.response to the chat when it does NOT start with
+    // "__". The original implementation's response started with
+    // "__dry_run__" and was therefore invisible in the TUI.
+    assert.ok(!result.response.startsWith("__"), `dry-run response must not start with "__" (App.mjs would swallow it): ${result.response.slice(0, 40)}`);
+    assert.match(result.response, /## Architecture/, "dry-run response should contain the actual generated content preview");
+    assert.equal(existsSync(join(dir, "UPSTAGE.md")), false, "--dry-run must not write UPSTAGE.md");
+  });
+});
+
+test("/init --refresh behaves the same as the default (documented no-op alias)", () => {
+  return withTempDir(async (dir) => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    await executeCommand("/init", makeInitState(dir));
+    const result = await executeCommand("/init --refresh", makeInitState(dir));
+    assert.ok(!result.response.startsWith("__"));
+    assert.match(result.response, /UPSTAGE\.md/);
   });
 });
