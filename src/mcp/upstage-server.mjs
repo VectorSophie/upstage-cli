@@ -18,6 +18,15 @@
  * Claude Code (the strong orchestrator) plans, then offloads narrow, well-scoped
  * sub-tasks to Solar through the `upstage_delegate` / `upstage_ask` tools.
  *
+ * It also exposes Upstage's Document AI endpoints as 5 standalone tools —
+ * `upstage_parse`, `upstage_extract`, `upstage_classify`, `upstage_embed`,
+ * `upstage_groundedness` — each a thin wrapper calling the matching
+ * src/upstage/*.mjs service function directly (no agent loop involved), per
+ * this repo's "one implementation, multiple surfaces" principle: the same
+ * functions the built-in agent tools already call. See the "Document AI
+ * tools" section below for the handlers and the TOOLS object for the full
+ * list.
+ *
  * Transport: newline-delimited JSON-RPC 2.0 over stdin/stdout (the MCP stdio
  * transport). Protocol surface: initialize, ping, tools/list, tools/call, plus
  * notifications/* (ignored). The result shape matches the MCP spec:
@@ -190,6 +199,11 @@ async function runDelegate({ task, cwd, maxSteps, model, readOnly }) {
 
 async function runParse({ path, format, mode, ocr }) {
   const result = await withCleanStdout(() => parseDocument({ path, format, mode, ocr }));
+  // parseDocument()'s result has no dedicated `.html` field — per
+  // documents.mjs's normalizeResponse(), `.markdown` also carries the
+  // combined HTML string when format === "html" (only `.text` gets its own
+  // field, for format === "text"). This is documents.mjs's own convention,
+  // not a bug here — don't "fix" this by adding a `.html` lookup.
   const content = format === "text" ? result.text : result.markdown;
   const lines = [
     `## Document Parse result`,
@@ -198,6 +212,11 @@ async function runParse({ path, format, mode, ocr }) {
     `- elements: ${result.elements.length}`,
     `- pageCount: ${result.pageCount}`,
     ``,
+    // Combined text only, not the per-element structure (unlike runExtract(),
+    // which preserves full result fidelity since its shape is caller-defined
+    // via `schema`) — parseDocument()'s `elements` array is often large/deep
+    // and the combined text is what most MCP callers actually want; this is
+    // a deliberate MCP-surface simplification, not a fidelity oversight.
     `### Content`,
     content || "(no content extracted)"
   ];

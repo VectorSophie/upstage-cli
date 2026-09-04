@@ -180,3 +180,99 @@ test("tools/call upstage_embed (thrown error): surfaced as an isError result, no
   assert.equal(result.content[0].type, "text");
   assert.match(result.content[0].text, /UPSTAGE_API_KEY is not configured/);
 });
+
+// --- upstage_parse / upstage_extract / upstage_classify: client-side ------
+// validation errors, no network involved at all ------------------------------
+//
+// parseDocument()/extractStructured()/classifyDocument() all validate their
+// arguments (path presence/existence, categories bounds) BEFORE touching the
+// network — same as embed()'s empty-texts/bad-type checks. These are the
+// cheapest possible "handler wires arguments through and errors propagate as
+// an isError result" tests: no mock server, no real file, no API key needed.
+
+test("tools/call upstage_parse (thrown error): nonexistent path surfaced as isError, not a crash", async () => {
+  const replies = await exchange([
+    {
+      id: 12,
+      method: "tools/call",
+      params: { name: "upstage_parse", arguments: { path: "definitely-does-not-exist.pdf" } }
+    }
+  ]);
+  const result = replies.get(12).result;
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0].type, "text");
+  assert.match(result.content[0].text, /File not found/);
+});
+
+test("tools/call upstage_extract (thrown error): missing path surfaced as isError, not a crash", async () => {
+  const replies = await exchange([
+    {
+      id: 13,
+      method: "tools/call",
+      params: { name: "upstage_extract", arguments: { schema: { type: "object", properties: {} } } }
+    }
+  ]);
+  const result = replies.get(13).result;
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0].type, "text");
+  assert.match(result.content[0].text, /requires a `path`/);
+});
+
+test("tools/call upstage_classify (thrown error): too few categories surfaced as isError, not a crash", async () => {
+  const replies = await exchange([
+    {
+      id: 14,
+      method: "tools/call",
+      params: { name: "upstage_classify", arguments: { path: "irrelevant.pdf", categories: ["only-one"] } }
+    }
+  ]);
+  const result = replies.get(14).result;
+  assert.equal(result.isError, true);
+  assert.equal(result.content[0].type, "text");
+  assert.match(result.content[0].text, /at least 2 categories/);
+});
+
+// --- upstage_groundedness: tools/call, mocked -------------------------------
+//
+// checkGroundedness() calls UpstageAdapter directly (a chat-completions call,
+// not upstageRequest()) — see groundedness.mjs's header. It still reads the
+// same UPSTAGE_API_BASE_URL and POSTs plain JSON, this time to
+// `{baseUrl}/chat/completions`, so withMockUpstageServer works unchanged;
+// only the routed path and response shape (`choices[0].message.content`,
+// matching upstage-adapter.mjs's readJsonResponse()) differ from the embed case.
+test("tools/call upstage_groundedness (success): returns the grounding verdict, shaped as an MCP text result", async () => {
+  await withMockUpstageServer(
+    (req, body, res) => {
+      assert.equal(req.method, "POST");
+      assert.equal(req.url, "/chat/completions");
+      const parsed = JSON.parse(body);
+      assert.equal(parsed.messages[0].role, "user");
+      assert.equal(parsed.messages[0].content, "The sky is blue.");
+      assert.equal(parsed.messages[1].role, "assistant");
+      assert.equal(parsed.messages[1].content, "The sky's color is blue.");
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ choices: [{ message: { content: "grounded" } }] }));
+    },
+    async (baseUrl) => {
+      const replies = await exchange(
+        [
+          {
+            id: 15,
+            method: "tools/call",
+            params: {
+              name: "upstage_groundedness",
+              arguments: { context: "The sky is blue.", answer: "The sky's color is blue." }
+            }
+          }
+        ],
+        { UPSTAGE_API_KEY: "test-key", UPSTAGE_API_BASE_URL: baseUrl }
+      );
+      const result = replies.get(15).result;
+      assert.equal(result.isError, false);
+      assert.equal(result.content[0].type, "text");
+      assert.match(result.content[0].text, /Groundedness Check result/);
+      assert.match(result.content[0].text, /- grounded: grounded/);
+      assert.match(result.content[0].text, /### Raw model response\ngrounded/);
+    }
+  );
+});
