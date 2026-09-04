@@ -1,6 +1,9 @@
-import { spawn, exec } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import pkg from "../../../package.json" with { type: "json" };
+
+const execFileAsync = promisify(execFile);
 
 /**
  * StdioMcpClient — a real MCP client over the stdio transport.
@@ -105,9 +108,13 @@ export class StdioMcpClient {
       if (process.platform === "win32" && this._usedShell && this.child.pid) {
         // See the comment in connect() — a plain kill() would only hit the
         // cmd.exe wrapper, not the grandchild that's actually running the
-        // server. `/t` kills the whole process tree; best-effort (the pid
-        // may already be gone), never throws.
-        exec(`taskkill /pid ${this.child.pid} /t /f`, () => {});
+        // server. `/t` kills the whole process tree. Genuinely awaited (not
+        // fire-and-forget) — both existing callers already
+        // `await client.close().catch(() => {})` (src/tools/mcp/config.mjs),
+        // i.e. they were already written expecting close() to fully settle
+        // before returning; best-effort either way (the pid may already be
+        // gone), never throws past the catch below.
+        await execFileAsync("taskkill", ["/pid", String(this.child.pid), "/t", "/f"]).catch(() => {});
       } else {
         try { this.child.kill(); } catch { /* ignore */ }
       }

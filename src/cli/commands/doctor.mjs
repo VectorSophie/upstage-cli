@@ -210,20 +210,25 @@ async function gatherMcpStatus(cwd, settings) {
   const connectedNames = new Set(servers.map((s) => s.name));
   const failed = configs.map((c) => c.name).filter((n) => !connectedNames.has(n));
 
+  // Only the mcp-sourced tool count is computed here — it's the one piece
+  // of enrichment that's actually surfaced (in the "MCP servers" check
+  // below) and directly related to what this function already connected
+  // to. `createRegistryWithExtensions` also registers the ~36 builtin
+  // tools as a side effect of building a registry at all, but that count
+  // isn't reported by any check in this module, so it's deliberately not
+  // extracted here — no point paying attention to a number nothing reads.
   let mcpToolCount = 0;
-  let builtinToolCount = 0;
-  let discoveredToolCount = 0;
-  try {
-    const registry = await createRegistryWithExtensions({
-      policy: DEFAULT_POLICY,
-      cwd,
-      mcpServers: servers
-    });
-    mcpToolCount = registry.listActive({ source: "mcp" }).length;
-    builtinToolCount = registry.listActive({ source: "builtin" }).length;
-    discoveredToolCount = registry.listActive({ source: "discovered" }).length;
-  } catch {
-    // Tool-count enrichment is best-effort; connection results above still stand.
+  if (servers.length > 0) {
+    try {
+      const registry = await createRegistryWithExtensions({
+        policy: DEFAULT_POLICY,
+        cwd,
+        mcpServers: servers
+      });
+      mcpToolCount = registry.listActive({ source: "mcp" }).length;
+    } catch {
+      // Tool-count enrichment is best-effort; connection results above still stand.
+    }
   }
 
   await closeAll().catch(() => {});
@@ -232,9 +237,7 @@ async function gatherMcpStatus(cwd, settings) {
     configuredCount: configs.length,
     connectedCount: servers.length,
     failed,
-    mcpToolCount,
-    builtinToolCount,
-    discoveredToolCount
+    mcpToolCount
   };
 }
 
@@ -264,6 +267,7 @@ function buildExtensionsSection(cwd, settings) {
         return { status: "warn", detail: "no MCP servers configured" };
       }
       const detail = `${status.connectedCount}/${status.configuredCount} connected` +
+        (status.connectedCount > 0 ? `; ${status.mcpToolCount} tool${status.mcpToolCount === 1 ? "" : "s"} available` : "") +
         (status.failed.length > 0 ? `; failed: ${status.failed.join(", ")}` : "");
       return { status: status.failed.length > 0 ? "warn" : "pass", detail };
     }],
@@ -299,21 +303,25 @@ function buildSecuritySection(cwd, settings) {
 // ── Verification ─────────────────────────────────────────────────────────
 
 function buildVerificationSection(cwd) {
+  // Shared across the three checks below rather than each calling
+  // detectProjectCommands(cwd) independently — same package.json read,
+  // parsed once.
+  const detected = detectProjectCommands(cwd);
   return runSection("Verification", [
     ["detected lint command", async () => {
-      const cmds = await detectProjectCommands(cwd);
+      const cmds = await detected;
       return cmds.lint
         ? { status: "pass", detail: `${cmds.lint.script}: ${cmds.lint.command}` }
         : { status: "warn", detail: "not detected" };
     }],
     ["detected typecheck command", async () => {
-      const cmds = await detectProjectCommands(cwd);
+      const cmds = await detected;
       return cmds.typecheck
         ? { status: "pass", detail: `${cmds.typecheck.script}: ${cmds.typecheck.command}` }
         : { status: "warn", detail: "not detected" };
     }],
     ["detected test command", async () => {
-      const cmds = await detectProjectCommands(cwd);
+      const cmds = await detected;
       return cmds.test
         ? { status: "pass", detail: `${cmds.test.script}: ${cmds.test.command}` }
         : { status: "warn", detail: "not detected" };
