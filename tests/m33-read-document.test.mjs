@@ -14,8 +14,11 @@ import { MAX_FILE_BYTES } from "../src/upstage/documents.mjs";
 // tests/m33-upstage-documents.test.mjs — these tests exercise the tool through
 // its real dependency (src/upstage/documents.mjs's parseDocument) with
 // global.fetch mocked underneath it. This still verifies exactly what's
-// asked: the tool's own validation (unsupported type, oversized file) and its
-// {path, elementCount, markdown} adaptation of parseDocument's result.
+// asked: the {path, elementCount, markdown} adaptation of parseDocument's
+// result, plus the file-not-found/unsupported-type/oversized-file validation
+// paths — which live entirely in documents.mjs's loadFile() as the single
+// source of truth (read-document.mjs deliberately does not re-validate; see
+// its own comment) — surfacing correctly through the tool.
 function withMockFetch(impl, run) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = impl;
@@ -126,6 +129,11 @@ test("read_document requires a path argument", async () => {
 });
 
 test("read_document throws when the file does not exist, without calling fetch", async () => {
+  // This check now comes from documents.mjs's parseDocument (loadFile), not
+  // from read-document.mjs itself — see Issue 1 in the code-quality review:
+  // read-document.mjs no longer pre-validates (that was duplicated work),
+  // so the error surfaces with the resolved absolute path, not the raw
+  // relative arg.
   let calls = 0;
   await withApiKey(() =>
     withMockFetch(
@@ -134,9 +142,14 @@ test("read_document throws when the file does not exist, without calling fetch",
         return new Response("{}", { status: 200 });
       },
       async () => {
+        const missingAbsolutePath = join(dir, "nope.pdf");
         await assert.rejects(
           () => readDocumentTool.execute({ path: "nope.pdf" }, { cwd: dir }),
-          /File not found: nope\.pdf/
+          (err) => {
+            assert.match(err.message, /File not found/);
+            assert.ok(err.message.includes(missingAbsolutePath), `expected message to include ${missingAbsolutePath}, got: ${err.message}`);
+            return true;
+          }
         );
         assert.equal(calls, 0);
       }

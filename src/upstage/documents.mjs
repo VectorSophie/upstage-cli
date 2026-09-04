@@ -71,8 +71,15 @@ function computePageCount(elements) {
 function normalizeResponse(data, format) {
   const elements = Array.isArray(data?.elements) ? data.elements : [];
   const key = format === "text" ? "text" : format === "html" ? "html" : "markdown";
+  // Fall back through the other content shapes (skipping `key` itself, since
+  // trying it twice is dead code) in case the API didn't populate the
+  // requested one for a given element.
+  const fallbackKeys = ["markdown", "text"].filter((k) => k !== key);
   const combined = elements
-    .map((el) => el?.content?.[key] || el?.content?.markdown || el?.content?.text || "")
+    .map((el) => {
+      const content = el?.content || {};
+      return content[key] || fallbackKeys.map((k) => content[k]).find(Boolean) || "";
+    })
     .filter(Boolean)
     .join("\n\n");
 
@@ -134,5 +141,12 @@ export async function parseDocument({ path, format = "markdown", mode = "standar
  * @returns {Promise<{elements: object[], markdown: string, text: string, pageCount: number}>}
  */
 export async function ocrDocument({ path } = {}) {
+  // Deliberately omits the `ocr` form field (unlike parseDocument's
+  // `ocr: "auto"` default): that field toggles whether document-parse runs
+  // OCR on top of an existing text layer, which is meaningless once `model`
+  // is already "ocr". `mode` is still sent for form-field-shape parity with
+  // parseDocument. NOTE: this reasoning has not been confirmed against a
+  // live API call — verify before relying on it if `ocr`'s actual behavior
+  // under model: "ocr" turns out to matter.
   return digitize({ path, model: "ocr", format: "markdown", mode: "standard" });
 }

@@ -143,6 +143,39 @@ test("ocrDocument sends the ocr model", async () => {
   );
 });
 
+test("ocrDocument's exact form-field set: model=ocr, mode=standard, no `ocr` field", async () => {
+  // Locks in the behavior explained in the comment above ocrDocument() in
+  // documents.mjs (code-quality review Issue 2): the `ocr` field is
+  // deliberately absent when model is already "ocr", but `mode` is still
+  // sent. If this ever changes, this test should force an explicit,
+  // deliberate update rather than a silent regression.
+  const path = fixture("scan2.png");
+  let seenOptions;
+  await withApiKey(() =>
+    withMockFetch(
+      async (_url, options) => {
+        seenOptions = options;
+        return new Response(JSON.stringify({ elements: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      },
+      async () => {
+        await ocrDocument({ path });
+
+        const bodyText = Buffer.from(seenOptions.body).toString("utf8");
+        assert.match(bodyText, /name="model"\r\n\r\nocr\r\n/);
+        assert.match(bodyText, /name="mode"\r\n\r\nstandard\r\n/);
+        assert.match(bodyText, /name="output_formats"\r\n\r\n\['markdown'\]\r\n/);
+        assert.match(bodyText, /name="coordinates"\r\n\r\nfalse\r\n/);
+        assert.match(bodyText, /name="chart_recognition"\r\n\r\ntrue\r\n/);
+        assert.match(bodyText, /name="base64_encoding"\r\n\r\n\[\]\r\n/);
+        assert.doesNotMatch(bodyText, /name="ocr"\r\n/);
+      }
+    )
+  );
+});
+
 test("pageCount is 0 when the response has no elements", async () => {
   const path = fixture("empty.pdf");
   await withApiKey(() =>

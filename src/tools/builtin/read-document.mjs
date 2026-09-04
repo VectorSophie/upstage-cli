@@ -1,7 +1,5 @@
-import { existsSync } from "node:fs";
-import { stat } from "node:fs/promises";
-import { extname, resolve } from "node:path";
-import { parseDocument, SUPPORTED_EXTENSIONS, MAX_FILE_BYTES } from "../../upstage/documents.mjs";
+import { resolve } from "node:path";
+import { parseDocument } from "../../upstage/documents.mjs";
 
 // Upstage Document AI (OCR + Layout Analysis + Parse) — a capability gap
 // most coding-agent tool registries have no equivalent for at all: read a
@@ -12,8 +10,13 @@ import { parseDocument, SUPPORTED_EXTENSIONS, MAX_FILE_BYTES } from "../../upsta
 // The actual API call + response normalization live in ../../upstage/documents.mjs
 // (shared with any other Document Parse/OCR caller, e.g. future standalone
 // `upstage parse`/`upstage ocr` commands). This file is purely the tool-contract
-// adapter: validate input, call parseDocument(), reshape the result into the
+// adapter: resolve the path, call parseDocument(), reshape the result into the
 // `{path, elementCount, markdown}` shape this tool has always returned.
+//
+// File existence/extension/size validation is intentionally NOT duplicated
+// here — parseDocument()'s own loadFile() (in documents.mjs) already performs
+// those checks and throws before any network call. Re-checking here would
+// just run the same three checks twice on every call.
 export const readDocumentTool = {
   name: "read_document",
   description:
@@ -37,18 +40,6 @@ export const readDocumentTool = {
 
     const cwd = context.cwd || process.cwd();
     const absolutePath = resolve(cwd, args.path);
-    if (!existsSync(absolutePath)) throw new Error(`File not found: ${args.path}`);
-
-    const ext = extname(absolutePath).toLowerCase();
-    const contentType = SUPPORTED_EXTENSIONS[ext];
-    if (!contentType) {
-      throw new Error(`Unsupported file type: ${ext || "(none)"}. Supported: ${Object.keys(SUPPORTED_EXTENSIONS).join(", ")}`);
-    }
-
-    const { size } = await stat(absolutePath);
-    if (size > MAX_FILE_BYTES) {
-      throw new Error(`File too large: ${size} bytes (max ${MAX_FILE_BYTES})`);
-    }
 
     const result = await parseDocument({ path: absolutePath, format: "markdown", mode: "standard", ocr: "auto" });
 
