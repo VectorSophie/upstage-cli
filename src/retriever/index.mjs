@@ -22,6 +22,24 @@ function toRepoPath(cwd, filePath) {
   return relative(cwd, filePath).split("\\").join("/");
 }
 
+// Bump whenever a change to embedding-vector shape could make an on-disk
+// index (~/.upstage-cli or, here, .upstage-cli/index/retrieval-index.json)
+// incompatible with what a fresh build would now produce — most importantly,
+// a change to the default/effective embedding model's dimension. Without
+// this, a stale index built under an old model generation would silently
+// mix incompatible vector dimensions: cosineSimilarity() below treats a
+// length mismatch as "no similarity" (-1) rather than throwing, so every
+// candidate would tie at the same meaningless score instead of erroring.
+// Bumped to 2 for the src/upstage/embeddings.mjs fix (Task 7.3): the default
+// embedding model generation changed to a different, differently-sized
+// vector space. An index missing this marker, or carrying an older one, is
+// treated as absent and rebuilt rather than trusted.
+const INDEX_SCHEMA_VERSION = 2;
+
+function isUsableDiskIndex(disk, signatures) {
+  return Boolean(disk) && disk.indexSchemaVersion === INDEX_SCHEMA_VERSION && sameSignatures(disk.fileSignatures, signatures);
+}
+
 async function buildSignatures(cwd, files) {
   const signatures = {};
   for (const filePath of files) {
@@ -79,15 +97,15 @@ async function readChunks(cwd, files, options = {}) {
   return chunks;
 }
 
-async function embedTextsWithFallback(texts) {
+async function embedTextsWithFallback(texts, type) {
   const upstage = new UpstageEmbeddingProvider();
   const local = new LocalEmbeddingProvider();
 
   try {
-    const vectors = await upstage.embedBatch(texts);
+    const vectors = await upstage.embedBatch(texts, type);
     return { mode: "upstage", vectors };
   } catch {
-    const vectors = await local.embedBatch(texts);
+    const vectors = await local.embedBatch(texts, type);
     return { mode: "local", vectors };
   }
 }
@@ -100,22 +118,25 @@ export async function ensureRetrievalIndex(cwd, runtimeCache = {}, options = {})
   });
   const signatures = await buildSignatures(cwd, files);
 
-  if (!options.forceRebuild && runtimeCache.retrievalIndex) {
-    if (sameSignatures(runtimeCache.retrievalIndex.fileSignatures, signatures)) {
-      return { ...runtimeCache.retrievalIndex, fromCache: true };
-    }
+  if (
+    !options.forceRebuild &&
+    runtimeCache.retrievalIndex &&
+    runtimeCache.retrievalIndex.indexSchemaVersion === INDEX_SCHEMA_VERSION &&
+    sameSignatures(runtimeCache.retrievalIndex.fileSignatures, signatures)
+  ) {
+    return { ...runtimeCache.retrievalIndex, fromCache: true };
   }
 
   if (!options.forceRebuild) {
     const disk = await loadVectorStore(cwd);
-    if (disk && sameSignatures(disk.fileSignatures, signatures)) {
+    if (isUsableDiskIndex(disk, signatures)) {
       runtimeCache.retrievalIndex = { ...disk, fromCache: true };
       return runtimeCache.retrievalIndex;
     }
   }
 
   const chunks = await readChunks(cwd, files, options);
-  const { mode, vectors } = await embedTextsWithFallback(chunks.map((chunk) => chunk.text));
+  const { mode, vectors } = await embedTextsWithFallback(chunks.map((chunk) => chunk.text), "passage");
   const entries = chunks.map((chunk, index) => ({
     ...chunk,
     vector: vectors[index]
@@ -123,6 +144,7 @@ export async function ensureRetrievalIndex(cwd, runtimeCache = {}, options = {})
 
   const index = {
     createdAt: Date.now(),
+    indexSchemaVersion: INDEX_SCHEMA_VERSION,
     embeddingMode: mode,
     entries,
     fileSignatures: signatures,
@@ -141,11 +163,11 @@ export async function retrieveRelevantChunks({ cwd, query, runtimeCache, topK = 
 
   let queryVector;
   try {
-    const vectors = await provider.embedBatch([query]);
+    const vectors = await provider.embedBatch([query], "query");
     queryVector = vectors[0];
   } catch {
     const local = new LocalEmbeddingProvider();
-    const vectors = await local.embedBatch([query]);
+    const vectors = await local.embedBatch([query], "query");
     queryVector = vectors[0];
   }
 
