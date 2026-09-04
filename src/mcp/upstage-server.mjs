@@ -43,6 +43,11 @@ import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
 import { getProvider } from "../core/providers.mjs";
+import { parseDocument } from "../upstage/documents.mjs";
+import { classifyDocument } from "../upstage/classification.mjs";
+import { extractStructured } from "../upstage/extraction.mjs";
+import { embed } from "../upstage/embeddings.mjs";
+import { checkGroundedness } from "../upstage/groundedness.mjs";
 import pkg from "../../package.json" with { type: "json" };
 
 // See src/tools/mcp/http-client.mjs's PROTOCOL_VERSION comment for context
@@ -164,6 +169,96 @@ async function runDelegate({ task, cwd, maxSteps, model, readOnly }) {
   return { text: lines.join("\n"), isError: result.ok === false };
 }
 
+// ── Document AI tools (thin wrappers over src/upstage/*.mjs) ────────────────
+//
+// Unlike upstage_delegate/upstage_ask above (which run the full agent loop),
+// these tools call a single src/upstage/*.mjs service function directly, per
+// architectural principle 2 ("one implementation, multiple surfaces") — the
+// same functions src/tools/builtin/*.mjs's agent-tool wrappers call. This MCP
+// server is already its own separate process (own cwd/args), so there is no
+// registry/policy/permission layer to route through here; each handler just
+// awaits the service call and reshapes its result into the
+// `{text, isError}` convention runDelegate() above establishes. None of these
+// functions write to stdout, but they're still run under withCleanStdout for
+// the same defense-in-depth reason runDelegate() uses it: a stray write deep
+// in a dependency (retry logging, a future change) must never reach the
+// JSON-RPC stream. Thrown errors (UpstageApiError or plain Error — see
+// src/upstage/errors.mjs) are left to propagate; handleRequest()'s tools/call
+// catch block already turns any thrown error into an `isError: true` result,
+// so no per-handler try/catch is needed here (matching how upstage_delegate/
+// upstage_ask, which also don't catch locally, rely on that same catch).
+
+async function runParse({ path, format, mode, ocr }) {
+  const result = await withCleanStdout(() => parseDocument({ path, format, mode, ocr }));
+  const content = format === "text" ? result.text : result.markdown;
+  const lines = [
+    `## Document Parse result`,
+    ``,
+    `- path: ${path}`,
+    `- elements: ${result.elements.length}`,
+    `- pageCount: ${result.pageCount}`,
+    ``,
+    `### Content`,
+    content || "(no content extracted)"
+  ];
+  return { text: lines.join("\n") };
+}
+
+async function runClassify({ path, categories }) {
+  const { label, confidence } = await withCleanStdout(() => classifyDocument({ path, categories }));
+  const lines = [
+    `## Document Classification result`,
+    ``,
+    `- path: ${path}`,
+    `- label: ${label}`,
+    `- confidence: ${confidence === undefined ? "(not reported)" : confidence}`
+  ];
+  return { text: lines.join("\n") };
+}
+
+async function runExtract({ path, schema }) {
+  const data = await withCleanStdout(() => extractStructured({ path, schema }));
+  const lines = [
+    `## Structured Extraction result`,
+    ``,
+    `- path: ${path}`,
+    ``,
+    "```json",
+    JSON.stringify(data, null, 2),
+    "```"
+  ];
+  return { text: lines.join("\n") };
+}
+
+async function runEmbed({ texts, type }) {
+  const vectors = await withCleanStdout(() => embed({ texts, type }));
+  const lines = [
+    `## Embeddings result`,
+    ``,
+    `- type: ${type}`,
+    `- count: ${vectors.length}`,
+    `- dims: ${vectors[0]?.length ?? 0}`,
+    ``,
+    "```json",
+    JSON.stringify(vectors),
+    "```"
+  ];
+  return { text: lines.join("\n") };
+}
+
+async function runGroundedness({ context, answer }) {
+  const { grounded, raw } = await withCleanStdout(() => checkGroundedness({ context, answer }));
+  const lines = [
+    `## Groundedness Check result`,
+    ``,
+    `- grounded: ${grounded}`,
+    ``,
+    `### Raw model response`,
+    raw || "(empty)"
+  ];
+  return { text: lines.join("\n") };
+}
+
 // ── Tool definitions ─────────────────────────────────────────────────────────
 
 const TOOLS = {
@@ -214,6 +309,105 @@ const TOOLS = {
         model: args.model,
         readOnly: true
       })
+  },
+  // ── Document AI tools ───────────────────────────────────────────────────
+  // Exactly the 5 tools the 3.2.0 release plan's task 7.7 names (parse,
+  // extract, classify, embed, groundedness) — deliberately NOT also exposing
+  // ocrDocument()/generateSchema() (documents.mjs / extraction.mjs) here.
+  // Both of those two carry their own header-comment caveats marking them
+  // as *not* live-verified against a real API call (ocrDocument's `ocr`
+  // field omission, and schema-generation's genuinely disputed endpoint
+  // path/response shape) — MCP exposure hands these to external, untrusted
+  // clients as if they were settled, so the two least-verified endpoints
+  // are the right ones to leave out of this first pass. Add them as
+  // upstage_ocr / upstage_schema_generate in a follow-up once verified live.
+  upstage_parse: {
+    description:
+      "Parse a document (PDF/PNG/JPG/TIFF/HEIC) into structured layout elements " +
+      "via Upstage Document Parse, returning the combined text in the requested " +
+      "output format plus a page count.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or relative path to the file to parse." },
+        format: { type: "string", enum: ["markdown", "html", "text"], description: "Output format (default markdown)." },
+        mode: { type: "string", enum: ["standard", "enhanced", "auto"], description: "Parse mode (default standard)." },
+        ocr: { type: "string", enum: ["auto", "force"], description: "OCR trigger mode (default auto)." }
+      },
+      required: ["path"]
+    },
+    handler: (args) =>
+      runParse({
+        path: args.path,
+        format: args.format || "markdown",
+        mode: args.mode || "standard",
+        ocr: args.ocr || "auto"
+      })
+  },
+  upstage_extract: {
+    description:
+      "Extract structured data from a document (PDF/image) matching a caller-" +
+      "supplied JSON Schema, via Upstage's Universal Extraction model. Schema " +
+      "root properties are restricted by Upstage to string|integer|number|array " +
+      "(no nested arrays).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or relative path to the file to extract from." },
+        schema: { type: "object", description: "A JSON Schema object describing the fields to extract." }
+      },
+      required: ["path", "schema"]
+    },
+    handler: (args) => runExtract({ path: args.path, schema: args.schema })
+  },
+  upstage_classify: {
+    description:
+      "Classify a document (PDF/image) into one of a caller-supplied set of " +
+      "categories via Upstage's Document Classification model. Requires 2 to " +
+      "1,000 candidate category labels.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Absolute or relative path to the file to classify." },
+        categories: {
+          type: "array",
+          items: { type: "string" },
+          description: "Candidate category labels (2 to 1,000 entries)."
+        }
+      },
+      required: ["path", "categories"]
+    },
+    handler: (args) => runClassify({ path: args.path, categories: args.categories })
+  },
+  upstage_embed: {
+    description:
+      "Embed a batch of texts via Upstage's Solar embeddings. Solar embeddings " +
+      "are asymmetric — pick `type: \"query\"` for the user's search text and " +
+      "`type: \"passage\"` for the candidate/document text being searched over.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        texts: { type: "array", items: { type: "string" }, description: "Texts to embed (non-empty)." },
+        type: { type: "string", enum: ["query", "passage"], description: "Which side of a search this batch represents (default query)." }
+      },
+      required: ["texts"]
+    },
+    handler: (args) => runEmbed({ texts: args.texts, type: args.type || "query" })
+  },
+  upstage_groundedness: {
+    description:
+      "Verify that an answer/claim is actually supported by its source context, " +
+      "via Upstage's Groundedness Check — a real second model call, not self-" +
+      "critique. Returns \"grounded\", \"notGrounded\", or \"notSure\".",
+    inputSchema: {
+      type: "object",
+      properties: {
+        context: { type: "string", description: "The source text the answer should be checked against." },
+        answer: { type: "string", description: "The claim/answer/summary to verify." }
+      },
+      required: ["context", "answer"]
+    },
+    handler: (args) => runGroundedness({ context: args.context, answer: args.answer })
   }
 };
 
@@ -270,8 +464,13 @@ async function handleRequest(req) {
         send(id, { content: [{ type: "text", text }], isError: !!isError });
       } catch (err) {
         // Tool-level failures are reported as a result with isError, per MCP.
+        // Generic across every tool (agent-loop delegates and the direct
+        // src/upstage/*.mjs service calls alike) — none of them catch
+        // locally, they all rely on this one place to convert a thrown
+        // UpstageApiError/Error into an isError result instead of crashing
+        // the server process.
         send(id, {
-          content: [{ type: "text", text: `upstage subagent error: ${err?.message || err}` }],
+          content: [{ type: "text", text: `upstage-mcp tool error (${params.name}): ${err?.message || err}` }],
           isError: true
         });
       }
