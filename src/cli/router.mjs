@@ -33,6 +33,7 @@
 // a reported problem, so the same tradeoff is accepted here rather than solved.
 
 import { runDoctorCommand } from "./commands/doctor.mjs";
+import { runInitCommand } from "./commands/init.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -76,7 +77,24 @@ export const COMMANDS = {
       "  --json    Output as JSON"
     ].join("\n")
   },
-  init: leaf(["init"]),
+  // Task 7.10 — real implementation (src/cli/commands/init.mjs), not a
+  // stub. `runInitCommand` handles -h/--help itself, so it's wired directly
+  // as the leaf's handler, same pattern as `doctor` above (Task 12.3).
+  init: {
+    handler: runInitCommand,
+    usage: [
+      "Usage: upstage init [--refresh] [--dry-run]",
+      "",
+      "  Generates/updates a marked block in UPSTAGE.md from static analysis of the",
+      "  current project (Architecture/Entry Points/Important Directories/",
+      "  Build/Test/Lint/Typecheck/Runtime & Frameworks). Content outside the",
+      "  generated-block markers is always preserved.",
+      "",
+      "Options:",
+      "  --refresh    Force regeneration (no-op alias of the default)",
+      "  --dry-run    Print the would-be content without writing to disk"
+    ].join("\n")
+  },
   version: leaf(["version"]),
   update: leaf(["update"]),
   uninstall: leaf(["uninstall"]),

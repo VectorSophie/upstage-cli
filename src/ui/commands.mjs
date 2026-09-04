@@ -1,13 +1,11 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import os from "node:os";
 import { renderMarkdown } from "./markdown.mjs";
 import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
 import { appendSpec, readSpecs } from "../core/spec.mjs";
 import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
 import { resolveTokenLimit } from "../agent/loop.mjs";
+import { generateUpstageMd } from "../agent/init-generator.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -207,18 +205,28 @@ export const COMMANDS = {
   },
 
   "/init": {
-    description: ".upstage/ 디렉토리 초기화",
-    async handler(_args, _state) {
-      const dirs = [
-        join(process.cwd(), ".upstage"),
-        join(process.cwd(), ".upstage", "checkpoints"),
-        join(process.cwd(), ".upstage", "agents"),
-        join(process.cwd(), ".upstage", "skills"),
-      ];
-      for (const d of dirs) {
-        if (!existsSync(d)) await mkdir(d, { recursive: true });
+    description: "저장소를 분석해 UPSTAGE.md 생성/갱신 (사용법: /init [--refresh] [--dry-run])",
+    async handler(args, state) {
+      const cwd = state?._session?.workspace?.cwd || process.cwd();
+      const refresh = (args || []).includes("--refresh");
+      const dryRun = (args || []).includes("--dry-run");
+
+      try {
+        const result = await generateUpstageMd({ cwd, refresh, dryRun });
+
+        if (dryRun) {
+          return { response: `__dry_run__ (${result.path} — 아무 것도 기록되지 않음)\n\n${result.block}` };
+        }
+
+        const ACTION_KO = {
+          created: "UPSTAGE.md 생성됨",
+          updated: "UPSTAGE.md의 생성 블록 갱신됨",
+          appended: "기존 UPSTAGE.md에 생성 블록 추가됨"
+        };
+        return { response: `📄 ${ACTION_KO[result.action] || "UPSTAGE.md 갱신됨"} (${result.path})` };
+      } catch (err) {
+        return { response: `/init 실행 오류: ${err.message}` };
       }
-      return { response: ".upstage/ 디렉토리 초기화 완료" };
     }
   },
 
