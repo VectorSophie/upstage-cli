@@ -144,6 +144,44 @@ test("embed() rejects an empty texts array before any network call", async () =>
   );
 });
 
+test("embed() rejects a `type` that isn't exactly 'query' or 'passage', before any network call", async () => {
+  let calls = 0;
+  await withApiKey(() =>
+    withMockFetch(
+      async () => {
+        calls += 1;
+        return jsonResponse(FAKE_EMBEDDING_RESPONSE(1));
+      },
+      async () => {
+        await assert.rejects(() => embed({ texts: ["x"], type: "Query" }), /type must be one of/);
+        await assert.rejects(() => embed({ texts: ["x"], type: "passsage" }), /type must be one of/);
+        await assert.rejects(() => embed({ texts: ["x"], type: "" }), /type must be one of/);
+        await assert.rejects(() => embed({ texts: ["x"], type: null }), /type must be one of/);
+        assert.equal(calls, 0, "an invalid type must fail before any fetch call");
+      }
+    )
+  );
+});
+
+test("embed() throws on a malformed response (missing/short/non-array embeddings)", async () => {
+  await withApiKey(() =>
+    withMockFetch(
+      async () => jsonResponse({ data: [{ embedding: [1, 2] }] }), // only 1 entry for 2 texts
+      async () => {
+        await assert.rejects(() => embed({ texts: ["a", "b"], type: "passage" }), /unexpected response shape/);
+      }
+    )
+  );
+  await withApiKey(() =>
+    withMockFetch(
+      async () => jsonResponse({ data: [{ embedding: "not-an-array" }] }),
+      async () => {
+        await assert.rejects(() => embed({ texts: ["a"], type: "passage" }), /unexpected response shape/);
+      }
+    )
+  );
+});
+
 // --- Regression test: the actual bug this task fixes -----------------------
 //
 // Before this task, semantic-search.mjs and retriever/providers/upstage.mjs

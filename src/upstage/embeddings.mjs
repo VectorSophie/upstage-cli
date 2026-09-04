@@ -20,15 +20,27 @@ import { upstageRequest } from "./client.mjs";
 
 const ENDPOINT = "/embeddings";
 const DEFAULT_BASE_MODEL = "solar-embedding-2";
+const VALID_TYPES = ["query", "passage"];
 
 // UPSTAGE_EMBEDDING_MODEL is the one canonical override env var (see
 // src/config/env.mjs's ENV_SCHEMA) for the embedding model *base* name — it
 // gets suffixed with "-query" or "-passage" here, the same way the default
 // does. This is the only place that reads it, so every caller of embed()
 // picks up the same value automatically.
+//
+// `type` is validated strictly (exactly "query" or "passage") rather than
+// falling through to a default for anything else: today's callers are
+// trusted internal code using literals, but this module is meant to be
+// called directly by future entry points (a standalone `upstage embed` CLI
+// command, MCP exposure) where `type` may come from end-user input. A typo
+// like "Query" silently resolving to the query model would produce a
+// wrong-but-valid-looking embedding instead of an error.
 function resolveModel(type) {
+  if (!VALID_TYPES.includes(type)) {
+    throw new Error(`type must be one of ${VALID_TYPES.map((t) => `"${t}"`).join(" or ")}, got: ${JSON.stringify(type)}`);
+  }
   const base = process.env.UPSTAGE_EMBEDDING_MODEL || DEFAULT_BASE_MODEL;
-  return type === "passage" ? `${base}-passage` : `${base}-query`;
+  return `${base}-${type}`;
 }
 
 /**
@@ -42,6 +54,9 @@ function resolveModel(type) {
  *   "passage" for the candidate/document text being searched over.
  * @returns {Promise<number[][]>} one embedding vector per input text, in
  *   the same order as `texts`.
+ * @throws {Error} if `texts` is empty, `type` isn't exactly "query" or
+ *   "passage", or the API response doesn't contain one embedding array per
+ *   input text.
  */
 export async function embed({ texts, type = "query" } = {}) {
   if (!Array.isArray(texts) || texts.length === 0) {
@@ -54,5 +69,9 @@ export async function embed({ texts, type = "query" } = {}) {
     body: { model, input: texts }
   });
 
-  return (data?.data || []).map((d) => d.embedding);
+  const vectors = Array.isArray(data?.data) ? data.data.map((d) => d.embedding) : [];
+  if (vectors.length !== texts.length || vectors.some((v) => !Array.isArray(v))) {
+    throw new Error("Upstage embeddings API returned an unexpected response shape");
+  }
+  return vectors;
 }
