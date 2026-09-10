@@ -13,6 +13,7 @@ import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
 import { dispatch, isRouterCommand } from "./router.mjs";
+import { runVersionCommand } from "./commands/version.mjs";
 import { UpstageAdapter } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
@@ -431,6 +432,15 @@ async function runInteractive(registry, adapter, args, session, runtimeCache, se
 
 async function main() {
   const argv = process.argv.slice(2);
+
+  // `upstage --version` is a top-level flag alias for `upstage version`
+  // (Task 12.9, §7.V) — checked before the router (which only matches bare
+  // command names, not `--`-prefixed flags) and before parseCliArgs, so it
+  // short-circuits exactly like `-h`/`--help` would.
+  if (argv[0] === "--version") {
+    process.exitCode = await runVersionCommand([]);
+    return;
+  }
 
   // New namespaced commands from the 3.2.0 command tree (§6 of the release
   // plan) are owned by the router. Only the exact first token is checked —

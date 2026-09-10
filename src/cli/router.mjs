@@ -67,6 +67,9 @@ import {
   runConfigEditCommand
 } from "./commands/config.mjs";
 import { runAuthStatusCommand, runAuthTestCommand } from "./commands/auth.mjs";
+import { runVersionCommand } from "./commands/version.mjs";
+import { runUpdateCommand } from "./commands/update.mjs";
+import { runUninstallCommand } from "./commands/uninstall.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -128,9 +131,47 @@ export const COMMANDS = {
       "  --dry-run    Print the would-be content without writing to disk"
     ].join("\n")
   },
-  version: leaf(["version"]),
-  update: leaf(["update"]),
-  uninstall: leaf(["uninstall"]),
+  // Task 12.9 — real implementation (src/cli/commands/version.mjs). Handles
+  // its own -h/--help, wired directly like `doctor`/`init` above.
+  version: {
+    handler: runVersionCommand,
+    usage: [
+      "Usage: upstage version [--verbose] [--json]",
+      "",
+      "  Prints `upstage-cli <version>` (from package.json) by default.",
+      "  --verbose adds commit hash, build date, install type, runtime, and platform.",
+      "",
+      "Options:",
+      "  --verbose   Include commit/build/install-type/runtime/platform detail",
+      "  --json      Output as JSON"
+    ].join("\n")
+  },
+  // Task 12.9 — real implementation (src/cli/commands/update.mjs).
+  update: {
+    handler: runUpdateCommand,
+    usage: [
+      "Usage: upstage update [--check]",
+      "",
+      "  --check reports whether a newer GitHub release exists (one network call),",
+      "  without installing anything. Without --check, behavior depends on install",
+      "  type: a standalone binary self-updates in place; an npm install or",
+      "  development checkout instead prints guidance and does nothing."
+    ].join("\n")
+  },
+  // Task 7.20 — real implementation (src/cli/commands/uninstall.mjs).
+  uninstall: {
+    handler: runUninstallCommand,
+    usage: [
+      "Usage: upstage uninstall [--purge] [-y|--yes]",
+      "",
+      "  Removes upstage-cli. Default scope depends on how it was installed and",
+      "  NEVER touches ~/.upstage/ (settings) or ~/.upstage-cli/sessions/.",
+      "",
+      "Options:",
+      "  --purge      Additionally remove ~/.upstage/ and ~/.upstage-cli/sessions/",
+      "  -y, --yes    Skip the interactive confirmation prompt"
+    ].join("\n")
+  },
   migrate: leaf(["migrate"]),
   completion: namespace("completion", ["bash", "zsh", "fish", "powershell"]),
 
