@@ -71,6 +71,7 @@ import { runModelsListCommand, runModelsInfoCommand } from "./commands/models.mj
 import { runVersionCommand } from "./commands/version.mjs";
 import { runUpdateCommand } from "./commands/update.mjs";
 import { runUninstallCommand } from "./commands/uninstall.mjs";
+import { runContextCommand } from "./commands/context.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -313,7 +314,23 @@ export const COMMANDS = {
       }
     }
   },
-  context: leaf(["context"]),
+  // Task 7.15 — real implementation (src/cli/commands/context.mjs), not a
+  // stub. `runContextCommand` handles -h/--help itself, wired directly like
+  // `doctor`/`init` above rather than through `leaf()`.
+  context: {
+    handler: runContextCommand,
+    usage: [
+      "Usage: upstage context [--json]",
+      "",
+      "  Reports a repo-level context budget: project instructions (UPSTAGE.md/",
+      "  AGENTS.md), repo map, a system-prompt baseline, and builtin/MCP tool",
+      "  schema cost, against the resolved model's context limit. Computed",
+      "  without starting a session or making a model call.",
+      "",
+      "Options:",
+      "  --json   Output as JSON"
+    ].join("\n")
+  },
 
   // Task 12.4 — real implementations (src/cli/commands/mcp.mjs) for
   // list/status/test/tools/show, not stubs. Each handler manages its own

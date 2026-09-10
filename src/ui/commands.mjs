@@ -5,6 +5,7 @@ import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewi
 import { appendSpec, readSpecs } from "../core/spec.mjs";
 import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
 import { resolveTokenLimit } from "../agent/loop.mjs";
+import { computeLiveContextBreakdown } from "../agent/context-budget.mjs";
 import { generateUpstageMd } from "../agent/init-generator.mjs";
 import { getModelInfo, formatModelInfoHuman } from "../cli/commands/models.mjs";
 import { assertReasoningEffortSupported } from "../model/upstage-adapter.mjs";
@@ -305,13 +306,46 @@ export const COMMANDS = {
     }
   },
 
+  // Task 7.15 — live-session context budget breakdown, matching the Claude
+  // Code category list (system prompt / builtin tools / MCP tools / project
+  // instructions / skills / conversation history / free space), computed
+  // via computeLiveContextBreakdown() (src/agent/context-budget.mjs), the
+  // SAME ContextManager instance (state._contextManager) already powering
+  // /compact and /cost — never a second, independently-computed number.
+  // `/memory` is kept registered below as a backward-compatible alias
+  // pointing at this same handler.
+  "/context": {
+    description: "컨텍스트 사용량 분석 (시스템 프롬프트/도구/MCP/프로젝트 지침/스킬/대화/여유 공간)",
+    async handler(_args, state) {
+      try {
+        const b = await computeLiveContextBreakdown(state?.messages || [], state);
+        const rows = [
+          ["시스템 프롬프트", b.systemPromptTokens],
+          ["내장 도구", b.toolsTokens],
+          ["MCP 도구", b.mcpTokens],
+          ["프로젝트 지침 (UPSTAGE.md)", b.projectInstructionsTokens],
+          ["스킬", b.skillsTokens],
+          ["저장소 맵", b.repoMapTokens],
+          ["대화 기록", b.conversationTokens],
+          ["여유 공간", b.freeSpaceTokens]
+        ];
+        const pct = (n) => (b.contextLimit ? `${((n / b.contextLimit) * 100).toFixed(1)}%` : "0.0%");
+        const lines = rows.map(
+          ([label, tokens]) => `  ${label.padEnd(24)} ${tokens.toLocaleString().padStart(10)} 토큰  (${pct(tokens)})`
+        );
+        return {
+          response: `컨텍스트 사용량 (한도: ${b.contextLimit.toLocaleString()} 토큰):\n\n${lines.join("\n")}`
+        };
+      } catch (err) {
+        return { response: `컨텍스트 분석 오류: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+  },
+
   "/memory": {
-    description: "대화 메모리 사용량",
-    handler(_args, state) {
-      const msgs = state?.messages || [];
-      const cm = state?._contextManager;
-      const tokens = cm ? cm.getTokenCount(msgs) : "알 수 없음";
-      return { response: `메시지 수: ${msgs.length}\n토큰 추정: ${tokens}` };
+    description: "대화 메모리 사용량 (/context 의 별칭)",
+    handler(args, state) {
+      return COMMANDS["/context"].handler(args, state);
     }
   },
 
