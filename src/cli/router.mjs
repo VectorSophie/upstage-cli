@@ -59,6 +59,14 @@ import {
   runSessionsResumeCommand,
   runSessionsExportCommand
 } from "./commands/sessions.mjs";
+import {
+  runConfigListCommand,
+  runConfigGetCommand,
+  runConfigSetCommand,
+  runConfigPathCommand,
+  runConfigEditCommand
+} from "./commands/config.mjs";
+import { runAuthStatusCommand, runAuthTestCommand } from "./commands/auth.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -126,8 +134,104 @@ export const COMMANDS = {
   migrate: leaf(["migrate"]),
   completion: namespace("completion", ["bash", "zsh", "fish", "powershell"]),
 
-  config: namespace("config", ["list", "get", "set", "path", "edit"]),
-  auth: namespace("auth", ["status", "test"]),
+  // Task 12.7 — real implementations (src/cli/commands/config.mjs). Each
+  // handler manages its own -h/--help, wired directly like `doctor`/`mcp`
+  // above rather than through `namespace()`.
+  config: {
+    subcommands: {
+      list: {
+        handler: runConfigListCommand,
+        usage: [
+          "Usage: upstage config list [--effective] [--json]",
+          "",
+          "  Lists every top-level settings key and its effective value. With",
+          "  --effective, adds a SOURCE column naming which cascade layer last set",
+          "  it: 'default' | 'global settings' | 'project settings' |",
+          "  'project local settings' | 'env'.",
+          "",
+          "Options:",
+          "  --effective   Show the SOURCE column",
+          "  --json        Output as JSON: [{key, value}] or [{key, value, source}]"
+        ].join("\n")
+      },
+      get: {
+        handler: runConfigGetCommand,
+        usage: [
+          "Usage: upstage config get <key> [--json]",
+          "",
+          "  Prints one effective settings value by dot-path key (e.g.",
+          "  `permissions.defaultMode`).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: {key, value}"
+        ].join("\n")
+      },
+      set: {
+        handler: runConfigSetCommand,
+        usage: [
+          "Usage: upstage config set <key> <value> [--json]",
+          "",
+          "  Sets one dot-path key in <cwd>/.upstage/settings.json (the project",
+          "  settings file). NEVER writes to the global or project-local settings",
+          "  files.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: {key, value, path}"
+        ].join("\n")
+      },
+      path: {
+        handler: runConfigPathCommand,
+        usage: [
+          "Usage: upstage config path",
+          "",
+          "  Prints the resolved path to the active project's settings file."
+        ].join("\n")
+      },
+      edit: {
+        handler: runConfigEditCommand,
+        usage: [
+          "Usage: upstage config edit",
+          "",
+          "  Opens $EDITOR on <cwd>/.upstage/settings.json (creating it with `{}`",
+          "  first if it doesn't exist yet)."
+        ].join("\n")
+      }
+    }
+  },
+  // Task 12.8 — real implementations (src/cli/commands/auth.mjs). Each
+  // handler manages its own -h/--help, wired directly like `config` above.
+  auth: {
+    subcommands: {
+      status: {
+        handler: runAuthStatusCommand,
+        usage: [
+          "Usage: upstage auth status [--json]",
+          "",
+          "  Prints, per provider: Source (which env var is set), Key",
+          "  (configured/not configured — never the value), and which provider is",
+          "  active. For the active provider only, performs one lightweight live",
+          "  reachability call (Upstage only — other providers report",
+          "  'not checked').",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      },
+      test: {
+        handler: runAuthTestCommand,
+        usage: [
+          "Usage: upstage auth test <provider> [--json]",
+          "",
+          "  Forces the live reachability check for one named provider, regardless",
+          "  of which is currently active. Only 'upstage' has a real live check in",
+          "  this build.",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      }
+    }
+  },
   models: namespace("models", ["list", "info"]),
   context: leaf(["context"]),
 

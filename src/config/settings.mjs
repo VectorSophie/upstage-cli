@@ -130,3 +130,97 @@ export async function loadSettings({ cwd = process.cwd() } = {}) {
   applyEnvOverrides(merged);
   return merged;
 }
+
+/** File path for the global settings layer (`~/.upstage/settings.json`). */
+export function globalSettingsPath() {
+  return path.join(os.homedir(), '.upstage', 'settings.json');
+}
+
+/** File path for the project settings layer (`<cwd>/.upstage/settings.json`) —
+ *  the ONE file `config get`/`config set`/`config edit` are allowed to write. */
+export function projectSettingsPath(cwd = process.cwd()) {
+  return path.join(cwd, '.upstage', 'settings.json');
+}
+
+/** File path for the project-local (gitignored-by-convention) settings layer. */
+export function projectLocalSettingsPath(cwd = process.cwd()) {
+  return path.join(cwd, '.upstage', 'settings.local.json');
+}
+
+// Source labels used by loadSettingsWithProvenance()'s returned `provenance`
+// map — kept as named constants so `config.mjs` and its tests reference the
+// same literal strings rather than duplicating them.
+export const PROVENANCE_SOURCE = {
+  DEFAULT: 'default',
+  GLOBAL: 'global settings',
+  PROJECT: 'project settings',
+  LOCAL: 'project local settings',
+  ENV: 'env',
+};
+
+/** For every top-level key of `next`/`prev`, marks `provenance[key] = label`
+ *  whenever that key's value actually changed between the two snapshots
+ *  (compared by JSON-serialized content, not reference — deepMerge always
+ *  builds fresh container objects, so reference equality would over-report
+ *  changes on keys nothing touched). Shared by every layer transition in
+ *  loadSettingsWithProvenance() below. */
+function attributeChangedKeys(next, prev, label, provenance) {
+  for (const key of Object.keys(next)) {
+    if (JSON.stringify(next[key]) !== JSON.stringify(prev[key])) {
+      provenance[key] = label;
+    }
+  }
+}
+
+/**
+ * Task 12.7 (`config list --effective`) — a provenance-tracking sibling of
+ * `loadSettings()`. Rather than rewriting the cascade to carry attribution
+ * through inline, this re-runs the EXACT same `deepMerge`/`applyEnvOverrides`
+ * primitives `loadSettings()` uses, once per additional layer (schema-only →
+ * +global → +project → +local → +env), diffing each pass against the
+ * previous one to attribute the *last* layer that changed each top-level
+ * key. This is deliberately the multi-pass-diff approach from the release
+ * plan's §7.T detail — cheap (a handful of small JSON files) and reuses the
+ * cascade logic verbatim instead of maintaining a second, provenance-aware
+ * copy of it. This relies on `deepMerge` being idempotent under repeated
+ * application with the same source — verified separately (see this task's
+ * report / m33-config-cli.test.mjs's dedicated idempotency test) before this
+ * function was written.
+ *
+ * Returns `{ settings, provenance }` where `provenance` maps every top-level
+ * SETTINGS_SCHEMA key to one of PROVENANCE_SOURCE's labels — the layer that
+ * last set it, or 'default' if no layer ever touched it.
+ */
+export async function loadSettingsWithProvenance({ cwd = process.cwd() } = {}) {
+  const layers = [
+    { label: PROVENANCE_SOURCE.GLOBAL, file: globalSettingsPath() },
+    { label: PROVENANCE_SOURCE.PROJECT, file: projectSettingsPath(cwd) },
+    { label: PROVENANCE_SOURCE.LOCAL, file: projectLocalSettingsPath(cwd) },
+  ];
+
+  let merged = deepClone(SETTINGS_SCHEMA);
+  const provenance = {};
+  for (const key of Object.keys(SETTINGS_SCHEMA)) provenance[key] = PROVENANCE_SOURCE.DEFAULT;
+
+  for (const layer of layers) {
+    let data;
+    try {
+      data = JSON.parse(fs.readFileSync(layer.file, 'utf-8'));
+    } catch {
+      // File not found or invalid — skip, exactly like loadSettings().
+      continue;
+    }
+    const next = deepMerge(merged, data);
+    attributeChangedKeys(next, merged, layer.label, provenance);
+    merged = next;
+  }
+
+  // applyEnvOverrides mutates its argument in place (see above) rather than
+  // returning a new object, so the "before" snapshot for the diff has to be
+  // taken explicitly — deepClone() rather than reusing `merged` by reference.
+  const beforeEnv = deepClone(merged);
+  applyEnvOverrides(merged);
+  attributeChangedKeys(merged, beforeEnv, PROVENANCE_SOURCE.ENV, provenance);
+
+  return { settings: merged, provenance };
+}

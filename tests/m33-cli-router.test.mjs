@@ -71,8 +71,11 @@ test("every top-level command name in §6's tree resolves to a registered handle
 
 test("namespaced commands' subcommands all resolve to handlers", async () => {
   const expectedSubcommands = {
-    config: ["list", "get", "set", "path", "edit"],
-    auth: ["status", "test"],
+    // `config`/`auth` are omitted here — Task 12.7/12.8 gave all of their
+    // subcommands (config: list/get/set/path/edit, auth: status/test) real
+    // implementations (src/cli/commands/config.mjs, auth.mjs), covered
+    // separately by tests/m33-config-cli.test.mjs and
+    // tests/m33-auth-cli.test.mjs, same as mcp/tools/skills/sessions above.
     models: ["list", "info"],
     // "list"/"status"/"test"/"tools"/"show" excluded here — Task 12.4
     // replaced those stubs with real implementations
