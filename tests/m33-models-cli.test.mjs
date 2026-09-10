@@ -11,8 +11,6 @@ import {
   getModelInfo,
   formatModelListHuman,
   formatModelListJson,
-  formatModelInfoHuman,
-  formatModelInfoJson,
   runModelsListCommand,
   runModelsInfoCommand
 } from "../src/cli/commands/models.mjs";
