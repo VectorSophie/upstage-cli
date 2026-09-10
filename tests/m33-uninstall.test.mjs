@@ -40,6 +40,15 @@ async function withFixture(run) {
   }
 }
 
+// NOTE: `spawnFn` is passed below to show the override is harmless, but
+// runUninstallCommand() never destructures or reads `spawnFn` from its
+// options object — so passing it (even a throwing stub) does not exercise
+// any interception mechanism and provides no regression guard against a
+// future node:child_process call being added to uninstall.mjs. What the
+// test using it actually checks is stdout content and filesystem state;
+// "no child_process usage" is established separately by reading
+// uninstall.mjs's imports (see that file's header comment), not by
+// anything here.
 function throwingSpawn() {
   throw new Error("spawnFn should never be called");
 }
@@ -172,7 +181,7 @@ test("--purge additionally removes ~/.upstage/ and ~/.upstage-cli/sessions/", as
 
 // --- runUninstallCommand: npm (guidance only, no deletion, no child process) ---
 
-test("uninstalling a fixture npm install prints guidance, deletes nothing, and does NOT invoke npm as a child process", async () => {
+test("uninstalling a fixture npm install prints guidance and deletes nothing (an unused spawnFn override is also passed, but has no effect)", async () => {
   await withFixture(async ({ binDir, installDir, settingsRoot, sessionsRoot }) => {
     let stdout = "";
     const orig = process.stdout.write.bind(process.stdout);
@@ -193,8 +202,11 @@ test("uninstalling a fixture npm install prints guidance, deletes nothing, and d
     // this scenario and must be left completely alone by the npm branch.
     assert.equal(existsSync(installDir), true);
     assert.equal(existsSync(join(binDir, "upstage")), true);
-    // spawnFn (throwingSpawn) never fired — see header comment in
-    // uninstall.mjs: no branch here ever invokes a child process at all.
+    // spawnFn is passed above but is never read by runUninstallCommand, so
+    // it cannot fire regardless of what this branch does — this assertion
+    // checks stdout content and filesystem state only, not child-process
+    // usage. See uninstall.mjs's header comment for how "no child_process
+    // import" is actually established (source inspection, not this test).
   });
 });
 

@@ -24,12 +24,15 @@
 //   - unknown  -> guidance only, nothing removed/changed.
 //
 // None of the branches above ever import/call node:child_process — there is
-// nothing to invoke, since every branch is pure print-and-return. Tests
-// verify this independently by passing `overrides.spawnFn` as a throwing
-// stub (accepted by `runUpdateCommand` below but never referenced) rather
-// than trying to mock node:child_process's non-configurable ESM bindings
-// directly — the same DI spirit as `fetchImpl` below, just proving absence
-// of a call instead of injecting one.
+// nothing to invoke, since every branch is pure print-and-return (verifiable
+// today by reading this file's imports above). Some tests in
+// tests/m33-update-cli.test.mjs additionally pass an `overrides.spawnFn`
+// throwing stub alongside their other overrides — but `runUpdateCommand`
+// below never destructures or reads `spawnFn` anywhere in its body, so that
+// stub is inert and can never fire either way. Its presence is NOT a
+// dependency-injection mechanism and provides no regression guard: if a
+// future change added a real node:child_process call, these tests would
+// keep passing unchanged, since nothing wires `spawnFn` to that call site.
 
 import { readPackageJson } from "./version.mjs";
 import { detectInstallType } from "../lib/install-type.mjs";
@@ -111,11 +114,14 @@ async function runCheckOnly({ fetchImpl }) {
 }
 
 /** Router entry point. `fetchImpl`/`installTypeOverride` are overridable for
- *  tests. An `overrides.spawnFn` is also accepted but intentionally never
- *  invoked by any branch below — every branch here is pure print-and-return,
- *  never a child process — so a test can inject a throwing stub there to
- *  independently verify "this command never invokes npm/git as a child
- *  process" (see this file's header). */
+ *  tests. Some tests also pass an `overrides.spawnFn` stub, but this
+ *  function never destructures or reads `spawnFn` from its options object —
+ *  it is silently ignored, not wired to anything. Passing a throwing stub
+ *  there does NOT regression-test "this command never invokes npm/git as a
+ *  child process" — it only confirms that today's branches (verified by
+ *  reading this file's imports, per the header comment above) don't happen
+ *  to call that particular unused option. A future node:child_process call
+ *  added here would not be caught by that stub. */
 export async function runUpdateCommand(rest = [], { fetchImpl, installTypeOverride } = {}) {
   if (rest.includes("-h") || rest.includes("--help")) {
     printUsage();

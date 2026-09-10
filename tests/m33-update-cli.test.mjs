@@ -32,6 +32,14 @@ function captureStdio(run) {
   return { out: out.join(""), err: err.join("") };
 }
 
+// NOTE: `spawnFn` is passed to several calls below to show the override is
+// harmless, but runUpdateCommand() never destructures or reads `spawnFn`
+// from its options object — so passing it (even a throwing stub) does not
+// exercise any interception mechanism and provides no regression guard
+// against a future node:child_process call being added to update.mjs. What
+// these tests actually check is stdout content and exit code per branch;
+// "no child_process usage" is established separately by reading update.mjs's
+// imports (see that file's header comment), not by anything here.
 function throwingSpawn() {
   throw new Error("spawnFn should never be called in this branch");
 }
@@ -130,14 +138,14 @@ test("runUpdateCommand --check exits 1 and reports the error when the GitHub API
   assert.match(stderr, /upstage update --check:/);
 });
 
-test("runUpdateCommand --check never invokes a child process", async () => {
+test("runUpdateCommand --check succeeds with an unused spawnFn override present (spawnFn is never read by this function)", async () => {
   const code = await runUpdateCommand(["--check"], { fetchImpl: fakeFetch("v1.0.0"), spawnFn: throwingSpawn });
   assert.equal(code, 0);
 });
 
 // --- runUpdateCommand (no --check) — install-type branching ---
 
-test("update on a detected npm install prints guidance and exits 0, WITHOUT invoking npm as a child process", async () => {
+test("update on a detected npm install prints guidance and exits 0 (an unused spawnFn override is also passed, but has no effect)", async () => {
   let stdout = "";
   const orig = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => { stdout += String(chunk); return true; };
@@ -149,11 +157,12 @@ test("update on a detected npm install prints guidance and exits 0, WITHOUT invo
   }
   assert.equal(code, 0);
   assert.match(stdout, /npm install -g @jackochesstern\/upstage-cli@latest/);
-  // The throwing spawnFn above never fired — if update.mjs had invoked it,
-  // this test would have already failed via a rejected/throwing promise.
+  // spawnFn is passed above but is never read by runUpdateCommand, so it
+  // cannot fire regardless of what this branch does — this assertion checks
+  // stdout content and exit code only, not child-process usage.
 });
 
-test("update on a dev-link install prints 'git pull it yourself' guidance and exits 0, WITHOUT spawning git", async () => {
+test("update on a dev-link install prints 'git pull it yourself' guidance and exits 0 (an unused spawnFn override is also passed, but has no effect)", async () => {
   let stdout = "";
   const orig = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => { stdout += String(chunk); return true; };
@@ -170,7 +179,7 @@ test("update on a dev-link install prints 'git pull it yourself' guidance and ex
   assert.match(stdout, /git pull/);
 });
 
-test("update on a standalone install reports the self-update stub message (Task 7.12 not yet implemented) and exits non-zero, without spawning anything", async () => {
+test("update on a standalone install reports the self-update stub message (Task 7.12 not yet implemented) and exits non-zero (an unused spawnFn override is also passed, but has no effect)", async () => {
   let stdout = "";
   const orig = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => { stdout += String(chunk); return true; };
@@ -185,7 +194,7 @@ test("update on a standalone install reports the self-update stub message (Task 
   assert.match(stdout, /not yet implemented/);
 });
 
-test("update on an unknown install type prints generic guidance and exits non-zero, without spawning anything", async () => {
+test("update on an unknown install type prints generic guidance and exits non-zero (an unused spawnFn override is also passed, but has no effect)", async () => {
   let stdout = "";
   const orig = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => { stdout += String(chunk); return true; };

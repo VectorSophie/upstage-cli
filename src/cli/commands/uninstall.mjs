@@ -21,8 +21,12 @@
 //   - npm        -> owns nothing this command should delete (npm's own
 //     node_modules tree is npm's to manage) — guidance only, and this
 //     command never invokes npm as a child process on the user's behalf
-//     (see `spawnFn` below, same DI pattern as update.mjs, for how that's
-//     independently testable).
+//     (verifiable today by reading this file's imports above — there is no
+//     node:child_process import). Some tests pass an `overrides.spawnFn`
+//     stub, but `runUninstallCommand` below never reads `spawnFn` from its
+//     options — it's inert, not a dependency-injection mechanism, and
+//     provides no live regression guard against a future child-process call
+//     being added.
 //   - unknown    -> guidance only, nothing removed.
 //
 // `--purge` is orthogonal to all of the above: it always additionally
@@ -142,12 +146,14 @@ function printUsage() {
 
 /** Router entry point. `installTypeOverride`/path overrides/`stdin`/`stdout`
  *  are all accepted for tests — production callers pass none of them and
- *  get the real environment. An `overrides.spawnFn` is accepted but
- *  intentionally never invoked by any branch below — every branch is pure
- *  print-and-delete against paths this command itself resolved, never a
- *  child process — so a test can inject a throwing stub there to
- *  independently verify "this command never invokes npm as a child
- *  process", the same DI pattern update.mjs uses for its own npm branch. */
+ *  get the real environment. Some tests also pass an `overrides.spawnFn`
+ *  stub, but this function never destructures or reads `spawnFn` from its
+ *  options object — it is silently ignored, not wired to anything. Passing
+ *  a throwing stub there does NOT regression-test "this command never
+ *  invokes npm as a child process" — it only confirms that today's branches
+ *  (verified by reading this file's imports, per the header comment above)
+ *  don't happen to call that particular unused option. A future
+ *  node:child_process call added here would not be caught by that stub. */
 export async function runUninstallCommand(rest = [], overrides = {}) {
   if (rest.includes("-h") || rest.includes("--help")) {
     printUsage();
