@@ -310,17 +310,6 @@ test("router dispatches \"skills install\" to the real handler (not the not-yet-
   }));
 });
 
-test("router: \"skills list\"/\"skills show\" remain not-yet-implemented stubs (unaffected by this task)", async () => {
-  const io = captureStdio();
-  try {
-    const code = await dispatch(["skills", "list"]);
-    assert.equal(code, 1);
-    assert.match(io.err.join(""), /upstage skills list: not yet implemented/);
-  } finally {
-    io.restore();
-  }
-});
-
 test("router: \"skills install --help\" prints usage via the router's -h/--help interception", async () => {
   const io = captureStdio();
   try {

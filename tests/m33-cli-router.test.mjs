@@ -79,14 +79,16 @@ test("namespaced commands' subcommands all resolve to handlers", async () => {
     // (src/cli/commands/mcp.mjs), covered separately by
     // tests/m33-cli-mcp.test.mjs, same as skills/install below.
     mcp: ["add", "remove"],
-    tools: ["list", "show"],
-    // "install" excluded here — Task 7.9 replaced that stub with a real
-    // implementation (src/cli/commands/skills-install.mjs), covered
-    // separately by tests/m33-skills-install.test.mjs, same as
-    // doctor/init/parse/etc. above.
-    skills: ["list", "show"],
-    agents: ["list", "show"],
-    plugins: ["list", "show", "install"],
+    // `tools`/`skills`/`agents` are omitted entirely below — Task 12.5 gave
+    // every one of their subcommands (skills: list/show, install already
+    // real from Task 7.9; tools/agents: list/show) a real implementation, so
+    // none of them have a stub left to assert on here. Coverage for all four
+    // namespaces' real list/show behavior lives in
+    // tests/m33-introspection-commands.test.mjs (skills install stays in
+    // tests/m33-skills-install.test.mjs). `plugins install` remains a stub —
+    // out of scope (no CRUD for plugins per the plan) — so `plugins` is the
+    // only one of the four still worth asserting on here.
+    plugins: ["install"],
     sessions: ["list", "show", "resume", "export"],
     completion: ["bash", "zsh", "fish", "powershell"]
   };

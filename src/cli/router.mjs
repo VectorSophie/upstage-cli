@@ -42,6 +42,10 @@ import { runClassifyCommand } from "./commands/classify.mjs";
 import { runEmbedCommand } from "./commands/embed.mjs";
 import { runGroundednessCommand } from "./commands/groundedness.mjs";
 import { runSkillsInstallCommand } from "./commands/skills-install.mjs";
+import { runSkillsListCommand, runSkillsShowCommand } from "./commands/skills.mjs";
+import { runToolsListCommand, runToolsShowCommand } from "./commands/tools.mjs";
+import { runAgentsListCommand, runAgentsShowCommand } from "./commands/agents.mjs";
+import { runPluginsListCommand, runPluginsShowCommand } from "./commands/plugins.mjs";
 import {
   runMcpListCommand,
   runMcpStatusCommand,
@@ -194,15 +198,66 @@ export const COMMANDS = {
       remove: leaf(["mcp", "remove"])
     }
   },
-  tools: namespace("tools", ["list", "show"]),
-  // `list`/`show` remain stubs; `install` is Task 7.9's real implementation
-  // (src/cli/commands/skills-install.mjs), wired directly the same way
-  // `parse`/`ocr`/etc. above are (its own -h/--help handling, own usage
-  // string), rather than through the generic `namespace()`/`leaf()` helpers.
+  // Task 12.5 — real implementations (src/cli/commands/tools.mjs). Each
+  // handler manages its own -h/--help, wired directly like `doctor`/`mcp`
+  // above rather than through `namespace()`.
+  tools: {
+    subcommands: {
+      list: {
+        handler: runToolsListCommand,
+        usage: [
+          "Usage: upstage tools list [--json]",
+          "",
+          "  Lists every registered tool (builtin + connected MCP servers + discovered",
+          "  tools), grouped and sorted by source.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, source, risk, description}]"
+        ].join("\n")
+      },
+      show: {
+        handler: runToolsShowCommand,
+        usage: [
+          "Usage: upstage tools show <name> [--json]",
+          "",
+          "  Prints one tool's full schema/description/source.",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      }
+    }
+  },
+  // `list`/`show` are Task 12.5's real implementations (src/cli/commands/
+  // skills.mjs — a NEW file alongside skills-install.mjs rather than a
+  // rename; see skills.mjs's header for why); `install` is Task 7.9's real
+  // implementation (src/cli/commands/skills-install.mjs), wired directly the
+  // same way `parse`/`ocr`/etc. above are.
   skills: {
     subcommands: {
-      list: leaf(["skills", "list"]),
-      show: leaf(["skills", "show"]),
+      list: {
+        handler: runSkillsListCommand,
+        usage: [
+          "Usage: upstage skills list [--json]",
+          "",
+          "  Lists every skill found (.upstage/skills/, .claude/skills/, the",
+          "  package-bundled pack, and the home directory).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, description, aliases, license}]"
+        ].join("\n")
+      },
+      show: {
+        handler: runSkillsShowCommand,
+        usage: [
+          "Usage: upstage skills show <name> [--json]",
+          "",
+          "  Prints one skill's full detail (description/aliases/license/prompt).",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      },
       install: {
         handler: runSkillsInstallCommand,
         usage: [
@@ -219,8 +274,66 @@ export const COMMANDS = {
       }
     }
   },
-  agents: namespace("agents", ["list", "show"]),
-  plugins: namespace("plugins", ["list", "show", "install"]),
+  // Task 12.5 — real implementations (src/cli/commands/agents.mjs).
+  agents: {
+    subcommands: {
+      list: {
+        handler: runAgentsListCommand,
+        usage: [
+          "Usage: upstage agents list [--json]",
+          "",
+          "  Lists every agent definition found under .upstage/agents/ (project and",
+          "  home directory).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, description, model, tools}]"
+        ].join("\n")
+      },
+      show: {
+        handler: runAgentsShowCommand,
+        usage: [
+          "Usage: upstage agents show <name> [--json]",
+          "",
+          "  Prints one agent definition's full detail (description/model/tools/prompt).",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      }
+    }
+  },
+  // `list`/`show` are Task 12.5's real implementations
+  // (src/cli/commands/plugins.mjs); `install` remains a stub — out of scope
+  // (no CRUD for plugins per the plan).
+  plugins: {
+    subcommands: {
+      list: {
+        handler: runPluginsListCommand,
+        usage: [
+          "Usage: upstage plugins list [--json]",
+          "",
+          "  Lists every discovered plugin (.claude/plugins/, .upstage/plugins/,",
+          "  project and home directory).",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{name, version}]"
+        ].join("\n")
+      },
+      show: {
+        handler: runPluginsShowCommand,
+        usage: [
+          "Usage: upstage plugins show <name> [--json]",
+          "",
+          "  Prints one plugin's version, install directory, and the slash commands",
+          "  it contributes.",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      },
+      install: leaf(["plugins", "install"])
+    }
+  },
   sessions: namespace("sessions", ["list", "show", "resume", "export"]),
 
   // Task 7.8 — real implementations (src/cli/commands/*.mjs), not stubs.
