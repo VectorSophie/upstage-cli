@@ -8,18 +8,29 @@
 // flag) shows the effective KEY/VALUE pairs with no SOURCE column;
 // `--effective` adds it.
 //
-// `get <key>`/`set <key> <value>` use dot-path key access (e.g.
-// `permissions.defaultMode`) against, respectively, the fully merged
-// effective settings (`get`) and the SINGLE project settings file
-// (`<cwd>/.upstage/settings.json`, `set`) — `set` NEVER writes to the global
-// (`~/.upstage/settings.json`) or project-local (`settings.local.json`)
-// files, per the task spec. `set` reads the existing project settings file
-// (if any) rather than starting from the merged/effective view, so it never
-// bakes global/env-derived values into the project file as a side effect of
-// setting one unrelated key. A project settings file that exists but fails
-// to parse as JSON is treated as a hard error (code 1) rather than silently
-// overwritten — corrupting a user's existing (if malformed) config file on a
-// `set` would be worse than refusing to proceed.
+// `get <key>`/`set <key> <value>` both use dot-path key access (e.g.
+// `permissions.defaultMode`) against the SAME SINGLE file —
+// `<cwd>/.upstage/settings.json` — and ONLY that file. Per the 3.2.0 plan's
+// §7.T design detail: "`config get <key>`/`config set <key> <value>` operate
+// on `<cwd>/.upstage/settings.json` specifically (never silently writing to
+// [for `set`] or reading from [for `get`] the global or local-override
+// file)". Neither command ever touches the global (`~/.upstage/settings.json`)
+// or project-local (`settings.local.json`) files. `get` deliberately does
+// NOT read the merged/effective cascade (`loadSettings()`) — that would let
+// it return a value that was never written to, and isn't present in, the
+// project file `set` writes to, silently breaking the `set foo bar` →
+// `get foo` round trip whenever a higher-priority layer (env, local
+// settings) also sets that key. A key absent from the project file is
+// reported distinctly ("not set in project settings") rather than as a
+// found value, and points at `config list --effective` — the command this
+// plan already designed for the merged view with provenance. `set` reads
+// the existing project settings file (if any) rather than starting from the
+// merged/effective view, so it never bakes global/env-derived values into
+// the project file as a side effect of setting one unrelated key. A project
+// settings file that exists but fails to parse as JSON is treated as a hard
+// error (code 1) rather than silently overwritten (for `set`) or ignored
+// (for `get`) — corrupting, or pretending not to see, a user's existing (if
+// malformed) config file would be worse than refusing to proceed.
 //
 // `path` prints the resolved project settings file path (no I/O). `edit`
 // opens `$EDITOR` on that same file, creating it with `{}` first if it
@@ -149,14 +160,35 @@ export async function runConfigListCommand(rest = []) {
 
 // ── get ──────────────────────────────────────────────────────────────────
 
-/** Returns `{ result: { key, value } }` or `{ error, code }` (2 = missing
- *  key argument, 1 = dot-path did not resolve to anything). */
+/** Returns `{ result: { key, value, path } }` or `{ error, code }`
+ *  (2 = missing key argument, 1 = key not present in the project settings
+ *  file, OR the project settings file exists but is not valid JSON). Reads
+ *  ONLY `<cwd>/.upstage/settings.json` — the same file `set` writes to —
+ *  never the merged/effective cascade. */
 export async function gatherConfigGet({ cwd = process.cwd(), key } = {}) {
   if (!key) return { error: "missing required <key> argument", code: 2 };
-  const settings = await loadSettings({ cwd });
-  const { found, value } = getByPath(settings, key);
-  if (!found) return { error: `no such config key: '${key}'`, code: 1 };
-  return { result: { key, value } };
+  const filePath = projectSettingsPath(cwd);
+
+  let data = {};
+  if (existsSync(filePath)) {
+    try {
+      data = JSON.parse(readFileSync(filePath, "utf-8"));
+    } catch (err) {
+      return {
+        error: `${filePath} exists but is not valid JSON (${err instanceof Error ? err.message : String(err)})`,
+        code: 1
+      };
+    }
+  }
+
+  const { found, value } = getByPath(data, key);
+  if (!found) {
+    return {
+      error: `${key} is not set in project settings (run 'config list --effective' to see the resolved value and its source)`,
+      code: 1
+    };
+  }
+  return { result: { key, value, path: filePath } };
 }
 
 export function formatGetHuman(result) {
@@ -172,11 +204,16 @@ function printGetUsage() {
     [
       "Usage: upstage config get <key> [--json]",
       "",
-      "Prints one effective settings value by dot-path key (e.g.",
-      "`permissions.defaultMode`).",
+      "Prints one settings value by dot-path key (e.g.",
+      "`permissions.defaultMode`) read from <cwd>/.upstage/settings.json (the",
+      "project settings file) — the same file `config set` writes to. NEVER",
+      "reads the global or project-local settings files, or env overrides. If",
+      "the key isn't present in the project file, exits 1 with a message",
+      "pointing at `config list --effective` for the merged view with",
+      "provenance.",
       "",
       "Options:",
-      "  --json   Output as JSON: {key, value}"
+      "  --json   Output as JSON: {key, value, path}"
     ].join("\n") + "\n"
   );
 }

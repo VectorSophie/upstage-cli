@@ -187,27 +187,33 @@ test("runConfigListCommand: --help prints usage and exits 0", async () => {
   assert.match(out.join(""), /Usage: upstage config list/);
 });
 
-// ── config get: dot-path access into effective settings ──────────────────
+// ── config get: dot-path access into the project settings file ONLY ──────
+// (never the merged/effective view — see src/cli/commands/config.mjs's
+// header comment and the 3.2.0 plan's §7.T: get/set share one project-file
+// scope.)
 
-test("config get: top-level key", () =>
+test("config get: reflects a top-level key set in project settings", () =>
   withTempDir(async (dir) => {
+    await writeProjectSettings(dir, { vimMode: true });
     const outcome = await gatherConfigGet({ cwd: dir, key: "vimMode" });
-    assert.equal(outcome.result.value, false);
+    assert.equal(outcome.result.value, true);
   })
 );
 
-test("config get: nested dot-path key", () =>
-  withTempDir(async (dir) => {
-    const outcome = await gatherConfigGet({ cwd: dir, key: "permissions.defaultMode" });
-    assert.equal(outcome.result.value, "default");
-  })
-);
-
-test("config get: reflects a value set only in project settings", () =>
+test("config get: reflects a nested dot-path key set in project settings", () =>
   withTempDir(async (dir) => {
     await writeProjectSettings(dir, { permissions: { defaultMode: "auto" } });
     const outcome = await gatherConfigGet({ cwd: dir, key: "permissions.defaultMode" });
     assert.equal(outcome.result.value, "auto");
+  })
+);
+
+test("config get: a schema-default key with no project settings file is 'not set in project settings' (code 1), not the schema default", () =>
+  withTempDir(async (dir) => {
+    const outcome = await gatherConfigGet({ cwd: dir, key: "vimMode" });
+    assert.equal(outcome.code, 1);
+    assert.match(outcome.error, /not set in project settings/);
+    assert.match(outcome.error, /config list --effective/);
   })
 );
 
@@ -216,27 +222,62 @@ test("config get: missing key argument is a usage error (code 2)", async () => {
   assert.equal(outcome.code, 2);
 });
 
-test("config get: unknown dot-path is 'no such config key' (code 1)", () =>
+test("config get: unknown dot-path is 'not set in project settings' (code 1)", () =>
   withTempDir(async (dir) => {
     const outcome = await gatherConfigGet({ cwd: dir, key: "definitely.not.a.real.key" });
     assert.equal(outcome.code, 1);
-    assert.match(outcome.error, /no such config key/);
+    assert.match(outcome.error, /not set in project settings/);
+  })
+);
+
+test("config get: a key set ONLY via env var (never written to the project file) is 'not set in project settings' — the env value is never returned", () =>
+  withTempDir(async (dir) => {
+    const prev = process.env.UPSTAGE_MODEL;
+    process.env.UPSTAGE_MODEL = "solar-pro3";
+    try {
+      const outcome = await gatherConfigGet({ cwd: dir, key: "model" });
+      assert.equal(outcome.code, 1);
+      assert.match(outcome.error, /not set in project settings/);
+      assert.notEqual(outcome.result?.value, "solar-pro3");
+
+      // The env-sourced value IS visible, with provenance, via the
+      // effective view — that command is unaffected by this fix.
+      const { rows } = await gatherConfigList({ cwd: dir, effective: true });
+      const row = rows.find((r) => r.key === "model");
+      assert.equal(row.value, "solar-pro3");
+      assert.equal(row.source, "env");
+    } finally {
+      if (prev === undefined) delete process.env.UPSTAGE_MODEL;
+      else process.env.UPSTAGE_MODEL = prev;
+    }
+  })
+);
+
+test("config get: an existing-but-corrupt project settings file is refused (code 1), same as config set", () =>
+  withTempDir(async (dir) => {
+    await mkdir(join(dir, ".upstage"), { recursive: true });
+    await writeFile(join(dir, ".upstage", "settings.json"), "{ not valid json");
+    const outcome = await gatherConfigGet({ cwd: dir, key: "theme" });
+    assert.equal(outcome.code, 1);
+    assert.match(outcome.error, /not valid JSON/);
   })
 );
 
 test("formatGetHuman/formatGetJson", () =>
   withTempDir(async (dir) => {
+    await writeProjectSettings(dir, { model: "solar-pro2" });
     const outcome = await gatherConfigGet({ cwd: dir, key: "model" });
-    assert.equal(formatGetHuman(outcome.result), "solar-pro4\n");
+    assert.equal(formatGetHuman(outcome.result), "solar-pro2\n");
     const json = JSON.parse(formatGetJson(outcome.result));
     assert.equal(json.key, "model");
-    assert.equal(json.value, "solar-pro4");
+    assert.equal(json.value, "solar-pro2");
   })
 );
 
-test("runConfigGetCommand: exit codes — 0 found, 2 missing key, 1 unknown key", () =>
+test("runConfigGetCommand: exit codes — 0 found, 2 missing key, 1 not set in project settings", () =>
   withTempDir((dir) =>
     withCwd(dir, async () => {
+      await runConfigSetCommand(["model", "solar-pro2"]);
       assert.equal(await runConfigGetCommand(["model"]), 0);
       assert.equal(await runConfigGetCommand([]), 2);
       assert.equal(await runConfigGetCommand(["nope.not.real"]), 1);
