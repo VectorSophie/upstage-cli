@@ -72,6 +72,7 @@ import { runVersionCommand } from "./commands/version.mjs";
 import { runUpdateCommand } from "./commands/update.mjs";
 import { runUninstallCommand } from "./commands/uninstall.mjs";
 import { runContextCommand } from "./commands/context.mjs";
+import { createCompletionHandler } from "./commands/completion.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -175,7 +176,36 @@ export const COMMANDS = {
     ].join("\n")
   },
   migrate: leaf(["migrate"]),
-  completion: namespace("completion", ["bash", "zsh", "fish", "powershell"]),
+  // Task 7.18 — real implementations (src/cli/commands/completion.mjs), not
+  // stubs. Each shell's handler is bound via `createCompletionHandler`,
+  // which takes a zero-arg `() => COMMANDS` getter rather than importing
+  // `COMMANDS` itself — this is what lets completion.mjs generate its
+  // scripts by introspecting the router's OWN command table (per the task's
+  // anti-hardcoding requirement) without a router.mjs <-> completion.mjs
+  // circular import. `() => COMMANDS` here closes over this module's own
+  // `COMMANDS` binding, safe to reference before its `const` initializer
+  // finishes (it's only ever dereferenced later, when a handler actually
+  // runs) since the closure body isn't evaluated until called.
+  completion: {
+    subcommands: {
+      bash: {
+        handler: createCompletionHandler("bash", () => COMMANDS),
+        usage: "Usage: upstage completion bash\n\n  Prints a bash completion script to stdout (source it, or redirect to a\n  completions file). Generated live from upstage's command table."
+      },
+      zsh: {
+        handler: createCompletionHandler("zsh", () => COMMANDS),
+        usage: "Usage: upstage completion zsh\n\n  Prints a zsh completion script to stdout (source it, or redirect into\n  your $fpath). Generated live from upstage's command table."
+      },
+      fish: {
+        handler: createCompletionHandler("fish", () => COMMANDS),
+        usage: "Usage: upstage completion fish\n\n  Prints a fish completion script to stdout (pipe to `source`, or redirect\n  into ~/.config/fish/completions/). Generated live from upstage's command table."
+      },
+      powershell: {
+        handler: createCompletionHandler("powershell", () => COMMANDS),
+        usage: "Usage: upstage completion powershell\n\n  Prints a PowerShell completion script to stdout, using\n  Register-ArgumentCompleter -Native. Pipe to `Out-String | Invoke-Expression`,\n  or redirect into $PROFILE. Generated live from upstage's command table."
+      }
+    }
+  },
 
   // Task 12.7 — real implementations (src/cli/commands/config.mjs). Each
   // handler manages its own -h/--help, wired directly like `doctor`/`mcp`

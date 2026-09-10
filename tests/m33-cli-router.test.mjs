@@ -96,12 +96,15 @@ test("namespaced commands' subcommands all resolve to handlers", async () => {
     // tests/m33-skills-install.test.mjs). `plugins install` remains a stub —
     // out of scope (no CRUD for plugins per the plan) — so `plugins` is the
     // only one of the four still worth asserting on here.
-    plugins: ["install"],
+    plugins: ["install"]
     // `sessions` is omitted here — Task 12.6 gave all four of its
     // subcommands (list/show/resume/export) real implementations
     // (src/cli/commands/sessions.mjs), covered separately by
     // tests/m33-sessions-cli.test.mjs, same as mcp/tools/skills/agents above.
-    completion: ["bash", "zsh", "fish", "powershell"]
+    // `completion` is omitted entirely — Task 7.18 gave all four of its
+    // subcommands (bash/zsh/fish/powershell) real implementations
+    // (src/cli/commands/completion.mjs), covered separately by
+    // tests/m33-completion.test.mjs.
   };
   for (const [ns, subs] of Object.entries(expectedSubcommands)) {
     for (const sub of subs) {
