@@ -53,6 +53,12 @@ import {
   runMcpToolsCommand,
   runMcpShowCommand
 } from "./commands/mcp.mjs";
+import {
+  runSessionsListCommand,
+  runSessionsShowCommand,
+  runSessionsResumeCommand,
+  runSessionsExportCommand
+} from "./commands/sessions.mjs";
 
 function stubHandler(path) {
   const name = `upstage ${path.join(" ")}`;
@@ -334,7 +340,67 @@ export const COMMANDS = {
       install: leaf(["plugins", "install"])
     }
   },
-  sessions: namespace("sessions", ["list", "show", "resume", "export"]),
+  // Task 12.6 — real implementations (src/cli/commands/sessions.mjs), folded
+  // together with Task 7.13's export-formatting logic per the plan's own
+  // "or folded into Task 12.6's sessions.mjs" note. Each handler manages its
+  // own -h/--help, wired directly like `doctor`/`mcp` above.
+  sessions: {
+    subcommands: {
+      list: {
+        handler: runSessionsListCommand,
+        usage: [
+          "Usage: upstage sessions list [--json]",
+          "",
+          "  Lists every stored session (~/.upstage-cli/sessions/), newest first.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{id, updatedAt, workspace, parentSessionId}]"
+        ].join("\n")
+      },
+      show: {
+        handler: runSessionsShowCommand,
+        usage: [
+          "Usage: upstage sessions show <id> [--json]",
+          "",
+          "  Prints one session's summary (timestamps, workspace, entry counts) —",
+          "  not a full dump. Use `upstage sessions export <id>` for that.",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      },
+      resume: {
+        handler: runSessionsResumeCommand,
+        usage: [
+          "Usage: upstage sessions resume <id>",
+          "",
+          "  Resumes a stored session — the SAME code path as running",
+          "  `upstage --session <id>` directly, not a reimplementation of it.",
+          "  Launches the interactive TUI (or a one-shot prompt, if -p/--prompt",
+          "  is also forwarded) exactly as that flow would.",
+          "",
+          "  Any extra flags after <id> are forwarded verbatim."
+        ].join("\n")
+      },
+      export: {
+        handler: runSessionsExportCommand,
+        usage: [
+          "Usage: upstage sessions export <id> [--format md|json|jsonl] [--include-tool-io]",
+          "",
+          "  Formats a stored session as a transcript. `json` is the (redacted)",
+          "  session object as-is; `jsonl` is one line per history/runtimeEvents",
+          "  entry; `md` (the default) is a human-readable transcript.",
+          "",
+          "  By default, raw write_file/edit_file file bodies are elided to a",
+          "  diff-stat-only summary. Pass --include-tool-io to include them.",
+          "",
+          "Options:",
+          "  --format <fmt>      md (default) | json | jsonl",
+          "  --include-tool-io   Include raw write_file/edit_file bodies unredacted"
+        ].join("\n")
+      }
+    }
+  },
 
   // Task 7.8 — real implementations (src/cli/commands/*.mjs), not stubs.
   // Each handler manages its own -h/--help, so it's wired directly (same

@@ -76,7 +76,12 @@ function mergeHookMaps(base, extra) {
   return out;
 }
 
-function parseArgs(argv) {
+// Exported so `upstage sessions resume <id>` (src/cli/commands/sessions.mjs,
+// Task 12.6) can build the exact same `args` shape a bare
+// `upstage --session <id>` invocation produces, rather than reimplementing
+// this mapping — see runClassicCli()'s own doc comment below for the other
+// half of that "same code path" guarantee.
+export function parseArgs(argv) {
   const result = parseCliArgs(argv);
   const compat = {
     command: result.command,
@@ -437,7 +442,26 @@ async function main() {
   }
 
   const args = parseArgs(argv);
+  await runClassicCli(args);
+}
 
+/**
+ * The full classic execution pipeline — everything `chat`/`ask`/`tui` (and,
+ * pre-3.2, a bare `upstage --session <id>`) do after argv has been parsed
+ * into `args`: settings/plugin/MCP/agent/skill loading, registry + adapter
+ * construction, session load-or-create, then either a one-shot prompt or the
+ * interactive TUI loop.
+ *
+ * Exported (and taking `args` rather than `argv`) specifically so
+ * `upstage sessions resume <id>` (src/cli/commands/sessions.mjs, Task 12.6)
+ * can invoke the *exact* same path a bare `upstage --session <id>` takes —
+ * not a reimplementation of it — by building an equivalent `args` object
+ * (via the also-exported `parseArgs()` above, called with
+ * `["--session", id]`) and calling this function directly. Both entry
+ * points share this one function reference; see
+ * tests/m33-sessions-cli.test.mjs for the same-code-path assertion.
+ */
+export async function runClassicCli(args) {
   if (args.cwd) {
     const targetCwd = isAbsolute(args.cwd) ? args.cwd : resolve(process.cwd(), args.cwd);
     try {
@@ -594,7 +618,22 @@ async function main() {
   process.off("unhandledRejection", onFatal);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : "Unhandled error");
-  process.exit(1);
-});
+// Guards the auto-run so importing this module (e.g. src/cli/commands/
+// sessions.mjs importing `runClassicCli`/`parseArgs` for `sessions resume`)
+// never re-triggers the full CLI bootstrap as an import side effect — only
+// running this file directly (the `upstage` bin's shebang entry, or
+// `bun src/cli/index.mjs`) does.
+function isMainModule() {
+  try {
+    return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : "Unhandled error");
+    process.exit(1);
+  });
+}
