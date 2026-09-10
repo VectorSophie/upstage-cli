@@ -237,7 +237,13 @@ export async function runSessionsResumeCommand(rest = [], deps = {}) {
 
   const doParseArgs = deps.parseArgs || parseArgs;
   const doRunClassicCli = deps.runClassicCli || runClassicCli;
-  const extraArgv = rest.filter((token) => token !== id);
+  // Remove only the first occurrence of `id` (the positional session-id
+  // argument) — not every token that happens to equal it. A `.filter()`
+  // here would also strip an unrelated flag's value that coincidentally
+  // matches the id (e.g. `sessions resume abc123 --parent abc123`).
+  const idIndex = rest.indexOf(id);
+  const extraArgv =
+    idIndex === -1 ? [...rest] : [...rest.slice(0, idIndex), ...rest.slice(idIndex + 1)];
   const args = doParseArgs(["--session", id, ...extraArgv]);
   await doRunClassicCli(args);
   return typeof process.exitCode === "number" ? process.exitCode : 0;

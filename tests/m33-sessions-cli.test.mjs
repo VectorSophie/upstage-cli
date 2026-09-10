@@ -174,6 +174,20 @@ test("sessions resume: unknown <id> is 'session not found' (code 1), never calls
   assert.equal(calls.length, 0);
 });
 
+test("sessions resume: only strips the FIRST occurrence of <id> — a flag value equal to the id survives in extraArgv", () => {
+  return withSavedSession((s) => s, async (session) => {
+    const calls = [];
+    // `--parent <id>` happens to carry the same string as the positional
+    // session id. A naive `.filter(token => token !== id)` would strip BOTH
+    // occurrences; only the positional one should be removed.
+    await runSessionsResumeCommand([session.id, "--parent", session.id], {
+      runClassicCli: async (args) => { calls.push(args); }
+    });
+    const expected = indexParseArgs(["--session", session.id, "--parent", session.id]);
+    assert.deepEqual(calls[0], expected);
+  });
+});
+
 // --- export: formats + §8 redaction ---
 
 function sessionWithSecretWriteFile(s) {
@@ -208,6 +222,137 @@ function sessionWithSecretWriteFile(s) {
 
 test("export (json/jsonl/md): default output never contains a secret-looking write_file body; --include-tool-io includes it", () => {
   return withSavedSession(sessionWithSecretWriteFile, async (session) => {
+    for (const format of ["json", "jsonl", "md"]) {
+      const outcome = await gatherSessionsExport({ id: session.id, format });
+      assert.equal(outcome.error, undefined, `${format} export should succeed`);
+      assert.ok(
+        !outcome.result.includes(FAKE_SECRET),
+        `${format} export (default, no --include-tool-io) must NOT contain the secret`
+      );
+    }
+
+    const included = await gatherSessionsExport({ id: session.id, format: "json", includeToolIo: true });
+    assert.ok(included.result.includes(FAKE_SECRET), "--include-tool-io should include the raw content");
+  });
+});
+
+// multi_edit's args.edits[] is a nested array of {oldText, newText,
+// replaceAll} — a different shape from edit_file's flat oldText/newText.
+function sessionWithSecretMultiEdit(s) {
+  const oldText = `API_KEY=${FAKE_SECRET}`;
+  const newText = "API_KEY=rotated";
+  s.history.push({ role: "user", content: "please rotate the secret", at: Date.now() });
+  s.history.push({
+    role: "assistant",
+    content: "Done.",
+    tool_calls: [{
+      id: "call_1",
+      type: "function",
+      function: {
+        name: "multi_edit",
+        arguments: JSON.stringify({ path: "secrets.env", edits: [{ oldText, newText, replaceAll: false }] })
+      }
+    }],
+    at: Date.now()
+  });
+  s.history.push({
+    role: "tool",
+    name: "multi_edit",
+    tool_call_id: "call_1",
+    content: JSON.stringify({
+      path: "secrets.env",
+      applied: 0,
+      failed: 1,
+      failures: [{ index: 0, oldText: oldText.slice(0, 60), reason: "oldText not found" }]
+    }),
+    at: Date.now()
+  });
+  s.toolResults.push({
+    tool: "multi_edit",
+    args: { path: "secrets.env", edits: [{ oldText, newText, replaceAll: false }] },
+    result: {
+      ok: true,
+      data: {
+        path: "secrets.env",
+        applied: 0,
+        failed: 1,
+        failures: [{ index: 0, oldText: oldText.slice(0, 60), reason: "oldText not found" }]
+      }
+    },
+    at: Date.now()
+  });
+  return s;
+}
+
+// apply_patch's args.patch.newContent is nested under `.patch` — yet another
+// shape — and its result carries the FULL old/new file bodies plus a
+// mirrored rollbackPatch.newContent, not just a `.preview` snippet.
+function sessionWithSecretApplyPatch(s) {
+  const newContent = `API_KEY=${FAKE_SECRET}\nother=stuff`;
+  const previousContent = "API_KEY=old\nother=stuff";
+  s.history.push({ role: "user", content: "please apply the patch", at: Date.now() });
+  s.history.push({
+    role: "assistant",
+    content: "Done.",
+    tool_calls: [{
+      id: "call_1",
+      type: "function",
+      function: {
+        name: "apply_patch",
+        arguments: JSON.stringify({ patch: { version: 1, path: "secrets.env", newContent } })
+      }
+    }],
+    at: Date.now()
+  });
+  s.history.push({
+    role: "tool",
+    name: "apply_patch",
+    tool_call_id: "call_1",
+    content: JSON.stringify({
+      path: "secrets.env",
+      applied: true,
+      previousContent,
+      newContent,
+      rollbackPatch: { version: 1, path: "secrets.env", newContent: previousContent }
+    }),
+    at: Date.now()
+  });
+  s.toolResults.push({
+    tool: "apply_patch",
+    args: { patch: { version: 1, path: "secrets.env", newContent } },
+    result: {
+      ok: true,
+      data: {
+        path: "secrets.env",
+        applied: true,
+        previousContent,
+        newContent,
+        rollbackPatch: { version: 1, path: "secrets.env", newContent: previousContent }
+      }
+    },
+    at: Date.now()
+  });
+  return s;
+}
+
+test("export (json/jsonl/md): default output never contains a secret-looking multi_edit body; --include-tool-io includes it", () => {
+  return withSavedSession(sessionWithSecretMultiEdit, async (session) => {
+    for (const format of ["json", "jsonl", "md"]) {
+      const outcome = await gatherSessionsExport({ id: session.id, format });
+      assert.equal(outcome.error, undefined, `${format} export should succeed`);
+      assert.ok(
+        !outcome.result.includes(FAKE_SECRET),
+        `${format} export (default, no --include-tool-io) must NOT contain the secret`
+      );
+    }
+
+    const included = await gatherSessionsExport({ id: session.id, format: "json", includeToolIo: true });
+    assert.ok(included.result.includes(FAKE_SECRET), "--include-tool-io should include the raw content");
+  });
+});
+
+test("export (json/jsonl/md): default output never contains a secret-looking apply_patch body; --include-tool-io includes it", () => {
+  return withSavedSession(sessionWithSecretApplyPatch, async (session) => {
     for (const format of ["json", "jsonl", "md"]) {
       const outcome = await gatherSessionsExport({ id: session.id, format });
       assert.equal(outcome.error, undefined, `${format} export should succeed`);

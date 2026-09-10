@@ -18,17 +18,21 @@
 // `session.toolResults` and the tool-call/tool-result entries embedded in
 // `session.history` are stored RAW (see runtime/session.mjs's
 // appendToolResult/appendHistory — neither sanitizes). For `write_file`
-// (args.content) and `edit_file` (args.oldText/newText), that raw value is
-// the full file body — the single most likely place a secret or a large
-// chunk of proprietary source ends up in an exported artifact meant to be
-// pasted into a bug report or shared with a teammate. So by default (unless
-// `includeToolIo: true`) this module elides those fields — plus the mirrored
-// `.preview` field tool results carry — to a short diff-stat-only summary,
-// across all three places they can appear: `toolResults`, `history`, and
+// (args.content), `edit_file` (args.oldText/newText), `multi_edit`
+// (args.edits[].oldText/newText), and `apply_patch` (args.patch.newContent),
+// that raw value is the full file body — the single most likely place a
+// secret or a large chunk of proprietary source ends up in an exported
+// artifact meant to be pasted into a bug report or shared with a teammate.
+// So by default (unless `includeToolIo: true`) this module elides those
+// fields — plus the equivalent raw-content fields each tool's *result*
+// carries (write_file/edit_file's `.preview`, apply_patch's
+// `previousContent`/`newContent`/`rollbackPatch.newContent`, multi_edit's
+// `failures[].oldText`) — to a short diff-stat-only summary, across all
+// three places they can appear: `toolResults`, `history`, and
 // `runtimeEvents`.
 
 const REDACTED_HINT = "pass --include-tool-io to include";
-const REDACTED_TOOLS = new Set(["write_file", "edit_file"]);
+const REDACTED_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "apply_patch"]);
 
 function safeJsonParse(text) {
   if (typeof text !== "string") return null;
@@ -60,16 +64,77 @@ function elideArgsForTool(tool, args) {
   } else if (tool === "edit_file") {
     if (typeof out.oldText === "string") out.oldText = elideRawText(out.oldText, "oldText");
     if (typeof out.newText === "string") out.newText = elideRawText(out.newText, "newText");
+  } else if (tool === "multi_edit" && Array.isArray(out.edits)) {
+    // args.edits[] is a nested array of {oldText, newText, replaceAll} —
+    // redact the two raw-content fields per edit, keep the array structure.
+    out.edits = out.edits.map((edit) => {
+      if (!edit || typeof edit !== "object") return edit;
+      const e = { ...edit };
+      if (typeof e.oldText === "string") e.oldText = elideRawText(e.oldText, "oldText");
+      if (typeof e.newText === "string") e.newText = elideRawText(e.newText, "newText");
+      return e;
+    });
+  } else if (tool === "apply_patch" && out.patch && typeof out.patch === "object") {
+    // args.patch.newContent is the full new file body, nested under `.patch`
+    // (there's no sibling `oldContent`-style field in the patch shape —
+    // apply-patch.mjs only reads `.version`/`.path`/`.newContent`).
+    if (typeof out.patch.newContent === "string") {
+      out.patch = { ...out.patch, newContent: elideRawText(out.patch.newContent, "newContent") };
+    }
   }
   return out;
 }
 
-/** `write_file`/`edit_file` results (and the runtimeEvents mirror of them)
- *  carry a `preview` field (a handful of lines around the write/edit) —
- *  small, but still raw file content, so it's elided the same way. */
-function elideResultData(data) {
-  if (!data || typeof data !== "object" || typeof data.preview !== "string") return data;
-  return { ...data, preview: elideRawText(data.preview, "preview") };
+/** Elides the raw-content field(s) a given tool's *result* carries — same
+ *  spirit as elideArgsForTool but for the return value, since redaction
+ *  must cover both call args and results:
+ *   - write_file/edit_file: `.preview` (a handful of lines around the
+ *     write/edit — small, but still raw file content)
+ *   - apply_patch: `.previousContent`/`.newContent` (the FULL old/new file
+ *     bodies — worse than a preview) and the mirrored
+ *     `.rollbackPatch.newContent`
+ *   - multi_edit: `.failures[].oldText` (a raw, if 60-char-truncated, echo
+ *     of the requested oldText — still enough to leak a short secret) */
+function elideResultData(tool, data) {
+  if (!data || typeof data !== "object") return data;
+
+  if (tool === "apply_patch") {
+    const out = { ...data };
+    let changed = false;
+    if (typeof out.previousContent === "string") {
+      out.previousContent = elideRawText(out.previousContent, "previousContent");
+      changed = true;
+    }
+    if (typeof out.newContent === "string") {
+      out.newContent = elideRawText(out.newContent, "newContent");
+      changed = true;
+    }
+    if (out.rollbackPatch && typeof out.rollbackPatch === "object" && typeof out.rollbackPatch.newContent === "string") {
+      out.rollbackPatch = {
+        ...out.rollbackPatch,
+        newContent: elideRawText(out.rollbackPatch.newContent, "newContent")
+      };
+      changed = true;
+    }
+    return changed ? out : data;
+  }
+
+  if (tool === "multi_edit") {
+    if (!Array.isArray(data.failures) || data.failures.length === 0) return data;
+    return {
+      ...data,
+      failures: data.failures.map((f) =>
+        f && typeof f === "object" && typeof f.oldText === "string"
+          ? { ...f, oldText: elideRawText(f.oldText, "oldText") }
+          : f
+      )
+    };
+  }
+
+  if (typeof data.preview === "string") {
+    return { ...data, preview: elideRawText(data.preview, "preview") };
+  }
+  return data;
 }
 
 function redactToolResultEntry(entry) {
@@ -77,7 +142,7 @@ function redactToolResultEntry(entry) {
   const out = { ...entry, args: elideArgsForTool(entry.tool, entry.args) };
   if (entry.result && typeof entry.result === "object") {
     const result = { ...entry.result };
-    if (result.data) result.data = elideResultData(result.data);
+    if (result.data) result.data = elideResultData(entry.tool, result.data);
     out.result = result;
   }
   return out;
@@ -102,7 +167,7 @@ function redactHistoryEntry(entry) {
   if (entry.role === "tool" && REDACTED_TOOLS.has(entry.name)) {
     const parsed = safeJsonParse(entry.content);
     if (parsed && typeof parsed === "object") {
-      return { ...entry, content: JSON.stringify(elideResultData(parsed)) };
+      return { ...entry, content: JSON.stringify(elideResultData(entry.name, parsed)) };
     }
   }
 
@@ -115,7 +180,7 @@ function redactRuntimeEventEntry(entry) {
     return { ...entry, args: elideArgsForTool(entry.tool, entry.args) };
   }
   if (entry.type === "tool_result") {
-    return { ...entry, result: elideResultData(entry.result) };
+    return { ...entry, result: elideResultData(entry.tool, entry.result) };
   }
   return entry;
 }
