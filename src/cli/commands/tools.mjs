@@ -12,9 +12,12 @@
 // `loadMcpServerConfigs` + `connectConfiguredServers` (same 5s connect
 // timeout constant/reasoning) feeding `createRegistryWithExtensions`. Unlike
 // doctor, THIS command also wires up tool discovery
-// (UPSTAGE_DISCOVERY_COMMAND / UPSTAGE_DISCOVERY_INVOKE_COMMAND, the same
-// env vars src/cli/index.mjs's `createDiscoveryConfigFromEnv` reads) —
-// doctor deliberately skips invoking discovery (presence-only check, see its
+// (UPSTAGE_DISCOVERY_COMMAND / UPSTAGE_DISCOVERY_INVOKE_COMMAND, resolved via
+// the shared `discoveryConfigFromEnv()` in src/tools/create-registry.mjs —
+// the same helper src/cli/index.mjs's session wiring and
+// context-budget.mjs's computeContextBudget() both call, so all three never
+// disagree about what "discovery is configured" means) — doctor deliberately
+// skips invoking discovery (presence-only check, see its
 // own comment), but `tools list`'s entire job IS "list every active tool",
 // so silently omitting discovered tools here would make the command
 // misleading for anyone who has that env var configured. A misbehaving
@@ -48,7 +51,7 @@
 // (tests/m33-cli-mcp.test.mjs already covers that heavier integration path
 // for the MCP primitives themselves).
 
-import { createRegistryWithExtensions, createDiscoveredToolInvoker } from "../../tools/create-registry.mjs";
+import { createRegistryWithExtensions, discoveryConfigFromEnv } from "../../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../../tools/mcp/config.mjs";
 import { loadSettings } from "../../config/settings.mjs";
 import { DEFAULT_POLICY } from "../../config/defaults.mjs";
@@ -57,19 +60,6 @@ import { DEFAULT_POLICY } from "../../config/defaults.mjs";
 // CONNECT_TIMEOUT_MS — an introspection command must never hang on a
 // misbehaving MCP server.
 const MCP_CONNECT_TIMEOUT_MS = 5000;
-
-function discoveryConfigFromEnv(cwd) {
-  const discoverCommand = process.env.UPSTAGE_DISCOVERY_COMMAND;
-  if (typeof discoverCommand !== "string" || discoverCommand.trim().length === 0) {
-    return null;
-  }
-  const rawInvoke = process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND;
-  const invokeCommand = typeof rawInvoke === "string" && rawInvoke.trim().length > 0 ? rawInvoke : discoverCommand;
-  return {
-    command: discoverCommand,
-    invoke: createDiscoveredToolInvoker({ command: invokeCommand, cwd, onLog: () => {} })
-  };
-}
 
 /** Builds a registry with builtin + connected-MCP + discovered tools, all
  *  best-effort (a failed MCP server or a broken discovery command degrades
@@ -83,7 +73,7 @@ export async function buildFullToolRegistry({ cwd = process.cwd(), settings } = 
     timeoutMs: MCP_CONNECT_TIMEOUT_MS,
     onLog: () => {}
   });
-  const discovery = discoveryConfigFromEnv(cwd);
+  const discovery = discoveryConfigFromEnv({ cwd });
 
   let registry;
   try {

@@ -171,6 +171,40 @@ export async function registerMcpServerTools(registry, manager, serverName) {
   }
 }
 
+/**
+ * Resolves the `discovery` option `createRegistryWithExtensions()` expects
+ * (`{command, onLog, invoke}`), reading the two env vars a tool-discovery
+ * subprocess is configured with (`UPSTAGE_DISCOVERY_COMMAND`, optionally a
+ * distinct `UPSTAGE_DISCOVERY_INVOKE_COMMAND` — falls back to the discover
+ * command when unset). Returns `null` when discovery isn't configured, so
+ * callers can pass the result straight through as `discovery` unconditionally.
+ *
+ * The single source of truth for this resolution — every caller that builds
+ * a registry from live process env (src/cli/index.mjs's session wiring,
+ * `upstage tools list/show`'s buildFullToolRegistry(), and
+ * computeContextBudget()'s repo-level report) must resolve discovery
+ * identically, or some of them will silently miss discovered tools relative
+ * to the others. `onLog` defaults to a no-op; pass one to surface
+ * discover/invoke subprocess stdout/stderr.
+ */
+export function discoveryConfigFromEnv({ cwd, onLog = () => {} } = {}) {
+  const discoverCommand = process.env.UPSTAGE_DISCOVERY_COMMAND;
+  if (typeof discoverCommand !== "string" || discoverCommand.trim().length === 0) {
+    return null;
+  }
+
+  const invokeCommand =
+    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND && process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND.trim().length > 0
+      ? process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND
+      : discoverCommand;
+
+  return {
+    command: discoverCommand,
+    onLog,
+    invoke: createDiscoveredToolInvoker({ command: invokeCommand, cwd, onLog })
+  };
+}
+
 export async function createRegistryWithExtensions({ policy = {}, cwd, discovery, mcpServers = [], permissionMode, permissionChecker, hookEngine } = {}) {
   const registry = createRegistry({ ...policy, permissionMode, permissionChecker, hookEngine });
 

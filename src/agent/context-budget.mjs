@@ -22,9 +22,9 @@
 // /compact's and /cost's own before/after figures. See the module comment on
 // estimateTokens() in context-manager.mjs.
 
-import { loadUpstageMdFiles, buildSystemPrompt } from "../core/system-prompt.mjs";
+import { buildSystemPrompt } from "../core/system-prompt.mjs";
 import { estimateTokens } from "../core/context-manager.mjs";
-import { createRegistryWithExtensions } from "../tools/create-registry.mjs";
+import { createRegistryWithExtensions, discoveryConfigFromEnv } from "../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { SkillsLoader } from "../skills/loader.mjs";
 import { loadSettings } from "../config/settings.mjs";
@@ -59,22 +59,47 @@ function toolSchemaTokens(tools) {
   return estimateTokens(JSON.stringify(tools.map(toModelToolShape)));
 }
 
-function projectInstructionsTokensFor(cwd) {
-  const files = loadUpstageMdFiles(cwd);
-  const content = files.map((f) => f.content).join("\n\n");
-  return estimateTokens(content);
-}
-
 // buildSystemPrompt() is the single source of truth for the actual prompt
 // text (src/core/system-prompt.mjs) — rather than re-deriving/duplicating
 // its hardcoded instruction strings here (which would drift the moment that
-// file changes), the system-prompt-only and skills-only contributions are
-// isolated by diffing marginal calls against it with those inputs blanked
-// out. Concatenation is not perfectly additive under the CJK-aware ratio at
-// string boundaries, but the effect is negligible for a token-BUDGET report.
-function systemPromptTokensFor(cwd, projectInstructionsTokens) {
-  const base = buildSystemPrompt({ cwd, tools: [], skills: [] }).staticPrefix;
-  return Math.max(0, estimateTokens(base) - projectInstructionsTokens);
+// file changes), the system-prompt-only, project-instructions-only, and
+// skills-only contributions are all isolated by diffing marginal calls
+// against it with those inputs blanked out. Concatenation is not perfectly
+// additive under the CJK-aware ratio at string boundaries, but the effect is
+// negligible for a token-BUDGET report.
+//
+// systemPromptTokens and projectInstructionsTokens are computed TOGETHER
+// from a single matched pair of buildSystemPrompt() calls (the same
+// with/without-one-dimension technique skillsTokensFor uses below —
+// `includeProjectInstructions: true` vs `false`, everything else identical),
+// rather than one call site building the full prompt and a second,
+// independent loadUpstageMdFiles() call re-deriving the project-instructions
+// content to subtract. Two independent call sites deriving the same content
+// would have to be kept parameter-synced by hand (e.g. if an `addDirs`
+// option is ever threaded through) — one drifting out of sync with the
+// other would silently break the additive relationship this whole budget
+// report depends on. Deriving both numbers from the exact same pair of
+// calls makes that drift structurally impossible instead of merely avoided
+// by care. (The fixed-size language reminder buildSystemPrompt appends
+// whenever project instructions are present appears identically in both
+// calls — see its own comment — so it cancels out of the diff and lands in
+// systemPromptTokens, same bucket as before this rewrite.)
+function systemPromptAndProjectInstructionsTokensFor(cwd) {
+  const withInstructions = buildSystemPrompt({ cwd, tools: [], skills: [] }).staticPrefix;
+  const withoutInstructions = buildSystemPrompt({
+    cwd,
+    tools: [],
+    skills: [],
+    includeProjectInstructions: false
+  }).staticPrefix;
+
+  const withTokens = estimateTokens(withInstructions);
+  const withoutTokens = estimateTokens(withoutInstructions);
+
+  return {
+    systemPromptTokens: withoutTokens,
+    projectInstructionsTokens: Math.max(0, withTokens - withoutTokens)
+  };
 }
 
 function skillsTokensFor(cwd, skills) {
@@ -103,8 +128,7 @@ async function repoMapTokensFor(registry, cwd) {
 async function computeStaticCategories({ cwd, registry, skills }) {
   if (!registry) return { ...EMPTY_STATIC_CATEGORIES };
 
-  const projectInstructionsTokens = projectInstructionsTokensFor(cwd);
-  const systemPromptTokens = systemPromptTokensFor(cwd, projectInstructionsTokens);
+  const { systemPromptTokens, projectInstructionsTokens } = systemPromptAndProjectInstructionsTokensFor(cwd);
   const skillsTokens = skillsTokensFor(cwd, skills);
 
   const builtinTools = [
@@ -154,7 +178,22 @@ export async function computeContextBudget({ cwd = process.cwd(), model } = {}) 
 
   const { servers, closeAll } = await connectMcpBestEffort(cwd, settings);
   try {
-    const registry = await createRegistryWithExtensions({ cwd, mcpServers: servers });
+    // Same discovery resolution src/cli/index.mjs's real session wiring uses
+    // (both call the shared discoveryConfigFromEnv() in create-registry.mjs)
+    // — without this, `registry.listActive({source: "discovered"})` below is
+    // structurally empty for any project with UPSTAGE_DISCOVERY_COMMAND
+    // configured, silently undercounting the tools category.
+    const discovery = discoveryConfigFromEnv({ cwd });
+    let registry;
+    try {
+      registry = await createRegistryWithExtensions({ cwd, discovery, mcpServers: servers });
+    } catch {
+      // Same degrade-rather-than-crash posture as tools.mjs's
+      // buildFullToolRegistry(): a misbehaving discovery command (bad JSON,
+      // non-zero exit, ...) should undercount discovered tools, not blow up
+      // a repo-level budget report.
+      registry = await createRegistryWithExtensions({ cwd, mcpServers: servers });
+    }
 
     const skillsLoader = new SkillsLoader();
     await skillsLoader.load(cwd);

@@ -50,7 +50,7 @@ export function loadUpstageMdFiles(cwd = process.cwd()) {
   return files;
 }
 
-export function buildSystemPrompt({ cwd, tools, override, addDirs, language, skills } = {}) {
+export function buildSystemPrompt({ cwd, tools, override, addDirs, language, skills, includeProjectInstructions = true } = {}) {
   if (override) {
     return { staticPrefix: override, dynamicSuffix: '', full: override };
   }
@@ -87,6 +87,19 @@ export function buildSystemPrompt({ cwd, tools, override, addDirs, language, ski
       'claim about code or a document is uncertain, say so explicitly (or use check_groundedness) rather than assert it.',
   ];
 
+  // mdFiles is always resolved (global + per-directory UPSTAGE.md/AGENTS.md,
+  // plus addDirs) regardless of includeProjectInstructions — that flag only
+  // controls whether the CONTENT gets injected below, not whether project
+  // instructions are considered "present" for the language-reminder check
+  // further down. That split is what lets context-budget.mjs isolate the
+  // project-instructions content cost via a matched pair of buildSystemPrompt()
+  // calls (includeProjectInstructions: true vs false, everything else
+  // identical — same technique as the `skills` param/skillsTokensFor below):
+  // the reminder (a fixed-size, content-independent sentence) appears
+  // identically in both calls and cancels out of the diff, leaving only the
+  // actual UPSTAGE.md/AGENTS.md content tokens — without this function
+  // needing a second, independent loadUpstageMdFiles() call anywhere to
+  // re-derive that content and risk drifting out of sync with this one.
   const mdFiles = loadUpstageMdFiles(cwd);
 
   if (addDirs) {
@@ -100,8 +113,10 @@ export function buildSystemPrompt({ cwd, tools, override, addDirs, language, ski
     }
   }
 
-  for (const f of mdFiles) {
-    parts.push(f.content);
+  if (includeProjectInstructions) {
+    for (const f of mdFiles) {
+      parts.push(f.content);
+    }
   }
 
   // Agent Skills catalog tier (docs/skills-research-aug2026.md §2/§5): cheap

@@ -25,6 +25,22 @@ function withCwd(dir, run) {
   return Promise.resolve().then(run).finally(() => { process.cwd = original; });
 }
 
+// Same pattern as tests/m33-introspection-commands.test.mjs's withEnv().
+function withEnv(vars, run) {
+  const originals = {};
+  for (const key of Object.keys(vars)) originals[key] = process.env[key];
+  for (const [key, value] of Object.entries(vars)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+  return Promise.resolve().then(run).finally(() => {
+    for (const key of Object.keys(vars)) {
+      if (originals[key] === undefined) delete process.env[key];
+      else process.env[key] = originals[key];
+    }
+  });
+}
+
 function captureStdio(run) {
   const out = [];
   const err = [];
@@ -96,11 +112,73 @@ test("computeContextBudget resolves contextLimit from the requested model, defau
   })
 );
 
+// Issue 1 (code review, Task 7.15 follow-up): computeContextBudget() used to
+// call createRegistryWithExtensions() WITHOUT a `discovery` option, unlike
+// the real session wiring in src/cli/index.mjs — so `registry.listActive({
+// source: "discovered"})` (folded into toolsTokens per this module's own doc
+// comment) was structurally always empty here, silently undercounting any
+// project with UPSTAGE_DISCOVERY_COMMAND configured. This spins up a GENUINE
+// discovery subprocess (same pattern as tests/m33-introspection-commands
+// .test.mjs's "tools list (real construction)" test) and proves toolsTokens
+// actually grows once a discovered tool is registered, not just that the
+// code path looks right.
+test("computeContextBudget's toolsTokens includes discovered tools (real discovery subprocess), not just builtin ones", () =>
+  withTempDir(async (dir) => {
+    seedFixtureRepo(dir, SHORT_UPSTAGE_MD);
+
+    const discoveryScript = join(dir, "discovery.mjs");
+    writeFileSync(
+      discoveryScript,
+      [
+        "const mode = process.argv[2];",
+        'if (mode === "discover") {',
+        "  process.stdout.write(JSON.stringify([",
+        '    { name: "custom_tool", description: "A discovered fixture tool for the context-budget test", risk: "low", actionClass: "read" }',
+        "  ]));",
+        "  process.exit(0);",
+        "}",
+        'process.stdout.write("{}");'
+      ].join("\n"),
+      "utf8"
+    );
+
+    const withoutDiscovery = await computeContextBudget({ cwd: dir, model: "solar-pro3" });
+
+    await withEnv(
+      {
+        // Bare `node`, not process.execPath: runSandboxedCommand checks the
+        // binary against a fixed allowlist that `node` (via PATH) satisfies
+        // but an absolute interpreter path may not — same reasoning as
+        // tests/m33-introspection-commands.test.mjs's equivalent fixture.
+        UPSTAGE_DISCOVERY_COMMAND: `node ${discoveryScript} discover`,
+        UPSTAGE_DISCOVERY_INVOKE_COMMAND: `node ${discoveryScript} invoke`
+      },
+      async () => {
+        const withDiscovery = await computeContextBudget({ cwd: dir, model: "solar-pro3" });
+        assert.ok(
+          withDiscovery.toolsTokens > withoutDiscovery.toolsTokens,
+          `expected toolsTokens with a discovered tool registered (${withDiscovery.toolsTokens}) to exceed builtin-only toolsTokens (${withoutDiscovery.toolsTokens})`
+        );
+      }
+    );
+  })
+);
+
 test("computeContextBudget's projectInstructionsTokens matches estimateTokens() on the same merged UPSTAGE.md content — the single shared heuristic, not a second implementation", () =>
   withTempDir(async (dir) => {
     seedFixtureRepo(dir, SHORT_UPSTAGE_MD);
     const budget = await computeContextBudget({ cwd: dir, model: "solar-pro3" });
-    assert.equal(budget.projectInstructionsTokens, estimateTokens(SHORT_UPSTAGE_MD));
+    // Derived from a matched pair of buildSystemPrompt() calls (see
+    // systemPromptAndProjectInstructionsTokensFor() in context-budget.mjs)
+    // rather than a direct estimateTokens() call on the raw content, so it
+    // can be off by a token or two at concatenation boundaries under the
+    // CJK-aware ratio — the same negligible non-additivity the module's own
+    // doc comment already calls out. Assert closeness, not bit-for-bit
+    // equality with a differently-derived number.
+    assert.ok(
+      Math.abs(budget.projectInstructionsTokens - estimateTokens(SHORT_UPSTAGE_MD)) <= 2,
+      `expected projectInstructionsTokens (${budget.projectInstructionsTokens}) to be within 2 tokens of estimateTokens(SHORT_UPSTAGE_MD) (${estimateTokens(SHORT_UPSTAGE_MD)})`
+    );
   })
 );
 
@@ -197,7 +275,6 @@ test("router: dispatch reaches the real `context` handler, not the generic stub"
   withTempDir((dir) =>
     withCwd(dir, async () => {
       seedFixtureRepo(dir, SHORT_UPSTAGE_MD);
-      const io = captureStdio(() => {});
       const code = await dispatch(["context", "--json"]);
       assert.equal(code, 0);
     })

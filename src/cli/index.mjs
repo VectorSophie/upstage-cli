@@ -3,8 +3,8 @@ import process from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  createDiscoveredToolInvoker,
-  createRegistryWithExtensions
+  createRegistryWithExtensions,
+  discoveryConfigFromEnv
 } from "../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
@@ -164,35 +164,12 @@ async function loadAllMcpServers(cwd, settings) {
   return [...moduleServers, ...servers];
 }
 
-function createDiscoveryConfigFromEnv(cwd) {
-  const discoverCommand = process.env.UPSTAGE_DISCOVERY_COMMAND;
-  if (typeof discoverCommand !== "string" || discoverCommand.trim().length === 0) {
-    return null;
+function discoveryLogFromEnv(payload) {
+  const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+  if (!text) {
+    return;
   }
-
-  const invokeCommand =
-    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND &&
-    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND.trim().length > 0
-      ? process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND
-      : discoverCommand;
-
-  const onLog = (payload) => {
-    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-    if (!text) {
-      return;
-    }
-    process.stderr.write(`[discovery:${payload.stage || "log"}:${payload.channel || "out"}] ${text}\n`);
-  };
-
-  return {
-    command: discoverCommand,
-    onLog,
-    invoke: createDiscoveredToolInvoker({
-      command: invokeCommand,
-      cwd,
-      onLog
-    })
-  };
+  process.stderr.write(`[discovery:${payload.stage || "log"}:${payload.channel || "out"}] ${text}\n`);
 }
 
 async function loadOrCreateSession(args, cwd) {
@@ -567,7 +544,7 @@ export async function runClassicCli(args) {
 
   const cwd = process.cwd();
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
-  const discovery = createDiscoveryConfigFromEnv(cwd);
+  const discovery = discoveryConfigFromEnv({ cwd, onLog: discoveryLogFromEnv });
 
   // Discover Claude-compatible plugins and merge their components into the
   // settings/loaders before everything downstream is built.
