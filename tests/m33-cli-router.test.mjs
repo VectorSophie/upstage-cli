@@ -202,6 +202,45 @@ test("--help passed to a leaf's real handler after positional args still shows u
   }
 });
 
+// --- config -h/--help through the real router dispatch path ---
+// Regression coverage for a reviewer-flagged gap (no existing test exercised
+// --help through the real router dispatch path for config/auth): the router
+// intercepts
+// -h/--help before any leaf handler runs (see dispatch() above), using its
+// own hardcoded `usage` string per leaf (COMMANDS.config.subcommands.get,
+// etc.) — NOT src/cli/commands/config.mjs's own printGetUsage(), which is
+// dead code for this path. `config get`'s router-level usage string used to
+// claim it prints the "effective" (merged/cascade) settings value, which
+// was stale once gatherConfigGet was fixed to read only the project
+// settings file — this asserts the router's own text (not config.mjs's) is
+// accurate.
+
+test("dispatch(['config', 'get', '-h']) shows accurate router-level usage (not the stale 'effective' claim)", async () => {
+  const io = captureStdio();
+  try {
+    const code = await dispatch(["config", "get", "-h"]);
+    assert.equal(code, 0);
+    const text = io.out.join("");
+    assert.doesNotMatch(text, /effective/);
+    assert.match(text, /project settings/);
+  } finally {
+    io.restore();
+  }
+});
+
+test("dispatch(['config', 'get', '--help']) shows the same accurate router-level usage", async () => {
+  const io = captureStdio();
+  try {
+    const code = await dispatch(["config", "get", "--help"]);
+    assert.equal(code, 0);
+    const text = io.out.join("");
+    assert.doesNotMatch(text, /effective/);
+    assert.match(text, /project settings/);
+  } finally {
+    io.restore();
+  }
+});
+
 // --- regression: `-p`/`ask` behave identically to pre-3.2 ---
 
 test("regression: parseCliArgs('-p', 'hello') is unaffected by the router (existing behavior preserved)", () => {

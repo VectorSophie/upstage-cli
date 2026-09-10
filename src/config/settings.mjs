@@ -111,9 +111,9 @@ export function applyEnvOverrides(settings) {
 
 export async function loadSettings({ cwd = process.cwd() } = {}) {
   const chain = [
-    path.join(os.homedir(), '.upstage', 'settings.json'),
-    path.join(cwd, '.upstage', 'settings.json'),
-    path.join(cwd, '.upstage', 'settings.local.json'),
+    globalSettingsPath(),
+    projectSettingsPath(cwd),
+    projectLocalSettingsPath(cwd),
   ];
 
   let merged = deepClone(SETTINGS_SCHEMA);

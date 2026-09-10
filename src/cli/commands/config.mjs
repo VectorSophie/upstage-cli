@@ -92,6 +92,16 @@ function formatValue(value) {
   return String(value);
 }
 
+/** Shared by `gatherConfigGet`/`gatherConfigSet`: reads and JSON-parses the
+ *  project settings file at `filePath`, returning `{}` when it doesn't
+ *  exist. Throws the raw parse error (message only) when the file exists
+ *  but isn't valid JSON — callers catch this and reword it with their own
+ *  distinct, caller-appropriate message. */
+function readProjectSettingsFileOrThrow(filePath) {
+  if (!existsSync(filePath)) return {};
+  return JSON.parse(readFileSync(filePath, "utf-8"));
+}
+
 // ── list ─────────────────────────────────────────────────────────────────
 
 /** Returns `{ rows, effective }`. `rows` is `[{key, value}]` (plain) or
@@ -169,16 +179,14 @@ export async function gatherConfigGet({ cwd = process.cwd(), key } = {}) {
   if (!key) return { error: "missing required <key> argument", code: 2 };
   const filePath = projectSettingsPath(cwd);
 
-  let data = {};
-  if (existsSync(filePath)) {
-    try {
-      data = JSON.parse(readFileSync(filePath, "utf-8"));
-    } catch (err) {
-      return {
-        error: `${filePath} exists but is not valid JSON (${err instanceof Error ? err.message : String(err)})`,
-        code: 1
-      };
-    }
+  let data;
+  try {
+    data = readProjectSettingsFileOrThrow(filePath);
+  } catch (err) {
+    return {
+      error: `${filePath} exists but is not valid JSON (${err instanceof Error ? err.message : String(err)})`,
+      code: 1
+    };
   }
 
   const { found, value } = getByPath(data, key);
@@ -249,16 +257,14 @@ export async function gatherConfigSet({ cwd = process.cwd(), key, value } = {}) 
   }
   const filePath = projectSettingsPath(cwd);
 
-  let data = {};
-  if (existsSync(filePath)) {
-    try {
-      data = JSON.parse(readFileSync(filePath, "utf-8"));
-    } catch (err) {
-      return {
-        error: `${filePath} exists but is not valid JSON — refusing to overwrite it (${err instanceof Error ? err.message : String(err)})`,
-        code: 1
-      };
-    }
+  let data;
+  try {
+    data = readProjectSettingsFileOrThrow(filePath);
+  } catch (err) {
+    return {
+      error: `${filePath} exists but is not valid JSON — refusing to overwrite it (${err instanceof Error ? err.message : String(err)})`,
+      code: 1
+    };
   }
 
   const parsedValue = parseSetValue(value);

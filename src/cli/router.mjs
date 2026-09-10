@@ -159,11 +159,16 @@ export const COMMANDS = {
         usage: [
           "Usage: upstage config get <key> [--json]",
           "",
-          "  Prints one effective settings value by dot-path key (e.g.",
-          "  `permissions.defaultMode`).",
+          "  Prints one settings value by dot-path key (e.g.",
+          "  `permissions.defaultMode`), read from the project settings file",
+          "  (<cwd>/.upstage/settings.json) only — the same file `config set`",
+          "  writes to. NEVER reads the global or project-local settings files,",
+          "  or env overrides. If the key is not set in project settings, exits 1",
+          "  with a message pointing at `config list` for the merged/resolved",
+          "  view with provenance.",
           "",
           "Options:",
-          "  --json   Output as JSON: {key, value}"
+          "  --json   Output as JSON: {key, value, path}"
         ].join("\n")
       },
       set: {
