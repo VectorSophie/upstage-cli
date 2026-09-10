@@ -46,6 +46,18 @@ const CAPABILITIES = {
 
 const FALLBACK = CAPABILITIES["solar-pro2"];
 
+// The set of model ids this table actually has real (not fallback) data
+// for — the single source of truth `upstage models list/info`
+// (src/cli/commands/models.mjs) and the TUI's `/model` command both read,
+// per Task 7.16. Deliberately narrower than PROVIDERS.upstage.models
+// (src/core/providers.mjs) — models.mjs's contract is "one row per model
+// this table has real capability data for," not "every model string the
+// Upstage provider will accept," so ids like "solar-pro"/"solar-mini" that
+// only ever hit getModelCapabilities()'s conservative FALLBACK are
+// intentionally excluded here rather than presented as if they had a real
+// entry.
+export const KNOWN_MODEL_IDS = Object.keys(CAPABILITIES);
+
 export function getModelCapabilities(modelId) {
   if (typeof modelId !== "string" || modelId.length === 0) {
     return FALLBACK;

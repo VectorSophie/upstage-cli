@@ -5,6 +5,7 @@ export function parseCliArgs(argv) {
     prompt: null,
     stream: true,
     model: null,
+    reasoningEffort: null,
     sessionId: null,
     newSession: false,
     resetSession: false,
@@ -46,6 +47,11 @@ export function parseCliArgs(argv) {
     }
     if (token === '--model' || token === '-m') {
       result.model = argv[i + 1] || null;
+      i += 1;
+      continue;
+    }
+    if (token === '-e' || token === '--reasoning-effort') {
+      result.reasoningEffort = argv[i + 1] || null;
       i += 1;
       continue;
     }
@@ -148,6 +154,11 @@ Options:
   -h, --help                Show this help
   -p, --prompt <text>       Run prompt and exit
   -m, --model <model>       Model to use (default: solar-pro4)
+  -e, --reasoning-effort <level>
+                            Reasoning effort: none|minimal|low|medium|high|
+                            xhigh|max — client-side rejected for a model
+                            that doesn't support it (see
+                            src/model/model-capabilities.mjs)
   --no-stream               Disable streaming
   --session <id>            Resume session by ID
   --new-session             Start a new session

@@ -78,7 +78,10 @@ test("namespaced commands' subcommands all resolve to handlers", async () => {
     // implementations (src/cli/commands/config.mjs, auth.mjs), covered
     // separately by tests/m33-config-cli.test.mjs and
     // tests/m33-auth-cli.test.mjs, same as mcp/tools/skills/sessions above.
-    models: ["list", "info"],
+    // `models` is omitted here — Task 7.16 gave both of its subcommands
+    // (list/info) real implementations (src/cli/commands/models.mjs),
+    // covered separately by tests/m33-models-cli.test.mjs, same as
+    // mcp/tools/skills/agents above.
     // "list"/"status"/"test"/"tools"/"show" excluded here — Task 12.4
     // replaced those stubs with real implementations
     // (src/cli/commands/mcp.mjs), covered separately by

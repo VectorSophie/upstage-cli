@@ -6,6 +6,8 @@ import { appendSpec, readSpecs } from "../core/spec.mjs";
 import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
 import { resolveTokenLimit } from "../agent/loop.mjs";
 import { generateUpstageMd } from "../agent/init-generator.mjs";
+import { getModelInfo, formatModelInfoHuman } from "../cli/commands/models.mjs";
+import { assertReasoningEffortSupported } from "../model/upstage-adapter.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -118,9 +120,44 @@ export const COMMANDS = {
   },
 
   "/model": {
-    description: "현재 모델 표시",
+    // Calls the exact same getModelInfo()/formatModelInfoHuman() pair
+    // `upstage models info <model>` (src/cli/commands/models.mjs) uses —
+    // Task 7.16's "same function, no drift" requirement — rather than
+    // reimplementing the capability lookup/formatting here.
+    description: "현재 모델 정보 표시 (upstage models info와 동일한 형식)",
     handler(_args, state) {
-      return { response: `현재 모델: ${state?.model || "solar-pro2"}` };
+      const modelId = state?.model || "solar-pro4";
+      try {
+        const info = getModelInfo(modelId);
+        return { response: formatModelInfoHuman(info).trimEnd() };
+      } catch (err) {
+        return { response: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  },
+
+  "/effort": {
+    // Task 7.17 — mid-session reasoning_effort change, reusing the
+    // pre-existing instance-level setReasoningEffort() mechanism (the same
+    // one the TUI's Ctrl+E chip already mutates) via the adapter reference
+    // App.mjs threads into cmdState as `_adapter`. assertReasoningEffortSupported()
+    // (src/model/upstage-adapter.mjs) validates the level AND the active
+    // model's capability before ever touching the adapter, so an
+    // unsupported request fails with a clear message here rather than as a
+    // raw 400 on the next request.
+    description: "reasoning_effort 즉시 변경 (사용법: /effort <none|minimal|low|medium|high|xhigh|max>)",
+    handler(args, state) {
+      const level = (args?.[0] || "").toLowerCase();
+      if (!level) {
+        return { response: "사용법: /effort <none|minimal|low|medium|high|xhigh|max>" };
+      }
+      try {
+        assertReasoningEffortSupported(state?.model, level);
+      } catch (err) {
+        return { response: err instanceof Error ? err.message : String(err) };
+      }
+      state?._adapter?.setReasoningEffort?.(level);
+      return { response: `reasoning_effort 변경됨: ${level}` };
     }
   },
 

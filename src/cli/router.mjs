@@ -67,6 +67,7 @@ import {
   runConfigEditCommand
 } from "./commands/config.mjs";
 import { runAuthStatusCommand, runAuthTestCommand } from "./commands/auth.mjs";
+import { runModelsListCommand, runModelsInfoCommand } from "./commands/models.mjs";
 import { runVersionCommand } from "./commands/version.mjs";
 import { runUpdateCommand } from "./commands/update.mjs";
 import { runUninstallCommand } from "./commands/uninstall.mjs";
@@ -278,7 +279,40 @@ export const COMMANDS = {
       }
     }
   },
-  models: namespace("models", ["list", "info"]),
+  // Task 7.16 — real implementations (src/cli/commands/models.mjs). Each
+  // handler manages its own -h/--help, wired directly like `doctor`/`mcp`
+  // above rather than through `namespace()`.
+  models: {
+    subcommands: {
+      list: {
+        handler: runModelsListCommand,
+        usage: [
+          "Usage: upstage models list [--json]",
+          "",
+          "  Lists every model this build has real capability data for, with context",
+          "  limit and support flags for reasoning-effort/parallel-tool-calls/",
+          "  response-format.",
+          "",
+          "Options:",
+          "  --json   Output as JSON: [{id, provider, contextLimit,",
+          "           supportsReasoningEffort, supportsParallelToolCalls,",
+          "           supportsResponseFormat, isDefault}]"
+        ].join("\n")
+      },
+      info: {
+        handler: runModelsInfoCommand,
+        usage: [
+          "Usage: upstage models info <model> [--json]",
+          "",
+          "  Prints one model's capability row (same data/format `/model` shows in",
+          "  the TUI for the active model).",
+          "",
+          "Options:",
+          "  --json   Output as JSON"
+        ].join("\n")
+      }
+    }
+  },
   context: leaf(["context"]),
 
   // Task 12.4 — real implementations (src/cli/commands/mcp.mjs) for

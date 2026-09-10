@@ -14,7 +14,7 @@ import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
 import { dispatch, isRouterCommand } from "./router.mjs";
 import { runVersionCommand } from "./commands/version.mjs";
-import { UpstageAdapter } from "../model/upstage-adapter.mjs";
+import { UpstageAdapter, assertReasoningEffortSupported } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
 import { ModelRouter } from "../model/router.mjs";
@@ -90,6 +90,7 @@ export function parseArgs(argv) {
     prompt: result.prompt,
     stream: result.stream,
     model: result.model,
+    reasoningEffort: result.reasoningEffort,
     sessionId: result.sessionId,
     newSession: result.newSession,
     resetSession: result.resetSession,
@@ -535,6 +536,24 @@ export async function runClassicCli(args) {
     process.off("uncaughtException", onFatal);
     process.off("unhandledRejection", onFatal);
     return;
+  }
+
+  // -e/--reasoning-effort (Task 7.17) applies to both `ask` and interactive
+  // sessions — both paths below share this one adapter-construction point.
+  // Validated client-side (bad level OR a model that doesn't support
+  // explicit reasoning-effort control) BEFORE the adapter is ever built, so
+  // a rejection here never surfaces as a raw 400 from the Upstage API.
+  if (args.reasoningEffort) {
+    try {
+      assertReasoningEffortSupported(args.model || settings.model || undefined, args.reasoningEffort);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+      process.off("uncaughtException", onFatal);
+      process.off("unhandledRejection", onFatal);
+      return;
+    }
+    settings.reasoningEffort = args.reasoningEffort;
   }
 
   const policy = {
