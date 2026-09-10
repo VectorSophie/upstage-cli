@@ -91,15 +91,6 @@ function leaf(path) {
   return { handler: stubHandler(path) };
 }
 
-// Build a namespace node from a list of subcommand names, each a leaf.
-function namespace(name, subNames) {
-  const subcommands = {};
-  for (const sub of subNames) {
-    subcommands[sub] = leaf([name, sub]);
-  }
-  return { subcommands };
-}
-
 export const COMMANDS = {
   // Task 12.3 — real implementation (src/cli/commands/doctor.mjs), not a
   // stub. `runDoctorCommand` itself handles -h/--help, so it's wired
