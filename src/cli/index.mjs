@@ -3,8 +3,8 @@ import process from "node:process";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import {
-  createDiscoveredToolInvoker,
-  createRegistryWithExtensions
+  createRegistryWithExtensions,
+  discoveryConfigFromEnv
 } from "../tools/create-registry.mjs";
 import { loadMcpServerConfigs, connectConfiguredServers } from "../tools/mcp/config.mjs";
 import { runAgentLoop } from "../agent/loop.mjs";
@@ -12,7 +12,9 @@ import { DEFAULT_POLICY, DEFAULT_LOOP_BUDGET } from "../config/defaults.mjs";
 import { loadProjectEnv } from "../config/load-env.mjs";
 import { loadSettings } from "../config/settings.mjs";
 import { parseCliArgs, getUsageText } from "../config/cli-args.mjs";
-import { UpstageAdapter } from "../model/upstage-adapter.mjs";
+import { dispatch, isRouterCommand } from "./router.mjs";
+import { runVersionCommand } from "./commands/version.mjs";
+import { UpstageAdapter, assertReasoningEffortSupported } from "../model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../model/openai-adapter.mjs";
 import { GeminiAdapter } from "../model/gemini-adapter.mjs";
 import { ModelRouter } from "../model/router.mjs";
@@ -75,7 +77,12 @@ function mergeHookMaps(base, extra) {
   return out;
 }
 
-function parseArgs(argv) {
+// Exported so `upstage sessions resume <id>` (src/cli/commands/sessions.mjs,
+// Task 12.6) can build the exact same `args` shape a bare
+// `upstage --session <id>` invocation produces, rather than reimplementing
+// this mapping — see runClassicCli()'s own doc comment below for the other
+// half of that "same code path" guarantee.
+export function parseArgs(argv) {
   const result = parseCliArgs(argv);
   const compat = {
     command: result.command,
@@ -83,6 +90,7 @@ function parseArgs(argv) {
     prompt: result.prompt,
     stream: result.stream,
     model: result.model,
+    reasoningEffort: result.reasoningEffort,
     sessionId: result.sessionId,
     newSession: result.newSession,
     resetSession: result.resetSession,
@@ -156,35 +164,12 @@ async function loadAllMcpServers(cwd, settings) {
   return [...moduleServers, ...servers];
 }
 
-function createDiscoveryConfigFromEnv(cwd) {
-  const discoverCommand = process.env.UPSTAGE_DISCOVERY_COMMAND;
-  if (typeof discoverCommand !== "string" || discoverCommand.trim().length === 0) {
-    return null;
+function discoveryLogFromEnv(payload) {
+  const text = typeof payload?.text === "string" ? payload.text.trim() : "";
+  if (!text) {
+    return;
   }
-
-  const invokeCommand =
-    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND &&
-    process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND.trim().length > 0
-      ? process.env.UPSTAGE_DISCOVERY_INVOKE_COMMAND
-      : discoverCommand;
-
-  const onLog = (payload) => {
-    const text = typeof payload?.text === "string" ? payload.text.trim() : "";
-    if (!text) {
-      return;
-    }
-    process.stderr.write(`[discovery:${payload.stage || "log"}:${payload.channel || "out"}] ${text}\n`);
-  };
-
-  return {
-    command: discoverCommand,
-    onLog,
-    invoke: createDiscoveredToolInvoker({
-      command: invokeCommand,
-      cwd,
-      onLog
-    })
-  };
+  process.stderr.write(`[discovery:${payload.stage || "log"}:${payload.channel || "out"}] ${text}\n`);
 }
 
 async function loadOrCreateSession(args, cwd) {
@@ -424,8 +409,47 @@ async function runInteractive(registry, adapter, args, session, runtimeCache, se
 }
 
 async function main() {
-  const args = parseArgs(process.argv.slice(2));
+  const argv = process.argv.slice(2);
 
+  // `upstage --version` is a top-level flag alias for `upstage version`
+  // (Task 12.9, §7.V) — checked before the router (which only matches bare
+  // command names, not `--`-prefixed flags) and before parseCliArgs, so it
+  // short-circuits exactly like `-h`/`--help` would.
+  if (argv[0] === "--version") {
+    process.exitCode = await runVersionCommand([]);
+    return;
+  }
+
+  // New namespaced commands from the 3.2.0 command tree (§6 of the release
+  // plan) are owned by the router. Only the exact first token is checked —
+  // `chat`/`ask`/`tui` and any other prompt text fall through unchanged to
+  // the existing `parseCliArgs` flow below, preserving today's behavior.
+  if (isRouterCommand(argv[0])) {
+    process.exitCode = await dispatch(argv);
+    return;
+  }
+
+  const args = parseArgs(argv);
+  await runClassicCli(args);
+}
+
+/**
+ * The full classic execution pipeline — everything `chat`/`ask`/`tui` (and,
+ * pre-3.2, a bare `upstage --session <id>`) do after argv has been parsed
+ * into `args`: settings/plugin/MCP/agent/skill loading, registry + adapter
+ * construction, session load-or-create, then either a one-shot prompt or the
+ * interactive TUI loop.
+ *
+ * Exported (and taking `args` rather than `argv`) specifically so
+ * `upstage sessions resume <id>` (src/cli/commands/sessions.mjs, Task 12.6)
+ * can invoke the *exact* same path a bare `upstage --session <id>` takes —
+ * not a reimplementation of it — by building an equivalent `args` object
+ * (via the also-exported `parseArgs()` above, called with
+ * `["--session", id]`) and calling this function directly. Both entry
+ * points share this one function reference; see
+ * tests/m33-sessions-cli.test.mjs for the same-code-path assertion.
+ */
+export async function runClassicCli(args) {
   if (args.cwd) {
     const targetCwd = isAbsolute(args.cwd) ? args.cwd : resolve(process.cwd(), args.cwd);
     try {
@@ -491,6 +515,24 @@ async function main() {
     return;
   }
 
+  // -e/--reasoning-effort (Task 7.17) applies to both `ask` and interactive
+  // sessions — both paths below share this one adapter-construction point.
+  // Validated client-side (bad level OR a model that doesn't support
+  // explicit reasoning-effort control) BEFORE the adapter is ever built, so
+  // a rejection here never surfaces as a raw 400 from the Upstage API.
+  if (args.reasoningEffort) {
+    try {
+      assertReasoningEffortSupported(args.model || settings.model || undefined, args.reasoningEffort);
+    } catch (error) {
+      console.error(error instanceof Error ? error.message : String(error));
+      process.exitCode = 1;
+      process.off("uncaughtException", onFatal);
+      process.off("unhandledRejection", onFatal);
+      return;
+    }
+    settings.reasoningEffort = args.reasoningEffort;
+  }
+
   const policy = {
     ...DEFAULT_POLICY,
     allowHighRiskTools: !args.confirmPatches,
@@ -502,7 +544,7 @@ async function main() {
 
   const cwd = process.cwd();
   const verifyStages = parseVerifyStages(process.env.UPSTAGE_VERIFY_STAGES);
-  const discovery = createDiscoveryConfigFromEnv(cwd);
+  const discovery = discoveryConfigFromEnv({ cwd, onLog: discoveryLogFromEnv });
 
   // Discover Claude-compatible plugins and merge their components into the
   // settings/loaders before everything downstream is built.
@@ -582,7 +624,22 @@ async function main() {
   process.off("unhandledRejection", onFatal);
 }
 
-main().catch((error) => {
-  console.error(error instanceof Error ? error.message : "Unhandled error");
-  process.exit(1);
-});
+// Guards the auto-run so importing this module (e.g. src/cli/commands/
+// sessions.mjs importing `runClassicCli`/`parseArgs` for `sessions resume`)
+// never re-triggers the full CLI bootstrap as an import side effect — only
+// running this file directly (the `upstage` bin's shebang entry, or
+// `bun src/cli/index.mjs`) does.
+function isMainModule() {
+  try {
+    return Boolean(process.argv[1]) && import.meta.url === pathToFileURL(resolve(process.argv[1])).href;
+  } catch {
+    return false;
+  }
+}
+
+if (isMainModule()) {
+  main().catch((error) => {
+    console.error(error instanceof Error ? error.message : "Unhandled error");
+    process.exit(1);
+  });
+}

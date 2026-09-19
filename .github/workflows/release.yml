@@ -97,6 +97,27 @@ jobs:
       - name: Build and package
         run: bun scripts/package-binary.mjs
 
+      # Checksum filename/format contract (pinned here AND in
+      # scripts/install.sh's own comment near `checksum_asset`/
+      # `verify_checksum` — keep both in sync if either changes): for an
+      # archive published as "<asset>" (e.g. upstage-linux-x64.tar.gz), this
+      # publishes "<asset>.sha256" alongside it containing a
+      # `sha256sum`-compatible line ("<hex digest>  <asset>\n"). `shell: bash`
+      # runs this via Git Bash on the Windows runner too, so the same
+      # sha256sum/shasum fallback works on all five matrix targets.
+      - name: Generate checksum
+        shell: bash
+        run: |
+          cd dist
+          for f in *.tar.gz *.zip; do
+            [ -e "$f" ] || continue
+            if command -v sha256sum >/dev/null 2>&1; then
+              sha256sum "$f" > "$f.sha256"
+            else
+              shasum -a 256 "$f" > "$f.sha256"
+            fi
+          done
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -104,6 +125,7 @@ jobs:
           path: |
             dist/*.tar.gz
             dist/*.zip
+            dist/*.sha256
           if-no-files-found: error
 
   release:

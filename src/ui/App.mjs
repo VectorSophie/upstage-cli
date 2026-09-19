@@ -288,6 +288,10 @@ const App = ({ sessionId: initialSessionId, registry, adapter, args, session: in
         _session: currentSession,
         _settings: settings,
         _registry: registry,
+        // Task 7.17: /effort mutates the live adapter's reasoning_effort
+        // mid-session via the pre-existing setReasoningEffort() mechanism —
+        // same instance the Ctrl+E status-bar chip already cycles.
+        _adapter: adapter,
         _agentLoader: runtimeCache?.agentLoader || null,
         _skillsLoader: runtimeCache?.skillsLoader || null,
         _watching: isWatching

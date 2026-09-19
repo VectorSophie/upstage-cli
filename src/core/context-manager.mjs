@@ -12,7 +12,12 @@ function charTokenRatio(str) {
   return cjkRatio > 0.3 ? 2.5 : 4;
 }
 
-function estimateTokens(str) {
+// Exported so other modules that need to report token counts consistent
+// with ContextManager's own compaction decisions (e.g. src/agent/
+// context-budget.mjs, powering `upstage context` and the TUI's `/context`)
+// can reuse this exact heuristic instead of inventing a second one that
+// would silently disagree with /compact's/`/cost`'s own numbers.
+export function estimateTokens(str) {
   if (!str) return 0;
   return Math.ceil(str.length / charTokenRatio(str));
 }

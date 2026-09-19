@@ -5,7 +5,19 @@ export const ENV_SCHEMA = {
   UPSTAGE_SUBAGENT_MODEL: { type: 'string', description: 'Model for subagents' },
   UPSTAGE_MAX_OUTPUT_TOKENS: { type: 'number', default: 4096, description: 'Max output tokens' },
   UPSTAGE_MAX_CONTEXT_TOKENS: { type: 'number', default: 65536, description: 'Max context window tokens' },
-  UPSTAGE_EMBEDDING_MODEL: { type: 'string', default: 'solar-embedding-1-large', description: 'Embedding model name' },
+  // Base embedding model name, shared by every embedding caller via
+  // src/upstage/embeddings.mjs — it appends "-query" or "-passage" depending
+  // on which side of a search is being embedded. This is the sole
+  // embedding-model override env var (an older, undocumented
+  // UPSTAGE_EMBED_MODEL name has been removed — it was a second, disagreeing
+  // default that caused two callers to hit two different stale models).
+  UPSTAGE_EMBEDDING_MODEL: { type: 'string', default: 'solar-embedding-2', description: 'Base embedding model name (suffixed with -query/-passage)' },
+  // Groundedness Check model override, read by src/upstage/groundedness.mjs.
+  // This var was already read by the pre-3.2.0 check-groundedness.mjs but
+  // was never documented here — formalized alongside that module's default
+  // model id fix (see groundedness.mjs's header for the full provenance
+  // trail), matching the precedent of UPSTAGE_EMBEDDING_MODEL above.
+  UPSTAGE_GROUNDEDNESS_MODEL: { type: 'string', default: 'groundedness-check', description: 'Groundedness Check model id override' },
   UPSTAGE_BRIEF: { type: 'boolean', default: false, description: 'Brief output mode' },
   UPSTAGE_DEBUG: { type: 'boolean', default: false, description: 'Debug mode' },
   UPSTAGE_PERMISSION_MODE: { type: 'string', default: 'default', description: 'Permission mode' },

@@ -1,13 +1,14 @@
 import { execSync } from "node:child_process";
-import { existsSync } from "node:fs";
-import { mkdir } from "node:fs/promises";
-import { join } from "node:path";
 import os from "node:os";
 import { renderMarkdown } from "./markdown.mjs";
 import { checkpointsDir, listCheckpoints, restoreCheckpoint } from "../core/rewind.mjs";
 import { appendSpec, readSpecs } from "../core/spec.mjs";
 import { listRecipes, loadRecipe, parseRecipeRunArgs, renderRecipe, saveRecipe } from "../core/recipes.mjs";
 import { resolveTokenLimit } from "../agent/loop.mjs";
+import { computeLiveContextBreakdown } from "../agent/context-budget.mjs";
+import { generateUpstageMd } from "../agent/init-generator.mjs";
+import { getModelInfo, formatModelInfoHuman } from "../cli/commands/models.mjs";
+import { assertReasoningEffortSupported } from "../model/upstage-adapter.mjs";
 
 // ─── Command definitions ──────────────────────────────────────────────────
 
@@ -120,9 +121,44 @@ export const COMMANDS = {
   },
 
   "/model": {
-    description: "현재 모델 표시",
+    // Calls the exact same getModelInfo()/formatModelInfoHuman() pair
+    // `upstage models info <model>` (src/cli/commands/models.mjs) uses —
+    // Task 7.16's "same function, no drift" requirement — rather than
+    // reimplementing the capability lookup/formatting here.
+    description: "현재 모델 정보 표시 (upstage models info와 동일한 형식)",
     handler(_args, state) {
-      return { response: `현재 모델: ${state?.model || "solar-pro2"}` };
+      const modelId = state?.model || "solar-pro4";
+      try {
+        const info = getModelInfo(modelId);
+        return { response: formatModelInfoHuman(info).trimEnd() };
+      } catch (err) {
+        return { response: err instanceof Error ? err.message : String(err) };
+      }
+    }
+  },
+
+  "/effort": {
+    // Task 7.17 — mid-session reasoning_effort change, reusing the
+    // pre-existing instance-level setReasoningEffort() mechanism (the same
+    // one the TUI's Ctrl+E chip already mutates) via the adapter reference
+    // App.mjs threads into cmdState as `_adapter`. assertReasoningEffortSupported()
+    // (src/model/upstage-adapter.mjs) validates the level AND the active
+    // model's capability before ever touching the adapter, so an
+    // unsupported request fails with a clear message here rather than as a
+    // raw 400 on the next request.
+    description: "reasoning_effort 즉시 변경 (사용법: /effort <none|minimal|low|medium|high|xhigh|max>)",
+    handler(args, state) {
+      const level = (args?.[0] || "").toLowerCase();
+      if (!level) {
+        return { response: "사용법: /effort <none|minimal|low|medium|high|xhigh|max>" };
+      }
+      try {
+        assertReasoningEffortSupported(state?.model, level);
+      } catch (err) {
+        return { response: err instanceof Error ? err.message : String(err) };
+      }
+      state?._adapter?.setReasoningEffort?.(level);
+      return { response: `reasoning_effort 변경됨: ${level}` };
     }
   },
 
@@ -207,18 +243,36 @@ export const COMMANDS = {
   },
 
   "/init": {
-    description: ".upstage/ 디렉토리 초기화",
-    async handler(_args, _state) {
-      const dirs = [
-        join(process.cwd(), ".upstage"),
-        join(process.cwd(), ".upstage", "checkpoints"),
-        join(process.cwd(), ".upstage", "agents"),
-        join(process.cwd(), ".upstage", "skills"),
-      ];
-      for (const d of dirs) {
-        if (!existsSync(d)) await mkdir(d, { recursive: true });
+    description: "저장소를 분석해 UPSTAGE.md 생성/갱신 (사용법: /init [--refresh] [--dry-run])",
+    async handler(args, state) {
+      const cwd = state?._session?.workspace?.cwd || process.cwd();
+      const refresh = (args || []).includes("--refresh");
+      const dryRun = (args || []).includes("--dry-run");
+
+      try {
+        const result = await generateUpstageMd({ cwd, refresh, dryRun });
+
+        if (dryRun) {
+          // NOTE: must NOT start with "__" — App.mjs:376 suppresses any
+          // `result.response` starting with "__" from ever reaching the
+          // chat (that's the mechanism internal sentinels like "__clear__"/
+          // "__new_session__" rely on to stay invisible, since those all
+          // short-circuit via dedicated boolean flags before that check).
+          // A dry-run preview has no such flag — it's meant to be seen — so
+          // the human-readable label below must not accidentally collide
+          // with that prefix convention.
+          return { response: `[dry-run] ${result.path} — 아무 것도 기록되지 않음. 생성될 내용 미리보기:\n\n${result.block}` };
+        }
+
+        const ACTION_KO = {
+          created: "UPSTAGE.md 생성됨",
+          updated: "UPSTAGE.md의 생성 블록 갱신됨",
+          appended: "기존 UPSTAGE.md에 생성 블록 추가됨"
+        };
+        return { response: `📄 ${ACTION_KO[result.action] || "UPSTAGE.md 갱신됨"} (${result.path})` };
+      } catch (err) {
+        return { response: `/init 실행 오류: ${err.message}` };
       }
-      return { response: ".upstage/ 디렉토리 초기화 완료" };
     }
   },
 
@@ -252,13 +306,46 @@ export const COMMANDS = {
     }
   },
 
+  // Task 7.15 — live-session context budget breakdown, matching the Claude
+  // Code category list (system prompt / builtin tools / MCP tools / project
+  // instructions / skills / conversation history / free space), computed
+  // via computeLiveContextBreakdown() (src/agent/context-budget.mjs), the
+  // SAME ContextManager instance (state._contextManager) already powering
+  // /compact and /cost — never a second, independently-computed number.
+  // `/memory` is kept registered below as a backward-compatible alias
+  // pointing at this same handler.
+  "/context": {
+    description: "컨텍스트 사용량 분석 (시스템 프롬프트/도구/MCP/프로젝트 지침/스킬/대화/여유 공간)",
+    async handler(_args, state) {
+      try {
+        const b = await computeLiveContextBreakdown(state?.messages || [], state);
+        const rows = [
+          ["시스템 프롬프트", b.systemPromptTokens],
+          ["내장 도구", b.toolsTokens],
+          ["MCP 도구", b.mcpTokens],
+          ["프로젝트 지침 (UPSTAGE.md)", b.projectInstructionsTokens],
+          ["스킬", b.skillsTokens],
+          ["저장소 맵", b.repoMapTokens],
+          ["대화 기록", b.conversationTokens],
+          ["여유 공간", b.freeSpaceTokens]
+        ];
+        const pct = (n) => (b.contextLimit ? `${((n / b.contextLimit) * 100).toFixed(1)}%` : "0.0%");
+        const lines = rows.map(
+          ([label, tokens]) => `  ${label.padEnd(24)} ${tokens.toLocaleString().padStart(10)} 토큰  (${pct(tokens)})`
+        );
+        return {
+          response: `컨텍스트 사용량 (한도: ${b.contextLimit.toLocaleString()} 토큰):\n\n${lines.join("\n")}`
+        };
+      } catch (err) {
+        return { response: `컨텍스트 분석 오류: ${err instanceof Error ? err.message : String(err)}` };
+      }
+    }
+  },
+
   "/memory": {
-    description: "대화 메모리 사용량",
-    handler(_args, state) {
-      const msgs = state?.messages || [];
-      const cm = state?._contextManager;
-      const tokens = cm ? cm.getTokenCount(msgs) : "알 수 없음";
-      return { response: `메시지 수: ${msgs.length}\n토큰 추정: ${tokens}` };
+    description: "대화 메모리 사용량 (/context 의 별칭)",
+    handler(args, state) {
+      return COMMANDS["/context"].handler(args, state);
     }
   },
 

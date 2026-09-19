@@ -66,9 +66,14 @@ upstage-cli 실행에 중요한 환경 변수는 다음과 같습니다.
 Usage: upstage [command] [options] [prompt]
 
 Commands:
-  chat              대화형 채팅 모드 (기본값)
-  ask               단발 프롬프트 모드
-  tui               풀스크린 터미널 UI
+  chat              풀스크린 TUI 실행 (기본값 — 명령어 없이 실행한 것과 동일,
+                    "tui"와도 동일)
+  tui               풀스크린 TUI 실행 ("chat" / 명령어 없음과 동일)
+  ask               단발 프롬프트 모드 — TUI 없이 헤드리스로 실행 후 종료
+
+  "chat", "tui", 그리고 명령어 없이 실행하는 것은 서로 다른 모드가 아니라
+  동일한 풀스크린 TUI를 가리키는 세 가지 이름입니다. "ask"(또는 프롬프트/-p
+  전달)만 실제로 다른, 비대화형 모드입니다.
 
 Options:
   -h, --help                도움말 표시

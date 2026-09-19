@@ -1,4 +1,4 @@
-import { request } from "node:https";
+import { embed } from "../../upstage/embeddings.mjs";
 
 // Solar embeddings — explicitly positioned by Upstage for Korean-language
 // vector understanding, unlike our existing search-code/grep/repo-map tools
@@ -8,52 +8,10 @@ import { request } from "node:https";
 // read_file), rather than building a standalone repo-wide index/pipeline —
 // real, working semantic ranking without a large indexing subsystem.
 //
-// Endpoint/model confirmed from langchain-upstage's UpstageEmbeddings (the
-// real SDK, not guessed): OpenAI-compatible POST /v1/embeddings, model
-// name gets a "-query" or "-passage" suffix depending on which side of the
-// search it's embedding.
-const ENDPOINT = "https://api.upstage.ai/v1/embeddings";
-const BASE_MODEL = process.env.UPSTAGE_EMBEDDING_MODEL || "solar-embedding-1-large";
+// Model resolution and the actual HTTP call live in src/upstage/embeddings.mjs
+// (shared with src/retriever/providers/upstage.mjs) — this file only owns
+// the tool's ranking contract.
 const MAX_CANDIDATES = 100;
-
-function postJson(url, apiKey, body) {
-  const payload = JSON.stringify(body);
-  const parsed = new URL(url);
-  return new Promise((resolvePromise, reject) => {
-    const req = request(
-      {
-        hostname: parsed.hostname,
-        path: parsed.pathname,
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-          "Content-Length": Buffer.byteLength(payload)
-        },
-        timeout: 30000
-      },
-      (res) => {
-        const chunks = [];
-        res.on("data", (c) => chunks.push(c));
-        res.on("end", () => {
-          const text = Buffer.concat(chunks).toString("utf8");
-          if (res.statusCode !== 200) return reject(new Error(`Embeddings API ${res.statusCode}: ${text.slice(0, 500)}`));
-          try { resolvePromise(JSON.parse(text)); } catch (err) { reject(err); }
-        });
-        res.on("error", reject);
-      }
-    );
-    req.on("error", reject);
-    req.on("timeout", () => { req.destroy(); reject(new Error("Embeddings request timed out")); });
-    req.write(payload);
-    req.end();
-  });
-}
-
-async function embed(apiKey, model, input) {
-  const data = await postJson(ENDPOINT, apiKey, { model, input });
-  return (data.data || []).map((d) => d.embedding);
-}
 
 function cosineSimilarity(a, b) {
   let dot = 0, magA = 0, magB = 0;
@@ -90,16 +48,15 @@ export const semanticSearchTool = {
     additionalProperties: false
   },
   async execute(args) {
-    const apiKey = process.env.UPSTAGE_API_KEY;
-    if (!apiKey) throw new Error("UPSTAGE_API_KEY is not configured");
+    if (!process.env.UPSTAGE_API_KEY) throw new Error("UPSTAGE_API_KEY is not configured");
     if (typeof args.query !== "string" || !args.query.trim()) throw new Error("query is required");
     if (!Array.isArray(args.candidates) || args.candidates.length === 0) throw new Error("candidates must be a non-empty array");
 
     const candidates = args.candidates.slice(0, MAX_CANDIDATES);
     const topK = Math.max(1, Math.min(typeof args.topK === "number" ? args.topK : 5, candidates.length));
 
-    const [queryEmbedding] = await embed(apiKey, `${BASE_MODEL}-query`, [args.query.trim()]);
-    const candidateEmbeddings = await embed(apiKey, `${BASE_MODEL}-passage`, candidates);
+    const [queryEmbedding] = await embed({ texts: [args.query.trim()], type: "query" });
+    const candidateEmbeddings = await embed({ texts: candidates, type: "passage" });
 
     const ranked = candidates
       .map((text, i) => ({ index: i, text, score: cosineSimilarity(queryEmbedding, candidateEmbeddings[i]) }))

@@ -5,6 +5,7 @@ export function parseCliArgs(argv) {
     prompt: null,
     stream: true,
     model: null,
+    reasoningEffort: null,
     sessionId: null,
     newSession: false,
     resetSession: false,
@@ -46,6 +47,11 @@ export function parseCliArgs(argv) {
     }
     if (token === '--model' || token === '-m') {
       result.model = argv[i + 1] || null;
+      i += 1;
+      continue;
+    }
+    if (token === '-e' || token === '--reasoning-effort') {
+      result.reasoningEffort = argv[i + 1] || null;
       i += 1;
       continue;
     }
@@ -135,14 +141,24 @@ export function getUsageText() {
 Usage: upstage [command] [options] [prompt]
 
 Commands:
-  chat              Interactive chat mode (default)
-  ask               One-shot prompt mode
-  tui               Fullscreen terminal UI
+  chat              Launch the fullscreen TUI (default — same as running
+                    upstage with no command, and same as "tui")
+  tui               Launch the fullscreen TUI (same as "chat" / no command)
+  ask               One-shot prompt mode — run headlessly and exit, no TUI
+
+  "chat", "tui", and running upstage with no command are three names for the
+  same fullscreen-TUI entry point, not separate modes. "ask" (or passing a
+  prompt/-p) is the only genuinely different, non-interactive mode.
 
 Options:
   -h, --help                Show this help
   -p, --prompt <text>       Run prompt and exit
   -m, --model <model>       Model to use (default: solar-pro4)
+  -e, --reasoning-effort <level>
+                            Reasoning effort: none|minimal|low|medium|high|
+                            xhigh|max — client-side rejected for a model
+                            that doesn't support it (see
+                            src/model/model-capabilities.mjs)
   --no-stream               Disable streaming
   --session <id>            Resume session by ID
   --new-session             Start a new session
@@ -163,8 +179,10 @@ Options:
   -d, --debug               Debug mode
 
 Examples:
-  upstage                        Start interactive REPL
-  upstage -p "Fix bug in app"    Run prompt and exit
+  upstage                        Launch the fullscreen TUI
+  upstage chat                   Same as above ("chat" = "tui" = no command)
+  upstage tui                    Same as above
+  upstage -p "Fix bug in app"    Run prompt and exit (no TUI)
   upstage ask "Read package.json"
   upstage --lang en -p "hello"   English mode
 `.trim();

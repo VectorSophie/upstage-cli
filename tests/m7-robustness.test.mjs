@@ -263,7 +263,11 @@ test("upstage adapter ignores an invalid per-call reasoning_effort value on a su
     await adapter.complete({
       messages: [{ role: "user", content: "hi" }],
       stream: false,
-      reasoningEffort: "medium"
+      // "medium" is a valid level in the widened 7.17 enum now (see
+      // upstage-adapter.mjs's VALID_REASONING_EFFORTS) — this test's intent
+      // is "an unrecognized value is ignored," so it uses a string that is
+      // NOT in that set either before or after the widening.
+      reasoningEffort: "not-a-real-level"
     });
     // Invalid value + no instance-level default set => falls through to unset => omitted.
     assert.equal("reasoning_effort" in capturedBody, false);

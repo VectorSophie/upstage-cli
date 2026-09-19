@@ -1,6 +1,9 @@
-import { spawn } from "node:child_process";
+import { spawn, execFile } from "node:child_process";
+import { promisify } from "node:util";
 import { createInterface } from "node:readline";
 import pkg from "../../../package.json" with { type: "json" };
+
+const execFileAsync = promisify(execFile);
 
 /**
  * StdioMcpClient — a real MCP client over the stdio transport.
@@ -57,6 +60,16 @@ export class StdioMcpClient {
       shell: useShell
     });
     this.child = child;
+    // Windows-only: `cmd.exe /c <bare command>` (spawned above whenever
+    // useShell is true) forks the real process as a grandchild of ours —
+    // `child.kill()` in close() below only terminates cmd.exe itself,
+    // orphaning the grandchild. An orphan that never closes its (inherited)
+    // stdout/stderr pipe handles keeps those pipes from ever seeing EOF,
+    // which keeps this process's event loop alive indefinitely — exactly
+    // the "hanging server hangs the whole command" failure mode a caller
+    // like `upstage doctor` (Task 12.3) must be protected from. Tracked so
+    // close() can fall back to a tree-kill (`taskkill /t`) in this one case.
+    this._usedShell = useShell;
 
     child.on("error", (err) => this._failAll(new Error(`MCP server '${this.name}' failed to start: ${err.message}`)));
     child.on("exit", (code) => {
@@ -92,7 +105,19 @@ export class StdioMcpClient {
     this._closed = true;
     this._failAll(new Error(`MCP server '${this.name}' closed`));
     if (this.child && !this.child.killed) {
-      try { this.child.kill(); } catch { /* ignore */ }
+      if (process.platform === "win32" && this._usedShell && this.child.pid) {
+        // See the comment in connect() — a plain kill() would only hit the
+        // cmd.exe wrapper, not the grandchild that's actually running the
+        // server. `/t` kills the whole process tree. Genuinely awaited (not
+        // fire-and-forget) — both existing callers already
+        // `await client.close().catch(() => {})` (src/tools/mcp/config.mjs),
+        // i.e. they were already written expecting close() to fully settle
+        // before returning; best-effort either way (the pid may already be
+        // gone), never throws past the catch below.
+        await execFileAsync("taskkill", ["/pid", String(this.child.pid), "/t", "/f"]).catch(() => {});
+      } else {
+        try { this.child.kill(); } catch { /* ignore */ }
+      }
     }
   }
 
