@@ -15,20 +15,31 @@
 //   confirmed via OpenRouter's model pages for Pro3/Pro4; live-verify against
 //   the actual Upstage API before relying on this for anything safety-critical.
 
+// 3.3.0 Thread D, Task D.1: inputModalities/outputModalities are additive
+// alongside the existing boolean flags — never replacing them. Every known
+// Solar model is ["text"]/["text"]: Upstage's own Pro4 launch materials
+// document no image/vision input for any current Solar model. This is
+// what src/tools/builtin/browser-tools.mjs screenshots and Docker/browser
+// evidence gets routed past (inspect_image, Task D.3) rather than a Solar
+// model itself.
+const TEXT_ONLY_MODALITIES = { inputModalities: ["text"], outputModalities: ["text"] };
+
 const CAPABILITIES = {
   "solar-pro4": {
     contextLimit: 512_000,
     supportsReasoningEffort: true,
     supportsParallelToolCalls: true,
     supportsResponseFormat: true,
-    promptTier: "minimal"
+    promptTier: "minimal",
+    ...TEXT_ONLY_MODALITIES
   },
   "solar-pro3": {
     contextLimit: 65_536,
     supportsReasoningEffort: false,
     supportsParallelToolCalls: false,
     supportsResponseFormat: true,
-    promptTier: "full"
+    promptTier: "full",
+    ...TEXT_ONLY_MODALITIES
   },
   "solar-pro2": {
     contextLimit: 65_536,
@@ -40,11 +51,12 @@ const CAPABILITIES = {
     supportsReasoningEffort: false,
     supportsParallelToolCalls: false,
     supportsResponseFormat: false,
-    promptTier: "full"
+    promptTier: "full",
+    ...TEXT_ONLY_MODALITIES
   }
 };
 
-const FALLBACK = CAPABILITIES["solar-pro2"];
+const FALLBACK = { ...CAPABILITIES["solar-pro2"] };
 
 // The set of model ids this table actually has real (not fallback) data
 // for — the single source of truth `upstage models list/info`

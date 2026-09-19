@@ -406,6 +406,30 @@ test("runInitCommand --refresh behaves the same as the default (documented no-op
   }));
 });
 
+// 3.3.0 Thread C, Task C.5
+test("runInitCommand --with-browser-mcp also writes a chrome-devtools-mcp entry to .mcp.json", () => {
+  return withTempDir((dir) => withCwd(dir, async () => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const code = await runInitCommand(["--with-browser-mcp"]);
+    assert.equal(code, 0);
+    const mcpJson = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8"));
+    assert.ok(mcpJson.mcpServers["chrome-devtools"]);
+  }));
+});
+
+test("runInitCommand without --with-browser-mcp never touches .mcp.json", () => {
+  return withTempDir((dir) => withCwd(dir, async () => {
+    writeFixturePackageJson(dir);
+    writeFixtureSource(dir);
+
+    const code = await runInitCommand([]);
+    assert.equal(code, 0);
+    assert.equal(existsSync(join(dir, ".mcp.json")), false);
+  }));
+});
+
 // formatDryRunOutput/formatWriteSummary: the pure formatters runInitCommand
 // wraps around process.stdout.write — this is what actually verifies
 // runInitCommand's OUTPUT CONTENT (not just its exit code/side effects),

@@ -33,6 +33,7 @@
 // a reported problem, so the same tradeoff is accepted here rather than solved.
 
 import { runDoctorCommand } from "./commands/doctor.mjs";
+import { runBrowserInstallCommand } from "./commands/browser-install.mjs";
 import { runInitCommand } from "./commands/init.mjs";
 import { runParseCommand } from "./commands/parse.mjs";
 import { runOcrCommand } from "./commands/ocr.mjs";
@@ -106,6 +107,17 @@ export const COMMANDS = {
       "Options:",
       "  --json    Output as JSON"
     ].join("\n")
+  },
+  // 3.3.0 Thread C, Task C.4 — real implementation
+  // (src/cli/commands/browser-install.mjs), the ONLY command that downloads
+  // a browser, and only when explicitly invoked.
+  browser: {
+    subcommands: {
+      install: {
+        handler: runBrowserInstallCommand,
+        usage: "Usage: upstage browser install\n\n  Downloads Chrome for Testing into ~/.upstage/browser/, for the browser_*\n  verification tools. Only runs when you explicitly invoke it."
+      }
+    }
   },
   // Task 7.10 — real implementation (src/cli/commands/init.mjs), not a
   // stub. `runInitCommand` handles -h/--help itself, so it's wired directly

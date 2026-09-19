@@ -35,6 +35,7 @@ import {
   browserOpenTool, browserSnapshotTool, browserClickTool, browserTypeTool,
   browserConsoleTool, browserScreenshotTool, browserCloseTool
 } from "./builtin/browser-tools.mjs";
+import { inspectImageTool, isVisionSidecarConfigured } from "./builtin/inspect-image.mjs";
 import { readDocumentTool } from "./builtin/read-document.mjs";
 import { semanticSearchTool } from "./builtin/semantic-search.mjs";
 import { loadSkillTool } from "./builtin/load-skill.mjs";
@@ -153,6 +154,12 @@ export function createRegistry(policy) {
   registry.register(browserConsoleTool);
   registry.register(browserScreenshotTool);
   registry.register(browserCloseTool);
+  // 3.3.0 Thread D, Task D.3: only registered when a vision-sidecar key is
+  // configured — no key means this tool is simply absent, not present and
+  // erroring on every call.
+  if (isVisionSidecarConfigured()) {
+    registry.register(inspectImageTool);
+  }
   registry.register(readDocumentTool);
   registry.register(semanticSearchTool);
   registry.register(loadSkillTool);

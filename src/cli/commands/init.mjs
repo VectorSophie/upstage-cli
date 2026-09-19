@@ -6,6 +6,7 @@
 // stdout/exit-code formatting; no generation logic lives here.
 
 import { generateUpstageMd } from "../../agent/init-generator.mjs";
+import { addChromeDevtoolsMcpEntry } from "../lib/mcp-template.mjs";
 
 function printUsage() {
   process.stdout.write(
@@ -21,10 +22,13 @@ function printUsage() {
       "always preserved.",
       "",
       "Options:",
-      "  --refresh    Force regeneration (documented no-op alias of the default —",
-      "               plain `upstage init` already always regenerates the block;",
-      "               see src/agent/init-generator.mjs for the reasoning)",
-      "  --dry-run    Print the would-be generated content without writing to disk"
+      "  --refresh            Force regeneration (documented no-op alias of the default —",
+      "                       plain `upstage init` already always regenerates the block;",
+      "                       see src/agent/init-generator.mjs for the reasoning)",
+      "  --dry-run            Print the would-be generated content without writing to disk",
+      "  --with-browser-mcp   Also add a chrome-devtools-mcp entry to .mcp.json (advanced",
+      "                       browser debugging, beyond the native browser_* tools) —",
+      "                       offered, never added without this flag"
     ].join("\n") + "\n"
   );
 }
@@ -68,10 +72,18 @@ export async function runInitCommand(rest = []) {
 
   const refresh = rest.includes("--refresh");
   const dryRun = rest.includes("--dry-run");
+  const withBrowserMcp = rest.includes("--with-browser-mcp");
 
   try {
     const result = await generateUpstageMd({ cwd: process.cwd(), refresh, dryRun });
     process.stdout.write(dryRun ? formatDryRunOutput(result) : formatWriteSummary(result));
+
+    if (withBrowserMcp && !dryRun) {
+      const mcpResult = await addChromeDevtoolsMcpEntry(process.cwd());
+      if (mcpResult.action !== "already-present") {
+        process.stdout.write(`Added chrome-devtools-mcp to ${mcpResult.path}\n`);
+      }
+    }
     return 0;
   } catch (err) {
     process.stderr.write(`upstage init: ${err instanceof Error ? err.message : String(err)}\n`);

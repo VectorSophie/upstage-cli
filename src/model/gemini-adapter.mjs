@@ -1,7 +1,11 @@
 import { fetchWithRetry, normalizeUsage } from "./fetch-utils.mjs";
 import { streamResponse, accumulateStream } from "../core/streaming.mjs";
 
-const DEFAULT_MODEL = "gemini-2.0-flash";
+// 3.3.0 Thread D, Task D.2: gemini-2.0-flash was stale (this codebase's
+// pre-existing default) — gemini-3.8-flash is the current stable model
+// with confirmed text/image/video/audio/PDF input, which is what the
+// vision sidecar (Task D.3) needs.
+export const DEFAULT_MODEL = "gemini-3.8-flash";
 const BASE_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 
 function toGeminiRole(role) {
@@ -10,7 +14,33 @@ function toGeminiRole(role) {
   return "user";
 }
 
-function toGeminiMessages(messages) {
+// 3.3.0 Thread D, Task D.1's provider-neutral content-part shape, as far as
+// this adapter accepts it: `msg.content` may be a plain string (unchanged
+// behavior) or an array of `{type:"text", text}` / `{type:"image",
+// source:{type:"base64", data, mimeType}}` parts. Only `type:"base64"`
+// image sources are accepted here — resolving an evidence-store file to
+// base64 happens once, at the tool boundary (inspect_image, Task D.3), so
+// this stays a pure, synchronous function with no file I/O of its own.
+function toGeminiParts(content) {
+  if (typeof content === "string") {
+    return content ? [{ text: content }] : [];
+  }
+  if (!Array.isArray(content)) {
+    const text = JSON.stringify(content ?? "");
+    return text ? [{ text }] : [];
+  }
+  const parts = [];
+  for (const part of content) {
+    if (part?.type === "text" && typeof part.text === "string") {
+      parts.push({ text: part.text });
+    } else if (part?.type === "image" && part.source?.type === "base64") {
+      parts.push({ inlineData: { mimeType: part.source.mimeType, data: part.source.data } });
+    }
+  }
+  return parts;
+}
+
+export function toGeminiMessages(messages) {
   const contents = [];
   for (const msg of messages) {
     if (msg.role === "system") continue; // Gemini uses systemInstruction separately
@@ -37,9 +67,9 @@ function toGeminiMessages(messages) {
       });
       continue;
     }
-    const text = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content ?? "");
-    if (text) {
-      contents.push({ role: toGeminiRole(msg.role), parts: [{ text }] });
+    const parts = toGeminiParts(msg.content);
+    if (parts.length > 0) {
+      contents.push({ role: toGeminiRole(msg.role), parts });
     }
   }
   return contents;

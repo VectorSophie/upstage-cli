@@ -128,3 +128,23 @@ describe("assertReasoningEffortSupported", () => {
     );
   });
 });
+
+// 3.3.0 Thread D, Task D.1: additive modality metadata alongside the
+// existing boolean flags — Solar is confirmed text-only (Upstage's own
+// Pro4 launch materials document no image input), so every known model id
+// gets ["text"]/["text"] until Upstage ships a vision-capable model.
+describe("getModelCapabilities — modality metadata", () => {
+  it("every known Solar model reports text-only input/output modalities", () => {
+    for (const modelId of KNOWN_MODEL_IDS) {
+      const caps = getModelCapabilities(modelId);
+      assert.deepEqual(caps.inputModalities, ["text"]);
+      assert.deepEqual(caps.outputModalities, ["text"]);
+    }
+  });
+
+  it("the fallback (unrecognized model id) also reports text-only modalities", () => {
+    const caps = getModelCapabilities("some-unrecognized-model-id");
+    assert.deepEqual(caps.inputModalities, ["text"]);
+    assert.deepEqual(caps.outputModalities, ["text"]);
+  });
+});

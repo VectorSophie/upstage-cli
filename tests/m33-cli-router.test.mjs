@@ -196,6 +196,18 @@ test("--help at a top-level leaf command prints usage (exit 0, stdout)", async (
   }
 });
 
+// 3.3.0 Thread C, Task C.4
+test("dispatch(['browser', 'install', '--help']) resolves to the real handler's usage", async () => {
+  const io = captureStdio();
+  try {
+    const code = await dispatch(["browser", "install", "--help"]);
+    assert.equal(code, 0);
+    assert.match(io.out.join(""), /Usage: upstage browser install/);
+  } finally {
+    io.restore();
+  }
+});
+
 test("--help passed to a leaf's real handler after positional args still shows usage", async () => {
   // Reaches runMcpShowCommand itself (not router-level interception, since
   // "myserver" precedes "--help"), which handles --help the same way

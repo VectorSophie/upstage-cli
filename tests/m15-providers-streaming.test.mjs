@@ -6,7 +6,7 @@ import { parseSSEChunk, accumulateStream } from "../src/core/streaming.mjs";
 import { normalizeUsage } from "../src/model/fetch-utils.mjs";
 import { UpstageAdapter } from "../src/model/upstage-adapter.mjs";
 import { OpenAIAdapter } from "../src/model/openai-adapter.mjs";
-import { GeminiAdapter } from "../src/model/gemini-adapter.mjs";
+import { GeminiAdapter, toGeminiMessages, DEFAULT_MODEL as GEMINI_DEFAULT_MODEL } from "../src/model/gemini-adapter.mjs";
 
 // ──────────────────────────────────────────────
 // Provider routing
@@ -360,5 +360,37 @@ describe("GeminiAdapter.isConfigured", () => {
   it("returns true when GEMINI_API_KEY set", () => {
     const adapter = new GeminiAdapter({ apiKey: "gem-key" });
     assert.equal(adapter.isConfigured(), true);
+  });
+});
+
+// 3.3.0 Thread D, Task D.2: default model bump (gemini-2.0-flash was stale
+// — gemini-3.8-flash is the current stable model with confirmed image
+// input) + image-part support in message building.
+describe("GeminiAdapter — 3.3.0 Task D.2", () => {
+  it("defaults to gemini-3.8-flash, not the stale gemini-2.0-flash", () => {
+    assert.equal(GEMINI_DEFAULT_MODEL, "gemini-3.8-flash");
+    const adapter = new GeminiAdapter();
+    assert.equal(adapter.model, "gemini-3.8-flash");
+  });
+
+  it("toGeminiMessages still handles plain string content unchanged", () => {
+    const contents = toGeminiMessages([{ role: "user", content: "hello" }]);
+    assert.deepEqual(contents, [{ role: "user", parts: [{ text: "hello" }] }]);
+  });
+
+  it("toGeminiMessages converts an image content-part to Gemini inlineData", () => {
+    const contents = toGeminiMessages([
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "what does this screenshot show?" },
+          { type: "image", source: { type: "base64", data: "ZmFrZS1wbmc=", mimeType: "image/png" } }
+        ]
+      }
+    ]);
+    assert.equal(contents.length, 1);
+    assert.equal(contents[0].role, "user");
+    assert.deepEqual(contents[0].parts[0], { text: "what does this screenshot show?" });
+    assert.deepEqual(contents[0].parts[1], { inlineData: { mimeType: "image/png", data: "ZmFrZS1wbmc=" } });
   });
 });
