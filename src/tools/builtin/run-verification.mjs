@@ -6,6 +6,7 @@ export const runVerificationTool = {
     type: "object",
     properties: {
       stopOnFailure: { type: "boolean" },
+      sandbox: { type: "string", enum: ["local", "docker"] },
       stages: {
         type: "array",
         items: {
@@ -27,7 +28,7 @@ export const runVerificationTool = {
     const results = [];
 
     for (const stage of stages) {
-      const result = await context.executeTool(stage, {}, { onLog: context.onLog });
+      const result = await context.executeTool(stage, { sandbox: args.sandbox }, { onLog: context.onLog });
       const entry = {
         stage,
         ok: result.ok,

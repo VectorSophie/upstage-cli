@@ -10,7 +10,8 @@ export const runShellTool = {
       command: { type: "string" },
       timeoutMs: { type: "number" },
       outputLimit: { type: "number" },
-      networkBlocked: { type: "boolean" }
+      networkBlocked: { type: "boolean" },
+      sandbox: { type: "string", enum: ["local", "docker"] }
     },
     required: ["command"],
     additionalProperties: false
@@ -21,6 +22,8 @@ export const runShellTool = {
       timeoutMs: Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000,
       outputLimit: Number.isInteger(args.outputLimit) ? args.outputLimit : 40000,
       networkBlocked: args.networkBlocked !== false,
+      sandbox: args.sandbox,
+      sessionId: context.session?.id,
       onStdout: (text) => context.onLog?.({ channel: "stdout", text }),
       onStderr: (text) => context.onLog?.({ channel: "stderr", text })
     });

@@ -8,7 +8,8 @@ export const runTypecheckTool = {
     type: "object",
     properties: {
       command: { type: "array", items: { type: "string" } },
-      timeoutMs: { type: "number" }
+      timeoutMs: { type: "number" },
+      sandbox: { type: "string", enum: ["local", "docker"] }
     },
     additionalProperties: false
   },
@@ -23,6 +24,8 @@ export const runTypecheckTool = {
       timeoutMs: Number.isInteger(args.timeoutMs) ? args.timeoutMs : 120000,
       outputLimit: 60000,
       networkBlocked: true,
+      sandbox: args.sandbox,
+      sessionId: context.session?.id,
       onStdout: (text) => context.onLog?.({ stage: "typecheck", channel: "stdout", text }),
       onStderr: (text) => context.onLog?.({ stage: "typecheck", channel: "stderr", text })
     });

@@ -4,6 +4,8 @@ import { tmpdir } from "node:os";
 import { join, basename } from "node:path";
 import { createHash } from "node:crypto";
 
+import { buildDockerRunArgs } from "../../../src/sandbox/docker-flags.mjs";
+
 /**
  * DockerSandbox — SWE-bench style 3-tier layered image cache.
  *
@@ -50,25 +52,16 @@ export class DockerSandbox {
   async exec(command, args = [], { cwd, env } = {}) {
     if (!this._workdir) throw new Error("DockerSandbox.setup() must be called before exec()");
 
-    const containerCwd = "/workspace";
-    const dockerArgs = [
-      "run", "--rm",
-      "--network", this.network === "none" ? "none" : "bridge",
-      "--memory", this.memory,
-      "--cpus", "0.5",
-      "--read-only",
-      "--tmpfs", "/tmp:rw,noexec,nosuid,size=64m",
-      "-v", `${this._workdir}:/workspace:rw`,
-      "-w", containerCwd,
-    ];
-
-    if (env) {
-      for (const [k, v] of Object.entries(env)) {
-        dockerArgs.push("-e", `${k}=${v}`);
-      }
-    }
-
-    dockerArgs.push(this._envImage, command, ...args);
+    const dockerArgs = buildDockerRunArgs({
+      image: this._envImage,
+      workdir: this._workdir,
+      network: this.network === "none" ? "none" : "bridge",
+      memory: this.memory,
+      cpus: "0.5",
+      env,
+      command,
+      commandArgs: args
+    });
 
     const start = Date.now();
     const result = spawnSync("docker", dockerArgs, {

@@ -1,5 +1,8 @@
 import { spawn } from "node:child_process";
 
+import { resolveSandboxExecutor } from "./select-executor.mjs";
+import { writeArtifact } from "../runtime/artifacts.mjs";
+
 const DEFAULT_ALLOWED = new Set([
   // JavaScript / Node
   "node", "npm", "npx", "pnpm", "yarn", "bun",
@@ -53,6 +56,8 @@ function normalizeOptions(options = {}) {
     allowlist = DEFAULT_ALLOWED,
     networkBlocked = false,
     env = process.env,
+    sandbox = process.env.UPSTAGE_SANDBOX === "docker" ? "docker" : "local",
+    sessionId,
     onStdout,
     onStderr
   } = options;
@@ -63,6 +68,8 @@ function normalizeOptions(options = {}) {
     allowlist,
     networkBlocked,
     env,
+    sandbox,
+    sessionId,
     onStdout,
     onStderr
   };
@@ -85,6 +92,37 @@ export async function runSandboxedProcess(binary, args = [], options = {}) {
     if (hasShellMetacharacters(String(arg))) {
       throw new Error("shell metacharacters are blocked in arguments");
     }
+  }
+
+  // Opt-in, fail-closed Docker path (3.3.0 Thread B) — resolveSandboxExecutor
+  // throws DockerUnavailableError rather than falling back to the local
+  // spawn below when sandbox:"docker" was explicitly requested.
+  const dockerExecutor = resolveSandboxExecutor(normalized.sandbox);
+  if (dockerExecutor) {
+    const result = await dockerExecutor.exec(binary, args, {
+      cwd: normalized.cwd,
+      env: normalized.env,
+      timeoutMs: normalized.timeoutMs,
+      outputLimit: normalized.outputLimit,
+      onStdout: normalized.onStdout,
+      onStderr: normalized.onStderr
+    });
+    // Evidence store integration (3.3.0 Thread A) — the run's metadata +
+    // stdout/stderr go to disk as a docker-log artifact; only the {path,
+    // hash, kind, bytes} reference is attached to the result, never the
+    // log bytes themselves. Skipped when no sessionId is available (e.g. a
+    // bare library call with nowhere to file the artifact) — degrades to
+    // "no evidence recorded," never to an error.
+    if (normalized.sessionId) {
+      const { image, network, durationMs, code, stdout, stderr } = result;
+      const artifact = await writeArtifact(normalized.sessionId, {
+        kind: "docker-log",
+        ext: "json",
+        data: JSON.stringify({ image, network, exitCode: code, durationMs, stdout, stderr })
+      });
+      return { ...result, artifact };
+    }
+    return result;
   }
 
   return new Promise((resolve) => {

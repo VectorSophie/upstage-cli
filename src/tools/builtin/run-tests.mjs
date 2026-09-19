@@ -8,7 +8,8 @@ export const runTestsTool = {
     type: "object",
     properties: {
       command: { type: "array", items: { type: "string" } },
-      timeoutMs: { type: "number" }
+      timeoutMs: { type: "number" },
+      sandbox: { type: "string", enum: ["local", "docker"] }
     },
     additionalProperties: false
   },
@@ -20,6 +21,8 @@ export const runTestsTool = {
       timeoutMs: Number.isInteger(args.timeoutMs) ? args.timeoutMs : 180000,
       outputLimit: 80000,
       networkBlocked: true,
+      sandbox: args.sandbox,
+      sessionId: context.session?.id,
       onStdout: (text) => context.onLog?.({ stage: "tests", channel: "stdout", text }),
       onStderr: (text) => context.onLog?.({ stage: "tests", channel: "stderr", text })
     });
