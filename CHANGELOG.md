@@ -5,6 +5,58 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-09-19
+
+**See it, run it, prove it.** 3.2 made upstage-cli a complete installed Upstage platform
+CLI; 3.3 makes its verification loop produce actual evidence instead of a bare pass/fail
+line — real Docker-sandboxed execution, native browser verification (accessibility
+snapshots, click/type, console/screenshot capture) with no Playwright/Puppeteer
+dependency, an optional non-blocking vision sidecar for interpreting screenshots, and a
+shared evidence store everything writes into.
+
+### Added
+- **Evidence store** (`src/runtime/artifacts.mjs`) — content-addressed storage for
+  screenshots, console/network logs, Docker run output, and vision-sidecar responses
+  under `~/.upstage-cli/sessions/<id>/artifacts/<kind>/`, referenced from tool results
+  by `{path, hash, kind, bytes}` rather than inlined as bytes into session JSON.
+  `resetSession()` now cleans up a session's artifact directory too.
+- **Opt-in, fail-closed Docker execution** — `run_shell`/`run_tests`/`run_linter`/
+  `run_typecheck`/`run_verification` all accept `sandbox: "docker"` (or
+  `UPSTAGE_SANDBOX=docker`), running in an isolated container (`--network none`,
+  `--read-only` root, scoped `tmpfs`, resource caps) via a new `DockerExecutor`
+  (`src/sandbox/docker-executor.mjs`), sharing its security-flag construction
+  (`src/sandbox/docker-flags.mjs`) with the eval harness's `DockerSandbox`. Requesting
+  Docker when it's unavailable fails closed (`DOCKER_UNAVAILABLE`) rather than silently
+  falling back to local execution. Docker runs write a `docker-log` evidence artifact
+  when a session is available.
+- **Native browser verification** (`src/browser/`, no Playwright/Puppeteer dependency —
+  speaks Chrome DevTools Protocol directly over the platform's built-in `WebSocket`) —
+  seven new tools: `browser_open`, `browser_snapshot` (accessibility tree, the only
+  observation format), `browser_click`, `browser_type`, `browser_console`,
+  `browser_screenshot`, `browser_close`. `upstage doctor` gains a browser (Chrome)
+  availability check. `upstage browser install` optionally downloads Chrome for Testing
+  (never automatic). `upstage init --with-browser-mcp` optionally adds a
+  `chrome-devtools-mcp` entry to `.mcp.json` for advanced debugging beyond the native
+  tools.
+- **Optional vision sidecar** — `inspect_image(path, question)`, registered only when
+  `GEMINI_API_KEY`/`GOOGLE_API_KEY` is configured (absent key → tool simply isn't
+  registered, never present-but-erroring). `model-capabilities.mjs` gained additive
+  `inputModalities`/`outputModalities` metadata; the Gemini adapter's default model
+  moved off the stale `gemini-2.0-flash` to `gemini-3.8-flash` and now accepts
+  provider-neutral image content-parts.
+- **`run_verification` evidence bundling** — folds Docker-log artifacts it produced
+  itself with browser/vision evidence the agent already gathered into one final
+  `evidence: {...}` result field. Every evidence source is independently optional and
+  never fails the run by its absence.
+
+### Fixed
+- `run_verification` read the wrong `ok` field when delegating to each stage — the
+  *registry's* "did the tool throw" rather than the stage's own reported pass/fail — so
+  a lint/typecheck/test stage that failed without throwing (e.g. a nonzero exit code)
+  was silently reported as passed. `run_verification` also now forwards its `sandbox`
+  choice into every stage it delegates to; previously it silently dropped it for all
+  three.
+
 ## [3.2.0] - 2026-09-19
 
 **Upstage-native consolidation + interoperability + CLI/productization.** 3.1 made the agent
