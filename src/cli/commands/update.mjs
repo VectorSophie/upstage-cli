@@ -10,17 +10,21 @@
 //   - dev-link -> guidance only ("git pull it yourself").
 //   - standalone -> SCOPE NOTE: a real self-update here needs to download a
 //     release asset, verify its checksum, and atomically replace the
-//     running binary. That download/verify/replace machinery does not exist
-//     anywhere on this branch yet (grep confirms: no checksum generation in
-//     scripts/package-binary.mjs or .github/workflows/release.yml, and
-//     Task 7.12 "installer hardening" — which owns that work — has not
-//     landed). Half-building a bespoke, untested checksum/atomic-replace
-//     path here would both duplicate Task 7.12's actual job AND ship
-//     unverified binary-replacement logic, which is the wrong tradeoff for
-//     a stub. So this branch is a thin, clearly-marked TODO: it reports
-//     that self-update isn't available yet and exits non-zero, touching
-//     nothing. Revisit once Task 7.12 lands real checksum-verified release
-//     assets to build on top of.
+//     running binary. Task 7.12 "installer hardening" has since landed that
+//     exact machinery — scripts/install.sh now does checksum download/
+//     verify + extract-to-temp + smoke-test + atomic swap, and
+//     .github/workflows/release.yml now publishes a `.sha256` file per
+//     binary asset — so the missing piece is no longer "the machinery
+//     doesn't exist," it's "no one has adapted install.sh's logic to run
+//     against an already-running process instead of a fresh shell
+//     invocation" (a real but different scope of work: reusing the shell
+//     logic from inside Node/Bun, replacing the current executable while
+//     it's running, is a materially bigger and riskier lift than the
+//     shell-script version suggests — not a small follow-up). So this
+//     branch remains a thin, clearly-marked TODO: it reports that
+//     self-update isn't available yet and exits non-zero, touching
+//     nothing. Revisit as its own scoped task, building on install.sh's
+//     now-real checksum/atomic-swap logic rather than reimplementing it.
 //   - unknown  -> guidance only, nothing removed/changed.
 //
 // None of the branches above ever import/call node:child_process — there is
@@ -147,10 +151,13 @@ export async function runUpdateCommand(rest = [], { fetchImpl, installTypeOverri
   }
 
   if (installType.type === "standalone") {
-    // See this file's header — real download+checksum-verify+atomic-replace
-    // logic belongs to Task 7.12 (installer hardening), not yet landed.
+    // See this file's header — Task 7.12 has landed the checksum-verify/
+    // atomic-swap machinery in scripts/install.sh, but adapting that logic
+    // to replace an already-running binary from inside this process is a
+    // separate, unscoped piece of work, not yet implemented.
     process.stdout.write(
-      "self-update for standalone binaries requires Task 7.12's installer hardening (not yet implemented)\n"
+      "self-update for standalone binaries is not yet implemented — for now, re-run the installer " +
+        "yourself (see scripts/install.sh / the release README)\n"
     );
     return 1;
   }

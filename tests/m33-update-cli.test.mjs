@@ -179,7 +179,7 @@ test("update on a dev-link install prints 'git pull it yourself' guidance and ex
   assert.match(stdout, /git pull/);
 });
 
-test("update on a standalone install reports the self-update stub message (Task 7.12 not yet implemented) and exits non-zero (an unused spawnFn override is also passed, but has no effect)", async () => {
+test("update on a standalone install reports the self-update stub message (not yet implemented) and exits non-zero (an unused spawnFn override is also passed, but has no effect)", async () => {
   let stdout = "";
   const orig = process.stdout.write.bind(process.stdout);
   process.stdout.write = (chunk) => { stdout += String(chunk); return true; };
@@ -190,8 +190,8 @@ test("update on a standalone install reports the self-update stub message (Task 
     process.stdout.write = orig;
   }
   assert.equal(code, 1);
-  assert.match(stdout, /Task 7\.12/);
   assert.match(stdout, /not yet implemented/);
+  assert.match(stdout, /re-run the installer/);
 });
 
 test("update on an unknown install type prints generic guidance and exits non-zero (an unused spawnFn override is also passed, but has no effect)", async () => {
