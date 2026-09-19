@@ -51,7 +51,6 @@ const bashCheck = spawnSync("bash", ["--version"], { encoding: "utf8" });
 const BASH_AVAILABLE = !(bashCheck.error && bashCheck.error.code === "ENOENT");
 
 if (!BASH_AVAILABLE) {
-  // eslint-disable-next-line no-console
   console.log(
     "[m34-install-script] NOTE: no `bash` executable found on PATH in this " +
     "environment — skipping every test in this suite (they run scripts/install.sh " +
@@ -85,7 +84,6 @@ if (BASH_AVAILABLE) {
     rmSync(probeDir, { recursive: true, force: true });
   }
   if (!SYMLINKS_SUPPORTED) {
-    // eslint-disable-next-line no-console
     console.log(
       "[m34-install-script] NOTE: this environment cannot create real symlinks " +
       "(no SeCreateSymbolicLinkPrivilege — common on non-elevated Windows dev " +

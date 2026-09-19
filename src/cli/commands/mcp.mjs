@@ -126,7 +126,7 @@ export async function gatherMcpList({ cwd = process.cwd(), settings } = {}) {
       rows.push({ name: cfg.name, transport: cfg.transport, status: "failed", toolCount: null });
       continue;
     }
-    let toolCount = 0;
+    let toolCount;
     try {
       toolCount = (await client.listTools()).length;
     } catch {

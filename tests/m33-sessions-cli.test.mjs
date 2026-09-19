@@ -236,6 +236,54 @@ test("export (json/jsonl/md): default output never contains a secret-looking wri
   });
 });
 
+// read_document's result carries the full OCR'd/parsed document body under
+// `.markdown` — no raw-content field in its args (just a `path`), so only
+// the result side needs redacting.
+function sessionWithSecretReadDocument(s) {
+  const markdown = `# Contract\n\nAPI_KEY=${FAKE_SECRET}\nSigned by Jane Doe`;
+  s.history.push({ role: "user", content: "please read the scanned contract", at: Date.now() });
+  s.history.push({
+    role: "assistant",
+    content: "Done.",
+    tool_calls: [{
+      id: "call_1",
+      type: "function",
+      function: { name: "read_document", arguments: JSON.stringify({ path: "contract.pdf" }) }
+    }],
+    at: Date.now()
+  });
+  s.history.push({
+    role: "tool",
+    name: "read_document",
+    tool_call_id: "call_1",
+    content: JSON.stringify({ path: "contract.pdf", elementCount: 3, markdown }),
+    at: Date.now()
+  });
+  s.toolResults.push({
+    tool: "read_document",
+    args: { path: "contract.pdf" },
+    result: { ok: true, data: { path: "contract.pdf", elementCount: 3, markdown } },
+    at: Date.now()
+  });
+  return s;
+}
+
+test("export (json/jsonl/md): default output never contains a secret-looking read_document body; --include-tool-io includes it", () => {
+  return withSavedSession(sessionWithSecretReadDocument, async (session) => {
+    for (const format of ["json", "jsonl", "md"]) {
+      const outcome = await gatherSessionsExport({ id: session.id, format });
+      assert.equal(outcome.error, undefined, `${format} export should succeed`);
+      assert.ok(
+        !outcome.result.includes(FAKE_SECRET),
+        `${format} export (default, no --include-tool-io) must NOT contain the secret`
+      );
+    }
+
+    const included = await gatherSessionsExport({ id: session.id, format: "json", includeToolIo: true });
+    assert.ok(included.result.includes(FAKE_SECRET), "--include-tool-io should include the raw content");
+  });
+});
+
 // multi_edit's args.edits[] is a nested array of {oldText, newText,
 // replaceAll} — a different shape from edit_file's flat oldText/newText.
 function sessionWithSecretMultiEdit(s) {
@@ -478,5 +526,71 @@ test("formatSessionAsMarkdown: genuinely human-readable transcript, redacted by 
   assert.ok(!md.includes(FAKE_SECRET));
 
   const full = formatSessionAsMarkdown(session, { includeToolIo: true });
+  assert.ok(full.includes(FAKE_SECRET));
+});
+
+// read_document coverage across all three places a tool call/result can
+// appear (toolResults, history, runtimeEvents) — mirrors sampleSession()
+// above but for read_document's {path, elementCount, markdown} result shape.
+function sampleSessionReadDocument() {
+  const markdown = `# Contract\n\nTOP SECRET ${FAKE_SECRET}`;
+  return {
+    id: "sess-fixture-2",
+    createdAt: 1717200000000,
+    updatedAt: 1717200500000,
+    workspace: { cwd: "/repo" },
+    parentSessionId: null,
+    history: [
+      { role: "user", content: "please read contract.pdf", at: 1 },
+      {
+        role: "assistant",
+        content: "Sure, reading it now.",
+        tool_calls: [{
+          id: "call_1", type: "function",
+          function: { name: "read_document", arguments: JSON.stringify({ path: "contract.pdf" }) }
+        }],
+        at: 2
+      },
+      {
+        role: "tool", name: "read_document", tool_call_id: "call_1",
+        content: JSON.stringify({ path: "contract.pdf", elementCount: 2, markdown }),
+        at: 3
+      }
+    ],
+    toolResults: [
+      {
+        tool: "read_document",
+        args: { path: "contract.pdf" },
+        result: { ok: true, data: { path: "contract.pdf", elementCount: 2, markdown } },
+        at: 3
+      }
+    ],
+    appliedPatches: [],
+    runtimeEvents: [
+      { type: "tool_start", tool: "read_document", args: { path: "contract.pdf" }, at: 2 },
+      { type: "tool_result", tool: "read_document", ok: true, result: { path: "contract.pdf", elementCount: 2, markdown }, at: 3 }
+    ]
+  };
+}
+
+test("read_document: redacted consistently across toolResults, history, and runtimeEvents (json/jsonl/md)", () => {
+  const session = sampleSessionReadDocument();
+
+  const json = formatSessionAsJson(session);
+  assert.ok(!json.includes(FAKE_SECRET));
+  assert.ok(json.includes("document content elided"));
+  const parsed = JSON.parse(json);
+  // toolResults and runtimeEvents (not just history) must both be redacted.
+  assert.ok(!JSON.stringify(parsed.toolResults).includes(FAKE_SECRET));
+  assert.ok(!JSON.stringify(parsed.runtimeEvents).includes(FAKE_SECRET));
+  assert.ok(!JSON.stringify(parsed.history).includes(FAKE_SECRET));
+
+  const jsonl = formatSessionAsJsonl(session);
+  assert.ok(!jsonl.includes(FAKE_SECRET));
+
+  const md = formatSessionAsMarkdown(session);
+  assert.ok(!md.includes(FAKE_SECRET));
+
+  const full = formatSessionAsJson(session, { includeToolIo: true });
   assert.ok(full.includes(FAKE_SECRET));
 });

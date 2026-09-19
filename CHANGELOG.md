@@ -5,6 +5,84 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-09-19
+
+**Upstage-native consolidation + interoperability + CLI/productization.** 3.1 made the agent
+internals capable; 3.2 turns the same codebase into a complete, installable, scriptable
+Upstage platform CLI — a real installed program with `doctor`/`init`, introspection
+namespaces, a hardened installer, and a dev-link workflow — on top of a single shared
+Upstage HTTP service layer, replacing three drifting, untested, hand-rolled HTTP clients.
+
+### Added
+- **Shared Upstage HTTP service layer** (`src/upstage/*.mjs`) — one authenticated,
+  retrying client (`client.mjs`) and one module per capability (documents/OCR,
+  extraction+schema-gen, classification, embeddings, groundedness), now the sole
+  implementation shared by agent tools (`read_document`, `semantic_search`,
+  `check_groundedness`), the new standalone CLI commands below, and the MCP server —
+  replacing three independent, previously-untested `node:https`/`fetch` clients that had
+  drifted out of sync with each other. Fixed two live-correctness bugs found while
+  consolidating: **stale/inconsistent embedding model names** (two different env vars,
+  `UPSTAGE_EMBEDDING_MODEL` vs. an undocumented `UPSTAGE_EMBED_MODEL`, and two different
+  model-name conventions, now unified on one resolution path), and a **stale groundedness
+  model id** (`solar-1-mini-answer-verification` was no longer the live model; corrected).
+- **Seven standalone Upstage-utility commands** — `upstage parse|ocr|extract|schema|
+  classify|embed|groundedness` — run any Document-AI capability from the shell with no
+  agent loop involved, `--json` output, and documented exit codes.
+- **Full introspection/productization CLI surface**: `upstage doctor` (`--json`,
+  secret-free, never fails just because an individual check fails), `upstage mcp
+  list/status/test/tools/show`, `upstage tools/skills/agents/plugins list/show`,
+  `upstage sessions list/show/resume/export` (with redacted-by-default tool I/O, see
+  Fixed below), `upstage config list/get/set/path/edit`, `upstage auth status/test`,
+  `upstage version`/`update`/`uninstall` (uninstall never touches settings/sessions
+  without `--purge`).
+- **Real `/init` and `upstage init`** — generates a non-trivial `UPSTAGE.md` for the
+  current repo; re-running preserves manually-added content outside the generated
+  markers.
+- **Dev-link workflow + installer hardening** — `scripts/dev-link.sh` gets a maintainer
+  to a working `upstage` command against their dev checkout from any directory (detected
+  by `doctor`/`version --verbose`); `scripts/install.sh` now verifies a release checksum,
+  supports pinning `UPSTAGE_VERSION`, and does an atomic install swap instead of a
+  destructive `rm -rf` ahead of confirming the new install is good.
+- **`upstage context`** (+ TUI `/context`) — shows the current context/token budget
+  breakdown standalone. **`upstage models list/info`** — lists/describes the per-model
+  capability table (`src/model/model-capabilities.mjs`) from the shell. **Widened
+  `-e`/`--reasoning-effort` control** — a per-call override, plus the TUI's `/effort`
+  slash command, compose with the pre-existing instance-level reasoning-effort toggle.
+  **`upstage completion bash|zsh|fish|powershell`** — shell completion script generation.
+
+### Fixed
+- **`read_document`'s parsed document content is now redacted from session exports by
+  default.** `src/runtime/session-export.mjs`'s `REDACTED_TOOLS` set covered
+  `write_file`/`edit_file`/`multi_edit`/`apply_patch` but had not been extended to
+  `read_document` (Task 7.7's Document-AI tool) — its result's `.markdown` field is the
+  full OCR'd/parsed text of a scanned document (potentially PII, financial, or legal
+  content), and was leaking into the default, non-opt-in `upstage sessions export`.
+  Elided consistently across `toolResults`, `history`, and `runtimeEvents`, same as the
+  other four redacted tools; still available in full via `--include-tool-io`.
+- Assorted lint cleanups surfaced by the final release review: two `no-useless-assignment`
+  errors, one `preserve-caught-error` (a rethrow now attaches `cause`), one `prefer-const`,
+  plus unused-destructure and stale-`eslint-disable` warnings.
+
+### Not in this release (deferred, explicitly scoped out)
+All of the following are present as router-level stubs today — they print a clear
+"not yet implemented" and exit non-zero rather than silently doing nothing:
+- **`upstage acp`** — an ACP (Agent Client Protocol) server. Real, bounded scope
+  (roughly 5 JSON-RPC methods + permission mapping — comparable in size to the existing
+  MCP client implementation already in this codebase) but deferred to a future release
+  rather than squeezed into 3.2.
+- **`upstage mcp add/remove`** — deferred because a byte-for-byte-safe surgical edit of
+  `.mcp.json` (preserving unrelated servers' `env`/`headers` values untouched) is
+  genuinely harder than a naive parse/stringify round-trip; this plan's own research
+  found a concrete production bug of exactly this kind in prior art. Read-only `mcp`
+  introspection (`list/status/test/tools/show`) shipped regardless.
+- **`upstage plugins install` / `upstage migrate`** — deferred; minimal-marketplace and
+  install-migration scope, respectively, not required for 3.2's core thesis.
+- **`.upstageignore`, `/bug`, and full `/model`+`/doctor` TUI/CLI consolidation** — small
+  comfort additions, deferred as a group. (Partial exception: the TUI's `/model` slash
+  command already calls the same `getModelInfo`/`formatModelInfoHuman` pair as
+  `upstage models info`; `/doctor`'s TUI slash command remains a separate, simpler
+  implementation, not yet reusing `upstage doctor`'s full report.)
+
 ## [3.1.0] - 2026-09-03
 ### Added
 - **Solar Pro4 is now the default model** (`solar-pro4`, up from `solar-pro2`)

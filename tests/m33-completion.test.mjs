@@ -209,7 +209,6 @@ test("upstage completion bash output passes `bash -n` (or a structural fallback 
     const result = spawnSync("bash", ["-n", scriptPath], { encoding: "utf8" });
 
     if (result.error && result.error.code === "ENOENT") {
-      // eslint-disable-next-line no-console
       console.log(
         "[m33-completion] NOTE: no `bash` executable found on PATH in this " +
         "environment — falling back to a structural sanity check instead of " +

@@ -109,7 +109,7 @@ test("embed() extracts vectors from data[].embedding, preserving order", async (
 });
 
 test("embed() honors UPSTAGE_EMBEDDING_MODEL as a base name, suffixing -query/-passage", async () => {
-  let seenModels = [];
+  const seenModels = [];
   await withApiKey(() =>
     withEmbeddingModelOverride("custom-embed-gen3", () =>
       withMockFetch(

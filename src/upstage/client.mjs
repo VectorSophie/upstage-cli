@@ -62,7 +62,7 @@ function resolvePath(baseUrl, path) {
 }
 
 async function parseErrorBody(response) {
-  let text = "";
+  let text;
   try {
     text = await response.text();
   } catch {

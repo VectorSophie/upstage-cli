@@ -30,9 +30,14 @@
 // `failures[].oldText`) — to a short diff-stat-only summary, across all
 // three places they can appear: `toolResults`, `history`, and
 // `runtimeEvents`.
+//
+// `read_document` (Task 7.7's Document-AI tool, src/tools/builtin/read-document.mjs)
+// is redacted for the same reason: its result's `.markdown` field is the
+// full OCR'd/parsed text of a scanned document — potentially PII, financial,
+// or legal content, at least as sensitive as a written file body.
 
 const REDACTED_HINT = "pass --include-tool-io to include";
-const REDACTED_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "apply_patch"]);
+const REDACTED_TOOLS = new Set(["write_file", "edit_file", "multi_edit", "apply_patch", "read_document"]);
 
 function safeJsonParse(text) {
   if (typeof text !== "string") return null;
@@ -94,9 +99,17 @@ function elideArgsForTool(tool, args) {
  *     bodies — worse than a preview) and the mirrored
  *     `.rollbackPatch.newContent`
  *   - multi_edit: `.failures[].oldText` (a raw, if 60-char-truncated, echo
- *     of the requested oldText — still enough to leak a short secret) */
+ *     of the requested oldText — still enough to leak a short secret)
+ *   - read_document: `.markdown` (the full parsed/OCR'd document content) */
 function elideResultData(tool, data) {
   if (!data || typeof data !== "object") return data;
+
+  if (tool === "read_document") {
+    if (typeof data.markdown === "string") {
+      return { ...data, markdown: elideRawText(data.markdown, "document content") };
+    }
+    return data;
+  }
 
   if (tool === "apply_patch") {
     const out = { ...data };
@@ -282,7 +295,7 @@ function renderVerification(events) {
   if (items.length === 0) return [];
   const lines = ["## Verification", ""];
   for (const e of items) {
-    const { type, at, timestamp, ...rest } = e;
+    const { type, at: _at, timestamp: _timestamp, ...rest } = e;
     lines.push(`- **${type}**: ${JSON.stringify(rest)}`);
   }
   lines.push("");
@@ -293,7 +306,7 @@ function renderTokenUsage(events) {
   const items = (events || []).filter((e) => e?.type === "token_usage");
   if (items.length === 0) return [];
   const last = items[items.length - 1];
-  const { type, at, timestamp, ...rest } = last;
+  const { type: _type, at: _at, timestamp: _timestamp, ...rest } = last;
   return ["## Token Usage", "", "```json", JSON.stringify(rest, null, 2), "```", ""];
 }
 

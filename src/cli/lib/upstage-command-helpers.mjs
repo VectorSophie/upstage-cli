@@ -67,7 +67,7 @@ export function resolveTextOrFile(value) {
     try {
       return readFileSync(filePath, "utf8");
     } catch (err) {
-      throw new Error(`could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`);
+      throw new Error(`could not read file "${filePath}": ${err instanceof Error ? err.message : String(err)}`, { cause: err });
     }
   }
   return value;
