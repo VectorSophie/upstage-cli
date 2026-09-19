@@ -73,7 +73,7 @@ function toSerializable(value) {
   return sanitizeValue(value);
 }
 
-function sessionRoot() {
+export function sessionRoot() {
   return join(os.homedir(), ".upstage-cli", "sessions");
 }
 
@@ -268,5 +268,10 @@ export async function loadLatestSession(cwd) {
 
 export async function resetSession(id) {
   await rm(sessionPath(id), { force: true });
+  // Session storage is a flat `<id>.json` file, but 3.3's evidence store
+  // (src/runtime/artifacts.mjs) writes binary evidence under a `<id>/`
+  // directory alongside it — remove that too, or artifacts silently
+  // outlive the session that produced them.
+  await rm(join(sessionRoot(), id), { recursive: true, force: true });
   await removeSessionFromIndex(id);
 }
