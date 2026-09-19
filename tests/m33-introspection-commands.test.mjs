@@ -103,16 +103,17 @@ function captureStdio() {
 }
 
 // The actual current builtin tool count, derived from the real registry
-// rather than hardcoded — CLAUDE.md currently documents 36, but per this
-// task's own failure-mode note, that number is verified here, not assumed.
+// rather than hardcoded — CLAUDE.md currently documents 43 (36 + the seven
+// browser_* tools added in 3.3.0 Session 3), but per this task's own
+// failure-mode note, that number is verified here, not assumed.
 const BUILTIN_TOOL_COUNT = createRegistry({ ...DEFAULT_POLICY }).list().length;
 
 // ═══════════════════════════════════════════════════════════════════════
 // tools list/show
 // ═══════════════════════════════════════════════════════════════════════
 
-test("BUILTIN_TOOL_COUNT sanity: currently 36, matching CLAUDE.md's documented count", () => {
-  assert.equal(BUILTIN_TOOL_COUNT, 36);
+test("BUILTIN_TOOL_COUNT sanity: currently 43, matching CLAUDE.md's documented count", () => {
+  assert.equal(BUILTIN_TOOL_COUNT, 43);
 });
 
 function buildFixtureRegistry() {

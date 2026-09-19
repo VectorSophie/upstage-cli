@@ -40,6 +40,7 @@ import { getIndexHealth } from "../../indexer/intelligence.mjs";
 import { PARSERS } from "../../indexer/parsers/adapter.mjs";
 import { detectInstallType } from "../lib/install-type.mjs";
 import { detectProjectCommands } from "../lib/command-detection.mjs";
+import { findChrome } from "../../browser/discovery.mjs";
 
 // Short — a doctor sweep must never hang on a misbehaving MCP server. This
 // bounds both the connect handshake and any request made during it (see
@@ -213,7 +214,7 @@ async function gatherMcpStatus(cwd, settings) {
   // Only the mcp-sourced tool count is computed here — it's the one piece
   // of enrichment that's actually surfaced (in the "MCP servers" check
   // below) and directly related to what this function already connected
-  // to. `createRegistryWithExtensions` also registers the ~36 builtin
+  // to. `createRegistryWithExtensions` also registers the ~43 builtin
   // tools as a side effect of building a registry at all, but that count
   // isn't reported by any check in this module, so it's deliberately not
   // extracted here — no point paying attention to a number nothing reads.
@@ -325,6 +326,14 @@ function buildVerificationSection(cwd) {
       return cmds.test
         ? { status: "pass", detail: `${cmds.test.script}: ${cmds.test.command}` }
         : { status: "warn", detail: "not detected" };
+    }],
+    // 3.3.0 Thread C, Task C.2 — never auto-downloads a browser, just
+    // reports whether browser_* verification tools have one to use.
+    ["browser (Chrome)", async () => {
+      const chromePath = await findChrome();
+      return chromePath
+        ? { status: "pass", detail: chromePath }
+        : { status: "warn", detail: "no Chrome/Chromium found — run `upstage browser install`, or install Chrome, to use browser_* verification tools" };
     }]
   ]);
 }

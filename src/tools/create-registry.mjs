@@ -31,6 +31,10 @@ import { webFetchTool } from "./builtin/web-fetch.mjs";
 import { webSearchTool } from "./builtin/web-search.mjs";
 import { todoWriteTool, todoReadTool } from "./builtin/todo.mjs";
 import { checkGroundednessTool } from "./builtin/check-groundedness.mjs";
+import {
+  browserOpenTool, browserSnapshotTool, browserClickTool, browserTypeTool,
+  browserConsoleTool, browserScreenshotTool, browserCloseTool
+} from "./builtin/browser-tools.mjs";
 import { readDocumentTool } from "./builtin/read-document.mjs";
 import { semanticSearchTool } from "./builtin/semantic-search.mjs";
 import { loadSkillTool } from "./builtin/load-skill.mjs";
@@ -142,6 +146,13 @@ export function createRegistry(policy) {
   registry.register(todoWriteTool);
   registry.register(todoReadTool);
   registry.register(checkGroundednessTool);
+  registry.register(browserOpenTool);
+  registry.register(browserSnapshotTool);
+  registry.register(browserClickTool);
+  registry.register(browserTypeTool);
+  registry.register(browserConsoleTool);
+  registry.register(browserScreenshotTool);
+  registry.register(browserCloseTool);
   registry.register(readDocumentTool);
   registry.register(semanticSearchTool);
   registry.register(loadSkillTool);

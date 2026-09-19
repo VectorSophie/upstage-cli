@@ -261,3 +261,18 @@ test("runDoctorCommand -h/--help prints usage and exits 0 without running checks
   await Promise.resolve();
   assert.equal(code, 0);
 });
+
+// --- 3.3.0 Thread C, Task C.2: Chrome/browser availability check ---
+
+test("Verification section reports a browser (Chrome) check, pass or warn but never crashing the sweep", () => {
+  return withTempDir(async (dir) => {
+    const report = await runDoctorChecks({ cwd: dir });
+    const verification = report.sections.find((s) => s.name === "Verification");
+    const browserCheck = verification.checks.find((c) => c.name === "browser (Chrome)");
+    assert.ok(browserCheck, "expected a browser (Chrome) check in the Verification section");
+    assert.ok(["pass", "warn"].includes(browserCheck.status));
+    if (browserCheck.status === "warn") {
+      assert.match(browserCheck.detail, /browser install/);
+    }
+  });
+});

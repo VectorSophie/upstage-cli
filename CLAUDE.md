@@ -56,7 +56,7 @@ src/cli/index.mjs           (arg parsing, session load, registry init)
 
 `src/tools/registry.mjs` is the single hub for all tools. Three sources feed it:
 
-- **Builtin** (`src/tools/builtin/`) — 36 core tools spanning file I/O, search/navigation, tree-sitter intelligence, execution, web, GitHub, Korean-market skills support (`load_skill`, `semantic_search`, `read_document`, `check_groundedness`), and subagent dispatch
+- **Builtin** (`src/tools/builtin/`) — 43 core tools spanning file I/O, search/navigation, tree-sitter intelligence, execution (incl. opt-in Docker sandboxing, `src/sandbox/`), browser verification (`browser_*`, CDP-based, `src/browser/`), web, GitHub, Korean-market skills support (`load_skill`, `semantic_search`, `read_document`, `check_groundedness`), and subagent dispatch
 - **Discovered** — external command outputs JSON tool specs at startup; tools are invoked via subprocess with base64-encoded payload
 - **MCP** — Model Context Protocol servers loaded from `.mcp.json`, both stdio and Streamable HTTP transports, client and server directions both implemented
 

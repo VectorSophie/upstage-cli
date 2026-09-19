@@ -1,0 +1,11 @@
+<!doctype html>
+<html>
+<head><title>upstage-cli browser fixture</title></head>
+<body>
+  <h1>Fixture Page</h1>
+  <button id="counter-btn" onclick="document.getElementById('counter').textContent = String(Number(document.getElementById('counter').textContent) + 1); console.log('clicked, count now ' + document.getElementById('counter').textContent);">Click me</button>
+  <span id="counter">0</span>
+  <input id="name-input" type="text" aria-label="Name" />
+  <script>console.log('fixture loaded');</script>
+</body>
+</html>
