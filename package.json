@@ -1,7 +1,7 @@
 {
   "name": "@jackochesstern/upstage-cli",
-  "version": "3.1.0",
-  "description": "Agentic coding assistant powered by Upstage Solar Pro2 — TUI, 30 built-in tools, MCP support, evaluation harness",
+  "version": "3.2.0",
+  "description": "Agentic coding assistant powered by Upstage Solar Pro4 — TUI, 36 built-in tools, MCP support, standalone Upstage CLI (parse/extract/classify/embed/groundedness), evaluation harness",
   "license": "MIT",
   "author": "VectorSophie",
   "homepage": "https://github.com/VectorSophie/upstage-cli#readme",
