@@ -51,9 +51,21 @@ test("runSandboxedProcess with sandbox:'local' (default) is unaffected", async (
 });
 
 test("UPSTAGE_SANDBOX=docker env var is a default when args.sandbox is omitted", async () => {
+  // Same gating as the fail-closed test above — GitHub Actions' hosted
+  // ubuntu-latest runners ship Docker pre-installed and running, so on a
+  // machine where Docker genuinely IS available this env-default request
+  // succeeds instead of failing closed. That's still correct behavior
+  // (this test only asserts the env var reaches sandbox selection, not
+  // that Docker is unavailable) — verified separately below when Docker
+  // is available, rather than asserting a rejection that wouldn't hold.
   const prev = process.env.UPSTAGE_SANDBOX;
   process.env.UPSTAGE_SANDBOX = "docker";
   try {
+    if (DockerExecutor.isAvailable()) {
+      const result = await runSandboxedProcess("echo", ["hi"], { cwd: process.cwd() });
+      assert.equal(result.ok, true);
+      return;
+    }
     await assert.rejects(
       () => runSandboxedProcess("echo", ["hi"], { cwd: process.cwd() }),
       (err) => err.code === "DOCKER_UNAVAILABLE"
@@ -61,6 +73,28 @@ test("UPSTAGE_SANDBOX=docker env var is a default when args.sandbox is omitted",
   } finally {
     if (prev === undefined) delete process.env.UPSTAGE_SANDBOX;
     else process.env.UPSTAGE_SANDBOX = prev;
+  }
+});
+
+test("sandbox:'docker' never forwards the full host process.env by default (no wholesale env leak)", async () => {
+  // Real bug found on a Docker-available machine (2026-09-19): exec.mjs
+  // defaults `env` to the full `process.env` for the LOCAL executor (always
+  // correct — local execution already runs in the host's own env) but was
+  // forwarding that same default into the Docker path too, which on this
+  // Windows dev box overwrote the container's Linux PATH with the host's
+  // Windows PATH and broke binary lookup entirely — and on any host,
+  // leaks every host env var (secrets included) into the container by
+  // default. Exactly what the design doc's Docker security taste
+  // ("env allowlist, never wholesale process.env") ruled out.
+  if (!DockerExecutor.isAvailable()) return;
+  const sentinelName = "UPSTAGE_TEST_HOST_ONLY_SENTINEL";
+  process.env[sentinelName] = "leaked-if-present";
+  try {
+    const result = await runSandboxedProcess("env", [], { sandbox: "docker", cwd: process.cwd() });
+    assert.equal(result.ok, true, result.stderr);
+    assert.ok(!result.stdout.includes(sentinelName), "host env var must not be forwarded into the Docker container by default");
+  } finally {
+    delete process.env[sentinelName];
   }
 });
 

@@ -99,9 +99,17 @@ export async function runSandboxedProcess(binary, args = [], options = {}) {
   // spawn below when sandbox:"docker" was explicitly requested.
   const dockerExecutor = resolveSandboxExecutor(normalized.sandbox);
   if (dockerExecutor) {
+    // Deliberately `options.env` (the caller's raw input), NOT
+    // `normalized.env` — normalizeOptions() defaults env to the full
+    // `process.env` for the LOCAL executor below (correct: local execution
+    // already runs in the host's own env). Forwarding that same default
+    // into the container would leak every host env var (secrets included)
+    // and — concretely, on Windows — overwrite the container's Linux PATH
+    // with the host's Windows PATH, breaking binary lookup entirely. Only
+    // an env object the caller explicitly passed is forwarded to Docker.
     const result = await dockerExecutor.exec(binary, args, {
       cwd: normalized.cwd,
-      env: normalized.env,
+      env: options.env,
       timeoutMs: normalized.timeoutMs,
       outputLimit: normalized.outputLimit,
       onStdout: normalized.onStdout,
