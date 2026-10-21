@@ -4,7 +4,7 @@
 // and the real src/tools builtins. No Docker, no model API.
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, symlinkSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync, symlinkSync, lstatSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -119,10 +119,24 @@ for (const mode of ["native", "docker"]) {
     });
 
     it("rejects writes through a dangling file symlink pointing outside", { skip: CAN_FILE_SYMLINK ? false : "host cannot create file symlinks (Windows without Developer Mode)" }, async () => {
-      symlinkSync(join(outside, "planted.txt"), join(ws, "dangling.txt"));
+      const link = join(ws, "dangling.txt");
+      const isLink = () => { try { return lstatSync(link).isSymbolicLink(); } catch { return false; } };
+      symlinkSync(join(outside, "planted.txt"), link);
       const { registry } = await build();
-      const r = await registry.execute("write_file", { path: "dangling.txt", content: "x" }, { cwd: ws });
-      assert.equal(r.ok, false);
+      const write = () => registry.execute("write_file", { path: "dangling.txt", content: "x" }, { cwd: ws });
+      if (mode === "docker") {
+        // setup drops escaping links (dangling counts as escaping), so the
+        // same name is now an ordinary in-workspace file
+        assert.ok(!isLink(), "escaping link removed at setup");
+        assert.equal((await write()).ok, true);
+        assert.ok(lstatSync(link).isFile());
+        rmSync(link);
+        // a link planted later (e.g. by a container command) hits the per-call guard
+        symlinkSync(join(outside, "planted.txt"), link);
+      }
+      const r = await write();
+      assert.equal(r.ok, false, "write through an escaping link must be rejected");
+      assert.ok(isLink(), "rejected write leaves the link untouched");
       assert.ok(!existsSync(join(outside, "planted.txt")));
     });
   });
