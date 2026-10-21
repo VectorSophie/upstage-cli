@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { promptReview } from "../../evaluation/human-review.mjs";
 
-export async function reviewCommand(argv, options = {}) {
+export async function reviewCommand(argv) {
   const runPath = argv[0];
   if (!runPath) {
     console.error("Usage: harness review <run.json>");

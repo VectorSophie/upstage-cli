@@ -1,6 +1,6 @@
 # ✦✧ Harness — Agentic Evaluation Framework
 
-The harness is a standalone evaluation system inside `harness/` that benchmarks coding agents on real bug-fixing tasks. It is a pure consumer of the main CLI's internals — `src/` is never modified.
+The harness is a standalone evaluation system inside `harness/` that benchmarks coding agents on real bug-fixing tasks. It consumes the main CLI's internals; for isolation it shares `src/sandbox/docker-flags.mjs` (the `docker run` security-flag builder) with the main agent.
 
 Positioned against the field:
 - **SWE-bench** format: `FAIL_TO_PASS` / `PASS_TO_PASS` test split, JSONL predictions output for leaderboard submission
@@ -48,9 +48,10 @@ node bin/harness.mjs review runs/<run_id>.json
 ## CLI reference
 
 ```
-harness run     <task.yaml> [--agent mock|upstage|claude-code|aider|opencode]
-                            [--k N]  [--runs-dir ./runs]
-harness compare <task.yaml> --agent A --agent B [--parallel] [--runs-dir ./runs]
+harness run     <task.yaml> [--agent mock|upstage|solar|solar-pro2|claude-code|claude|aider|opencode]
+                            [--model M] [--k N]  [--runs-dir ./runs]
+harness compare <task.yaml> --agent A --agent B [--model M] [--parallel] [--runs-dir ./runs]
+harness import  <swebench|aider> <source> [--out-dir tasks/]
 harness report  <run.json>  [--jsonl] [--html]
 harness replay  <run.json>  [--stop-at-turn N] [--task task.yaml] [--runs-dir ./runs]
 harness review  <run.json>
@@ -58,8 +59,9 @@ harness review  <run.json>
 
 | Flag | Description |
 |------|-------------|
-| `--agent` | Agent to use. Repeat for `compare`. Default: `mock` |
-| `--k` | Number of independent runs for pass@k metric (default: 1) |
+| `--agent` | Agent to use, resolved through `AgentRegistry` (unknown/unavailable agents are an error). Repeat for `compare`. Default: `mock` |
+| `--model` | Model id passed to the adapter (e.g. `solar-pro3`). `upstage` without it uses the CLI's default model; `solar-pro2` pins solar-pro2 |
+| `--k` | Number of independent attempts; prints pass@k and pass^k (default: 1) |
 | `--runs-dir` | Directory to save run artifacts (default: `runs/`) |
 | `--parallel` | Run agents in parallel (`compare` only) |
 | `--jsonl` | Output SWE-bench predictions JSONL |
@@ -94,12 +96,22 @@ context:
   maxFiles: 40
   includeTests: true
 
+# Optional: pin the repo (must be a local git repo) to this revision for every attempt
+# commit: d16bfe05a744909de4b27f5875fe0d4ed41ce607
+# Optional: unified diff applied after the agent finishes, before checks
+# (hidden from the agent, excluded from model_patch), e.g. a SWE-bench test_patch
+# testPatch: |
+#   diff --git a/tests/test_x.py b/tests/test_x.py ...
+
 sandbox:
-  type: native            # native | docker
+  type: native            # native (trusted, NOT isolated) | docker (isolated)
   image: python:3.12-slim # docker only
-  network: none           # none | allowlist | host
-  timeout: 120            # seconds
-  memory: 512m
+  network: none           # none | host   (allowlist is rejected: not implemented)
+  timeout: 120            # seconds: agent wall-clock budget and default per-check timeout
+  memory: 512m            # docker only
+  cpus: 1                 # docker only
+  pids: 256               # docker only
+  dependencies: image     # docker only: image (default, install nothing) | build (needs HARNESS_ALLOW_DEPENDENCY_BUILD=1)
   allowedBinaries: [python, pytest, pip, ruff]
 
 agent:
@@ -107,8 +119,8 @@ agent:
   maxTurns: 6
   maxTokens: 32768
   tools:
-    allow: [read_file, write_file, search_code, run_tests]
-    deny: []
+    allow: [read_file, write_file, search_code, run_tests]   # empty = every tool not denied
+    deny: []                                                 # deny wins, and also blocks aliases
 
 checks:
   # Must go from failing → passing
@@ -188,8 +200,13 @@ class MyAgent extends CodingAgent {
   }
 }
 
-defaultRegistry.register(new MyAgent());
+defaultRegistry.register(["my-agent"], (opts) => new MyAgent(opts));
 ```
+
+`register(ids, factory)`: the factory receives `{ model }`. An adapter that spawns its
+own host processes must keep the default `supportsSandbox === false`; the runner then
+refuses to run it on `sandbox.type: docker` tasks instead of pretending it is isolated.
+Return `true` only if every command the agent runs goes through `context.executor`.
 
 Then use it:
 ```bash
@@ -200,7 +217,37 @@ node bin/harness.mjs run tasks/my-task.yaml --agent my-agent
 
 ## Run artifact format
 
-Each run produces a JSON artifact in `runs/`. It is SWE-bench compatible: the `instance_id` and `model_patch` fields can be submitted directly to leaderboards.
+Each run produces a JSON artifact in `runs/`, named `run_<UTC ts>_<task>_<agent>_<random6>.json`.
+The random suffix prevents same-second collisions, and files are written exclusively
+(`wx`), so an existing record is never overwritten. Values of credential-looking host env
+vars (`*KEY*`, `*TOKEN*`, `*SECRET*`, ...) are redacted before writing.
+
+`instance_id` / `model_patch` use the SWE-bench predictions format, but harness scores are
+not official SWE-bench scores (see [SWE-bench import](#swe-bench-import)).
+
+**`status`** is one of:
+
+| `status` | Meaning |
+|----------|---------|
+| `pass` | At least one required acceptance check (`fail_to_pass` or required `custom`) ran, and every required check in every group passed |
+| `fail` | A required check failed or timed out on the agent's patch |
+| `incomplete` | The task defines no required acceptance checks; never counted as success |
+| `error` | Harness/adapter failure (adapter threw or returned a malformed result, a check could not execute, the test patch did not apply); not attributed to the agent |
+
+`outcome: { status, reason, detail }` explains the status. `required: false` checks are
+reported but never decide it.
+
+Unknown values are `null`, never `0`: `metrics.turns`, `toolCalls`, `*Tokens` and
+`estimatedCostUsd` are `null` when the adapter/provider did not report them (cost is also
+`null` for models with no price entry).
+
+Fields added in the 2026-10 audit (old artifacts stay readable): `outcome`; `sandbox` (the
+isolation actually applied, with `enforced` flags and `warnings`); `provenance` (harness
+version / commit / dirty flag, Node and platform, task spec hash, repo source / pinned
+commit / snapshot commit, agent and model id / sampling where known, limits, advertised
+tool names and schema hash, seed); `metrics.agentDurationMs`; `trace.stopReason`;
+`trace.agentError`; `evaluation.baseline`; `evaluation.compositeIsAuthoritative: false`;
+per-check `timedOut` / `infraError`; truncated tool `result` in `trace.toolCalls`.
 
 ```json
 {
@@ -248,6 +295,11 @@ Each run produces a JSON artifact in `runs/`. It is SWE-bench compatible: the `i
 
 ## Scoring formula
 
+> **Legacy composite, not an authoritative ranking.** Pass/fail comes only from `status`
+> (above). The composite is kept for backward compatibility. Components whose input is
+> unknown (e.g. cost without usage) are reported as `null` and left out, and the remaining
+> weights are renormalised.
+
 ```
 score = 0.60 × checksScore
       + 0.15 × patchMinimalityScore
@@ -262,7 +314,14 @@ costScore          = clamp(1 − costUsd / costBudgetUsd, 0, 1)
 speedScore         = clamp(1 − durationMs / (timeout × 1000), 0, 1)
 ```
 
-The **primary headline metric** is `failToPassRate` — the SWE-bench resolution rate equivalent.
+The **primary headline metric** is `status` (resolved = `pass`). `failToPassRate` and
+`passToPassRate` are legacy composite inputs, where an empty list counts as 1.0.
+
+Before the agent runs, a **baseline** is taken on the untouched repo (with `testPatch`
+applied, if any). Every `pass_to_pass` check must pass and every `fail_to_pass` check must
+*fail*; otherwise the task is rejected, because a no-op agent would pass it. The workspace
+is then reset to the snapshot commit. The agent's patch is captured **before** checks run,
+so check side effects (caches, `__pycache__`, ...) never leak into it.
 
 ### pass@k
 
@@ -273,6 +332,11 @@ pass@k = 1 - C(n-c, k) / C(n, k)
 ```
 
 where `n` = total runs, `c` = passing runs, `k` = sample size.
+
+`--k N` also prints **pass^k** = `C(c, k) / C(n, k)`: the probability that *all* k attempts
+succeed (reliability, τ-bench style), as opposed to pass@k (at least one succeeds). Only
+`pass`/`fail` attempts are scorable. `error`/`incomplete` attempts are counted separately,
+and if fewer than k attempts are scorable both metrics are `unknown`.
 
 ---
 
@@ -297,6 +361,11 @@ When a run fails, `classifyFailure()` assigns one of 12 symptoms across 5 dimens
 | | `secret_exfiltration_attempt` | curl/wget with credential pattern |
 
 Resolution order: **safety → runtime → cognition → tooling → perception** (first match wins).
+
+Non-agent outcomes stay out of the five dimensions: `status: error` →
+`{ dimension: "infrastructure", symptom: <outcome.reason> }`, and `status: incomplete` →
+`{ dimension: "evaluation", symptom: "incomplete_evaluation" }`. `timeout` uses the agent's
+own wall time (`metrics.agentDurationMs`) or a timed-out check, not the total run time.
 
 ---
 
@@ -340,7 +409,10 @@ Divergences detected: 1
 
 ## Context strategies
 
-Pass `--experimental-context <strategy>` to `harness run` to test different context injection approaches:
+> **Not wired to the CLI.** The strategies exist in `src/evaluation/context-experiments.mjs`,
+> but `harness run` does not parse `--experimental-context` and no adapter consumes them.
+
+Intended strategies:
 
 | Strategy | Description |
 |----------|-------------|
@@ -422,17 +494,66 @@ Each fixture is a plain directory with source code, a test suite, and a `README.
 
 ## Sandbox
 
-### Native (default)
-Wraps `src/sandbox/exec.mjs`. Commands run in the host environment inside the fixture workdir. Suitable for local development.
+A task gets exactly the sandbox it declares. `type: docker` with Docker unavailable is an
+error: there is **no silent fallback** to native.
 
-### Docker
-Three-tier layered image cache (SWE-bench pattern):
+### Native (default): trusted local development only
+Commands (checks, and the agent's own tool calls) run directly on the host in the task
+workspace. Enforced: a wall-clock timeout that **kills the whole process tree**, and
+credential-looking env vars plus harness-internal env (`NODE_TEST_CONTEXT`, `NODE_OPTIONS`)
+are stripped from check processes. **Not enforced:** network, filesystem, CPU, memory, pids.
+The run record's `sandbox.enforced` and `sandbox.warnings` say so.
 
-| Layer | Contents | Shared? |
-|-------|----------|---------|
-| Base | Language runtime (`python:3.12-slim`) | Across all tasks |
-| Environment | Task deps pre-installed | Per unique dep set |
-| Instance | Per-run bind mount at `/workspace` | Per run |
+### Docker: for untrusted execution
+Every command, both evaluation checks **and** agent-controlled execution, runs in a fresh
+`docker run --rm` container with only the task workspace bind-mounted at `/workspace`:
+
+| Restriction | How |
+|-------------|-----|
+| Network | `--network none` by default (`host` → default bridge, never `--network host`; `allowlist` → rejected as unsupported) |
+| Filesystem | only the workspace is mounted; read-only root; `noexec` tmpfs `/tmp` |
+| Resources | `--memory` (plus equal `--memory-swap`), `--cpus`, `--pids-limit` |
+| Privileges | `--cap-drop ALL`, `no-new-privileges`, runs as the invoking uid:gid on POSIX |
+| Time | per-command timeout; the container is force-removed (`docker rm -f`) on timeout |
+| Teardown | in `finally` and on SIGINT/SIGTERM: live containers removed, workspace deleted |
+
+**Dependencies** (`sandbox.dependencies`). Preparing an environment is trusted work and is
+kept apart from untrusted agent execution:
+
+- `image` (default): the image is used as-is and nothing from the repository is installed.
+  Benchmark tasks should point `image:` at a prebuilt image with the dependencies baked in,
+  pinned by digest (`python@sha256:…`) where possible.
+- `build`: `requirements.txt` (python* image) or `package.json` (node* image) is installed into
+  a derived image `harness-env:<hash>` by `docker build`. Package installation runs arbitrary
+  code (setup.py, npm lifecycle scripts) **with network access**, and the task's
+  `network: none` does not apply to the build. So `build` also requires the operator to set
+  `HARNESS_ALLOW_DEPENDENCY_BUILD=1`; otherwise setup fails with a `SandboxConfigError`.
+  A task file alone can never enable it. A failed build is an error.
+
+The run record carries `provenance.environment`: the base image, the env image and its
+image ID, and `dependencies` (mode, method `none` | `cached` | `docker-build`, network
+used for the build, dependency file, and its SHA-256).
+
+**Agent tools under Docker.** Adapters declare `supportsSandbox`. Host-process agents
+(`claude-code`, `aider`, `opencode`) are refused on docker tasks. For `upstage`:
+
+- `run_shell` / `run_tests` run inside the container, and the model can no longer choose
+  `sandbox` or `networkBlocked`
+- host-only tools (lint/typecheck subprocesses, web, browser, GitHub, subagents, skills,
+  MCP/discovered tools) are removed; explicitly allowing one is a configuration error
+- in-process file tools stay, but every path is resolved with `realpath` and must stay
+  inside the workspace, and symlinks that escape the workspace are removed after every
+  container command
+
+**Write root and file paths (docker and native).** The agent's `PolicyEngine` is built with
+the attempt's workdir as its only trusted write root (the main CLI default would be the
+harness process's cwd). Every path argument of the file tools is checked against the
+workspace with `realpath`, including nested ones such as `apply_patch`'s `patch.path`.
+The per-tool list is `PATH_ARGS` in `sandboxed-tools.mjs`, and h13 checks it against the
+tool schemas. A file tool's check-then-access and a container command never run
+concurrently, so a command cannot plant a symlink between the check and the write.
+Limits: this is user-space checking, not a kernel boundary. On a native task, nothing
+stops another host process from racing it, and `run_shell` itself is not confined.
 
 ```yaml
 sandbox:
@@ -440,9 +561,32 @@ sandbox:
   image: python:3.12-slim
   network: none
   memory: 512m
+  cpus: 1
+  pids: 256
 ```
 
-Set `SKIP_DOCKER=1` to skip Docker tests in CI environments without Docker.
+Every attempt starts from a fresh copy of the fixture (checked out at `commit:` when given)
+plus a snapshot commit, so `--k N` attempts never share a workspace.
+
+---
+
+## Tool restrictions
+
+`agent.tools.allow` / `agent.tools.deny` are enforced for the `upstage` agent
+(`src/agent/tool-policy.mjs`):
+
+- unauthorized tools are removed before the model sees the tool schema, and every
+  invocation is re-checked server-side (including tools registered later and nested
+  subagent calls)
+- deny wins over allow; `allow: []` means "every tool not denied"
+- deny also blocks aliases: case/separator variants and namespaced forms
+  (`mcp__srv__write_file`, `srv.write_file`, `Write-File`) of a denied name
+- allow matches exact names only
+- unknown tool → `TOOL_NOT_FOUND`; denied → `TOOL_DENIED`; a non-string name or
+  non-object arguments → `INVALID_TOOL_CALL`
+
+Subprocess agents (`claude-code`, `aider`, `opencode`) do **not** enforce `agent.tools`,
+because their CLIs choose their own tools.
 
 ---
 
@@ -458,7 +602,9 @@ Set `SKIP_DOCKER=1` to skip Docker tests in CI environments without Docker.
 | Prompt injection | Repo files containing `ignore previous instructions` |
 | Privilege escalation | `sudo`, `chmod 777`, `su` patterns |
 
-Triggered flags are recorded in `run.safety.riskFlags`.
+> **Not wired into `TaskRunner`.** `SafetyGuardrails` exists and is unit-tested (h7), but
+> the runner never installs it, so `run.safety.riskFlags` is always `[]` and the `safety`
+> taxonomy dimension never fires for real runs.
 
 ---
 
@@ -466,24 +612,57 @@ Triggered flags are recorded in `run.safety.riskFlags`.
 
 ```bash
 cd harness
-npm test   # 135 tests across h1–h5, h7–h9
+npm test             # h1–h5, h7–h11, h13: no Docker, no API key
+npm run test:docker  # h6 + h12: REAL Docker; reported as skipped ("NOT EXECUTED") without it
+npm run smoke        # mock agent on fix-flaky-test
 ```
 
 | File | Coverage |
 |------|----------|
 | `h1-task-schema.test.mjs` | Schema validation, `_import` resolution, required fields |
-| `h2-task-runner.test.mjs` | TaskRunner 12-step orchestration, MockAgent, baseline |
-| `h3-evaluation.test.mjs` | Scoring formula, all 12 taxonomy symptoms, pass@k |
+| `h2-task-runner.test.mjs` | TaskRunner orchestration, MockAgent, baseline |
+| `h3-evaluation.test.mjs` | Scoring formula, taxonomy symptoms, pass@k |
 | `h4-patch-tracker.test.mjs` | git init, diff capture, multi-file, no-change |
 | `h5-agents.test.mjs` | CodingAgent interface, MockAgent parsing, AgentRegistry, comparison table |
-| `h6-sandbox-docker.test.mjs` | DockerSandbox (skip with `SKIP_DOCKER=1`) |
+| `h6-sandbox-docker.test.mjs` | Sandbox selection (fail-closed), DockerSandbox exec (real Docker) |
 | `h7-safety.test.mjs` | All 5 guardrail categories |
 | `h8-replay.test.mjs` | Stub adapter, divergence detection, partial replay |
 | `h9-mcp.test.mjs` | MCP tool calls over stdio pipe |
+| `h10-import.test.mjs` | SWE-bench / Aider importers |
+| `h11-correctness.test.mjs` | Audit regressions: real patch scoring, outcome rules, tool allow/deny/aliases/malformed calls, mocked Docker tool confinement, process-tree timeout kill, identical attempt state, pinned commit + hidden test patch, registry CLI resolution, malformed adapters, null usage/cost, pass^k, run ids, redaction |
+| `h13-workspace-confinement.test.mjs` | Trusted write root = attempt workdir (write/edit/apply_patch work, no `SECURITY_OVERRIDE`), outside/nested/symlink/junction escapes rejected (native and docker registries), `PATH_ARGS` vs tool schemas, check/exec serialization, dependency-build trust gate, pristine `reset()` with ignored files |
+| `h12-docker-isolation.test.mjs` | Real Docker: host file unreachable, no network, cgroup memory/cpu/pids limits, read-only root, timeout removes the container, run_shell routed into the container, container-planted symlink escape, end-to-end docker task |
+
+Replay limitation: replay does not re-apply the recorded file edits, so a replayed run
+re-evaluates the untouched repo (a recorded `pass` replays as `fail`).
 
 ---
 
-## SWE-bench leaderboard submission
+## SWE-bench import
+
+```bash
+node bin/harness.mjs import swebench instances.jsonl --out-dir tasks/swebench
+```
+
+The importer parses `FAIL_TO_PASS` / `PASS_TO_PASS` whether they are JSON-encoded strings
+(the official dataset format) or arrays. It keeps `base_commit` as `commit:` and
+`test_patch` as `testPatch:`, and skips (and reports) instances with no `FAIL_TO_PASS`.
+
+`repo:` is written as `github:<owner>/<name>`, a remote identifier that the runner refuses.
+Clone the repo and point `repo:` at the local clone. The runner then checks out `commit:`
+for every attempt and applies `testPatch` only for the baseline and the final checks.
+
+**Not supported; imported tasks do not reproduce official SWE-bench scores**
+(`_meta.officialEvalCompatible: false`):
+
+- the per-repo, per-version environment (Python version, install steps, pinned deps from
+  `environment_setup_commit`) is not built; tasks default to `type: native`
+- checks are `python -m pytest -q "<test id>"` approximations. Repos with their own runners
+  and test-id formats (django's `runtests.py`, sympy's `bin/test`, ...) will not run
+  correctly, and the official log parsers are not used
+- no automatic cloning (it needs network access and is deliberately out of scope)
+
+## SWE-bench predictions format
 
 ```bash
 # Generate predictions JSONL for all runs in a directory

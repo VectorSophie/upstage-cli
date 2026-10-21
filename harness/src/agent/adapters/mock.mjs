@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
-import { resolve, join, dirname } from "node:path";
+import { resolve, join, dirname, relative, isAbsolute } from "node:path";
 import { CodingAgent } from "../interface.mjs";
 
 /**
@@ -23,6 +23,11 @@ export class MockAgent extends CodingAgent {
   }
 
   isAvailable() {
+    return true;
+  }
+
+  // Executes nothing — only writes fixture files inside the workspace
+  get supportsSandbox() {
     return true;
   }
 
@@ -57,6 +62,9 @@ export class MockAgent extends CodingAgent {
 
     for (const { filePath, content } of fixes) {
       const absPath = resolve(workdir, filePath);
+      if (relative(workdir, absPath).startsWith("..") || isAbsolute(relative(workdir, absPath))) {
+        return { ok: false, error: `fixture path escapes workspace: ${filePath}`, turns: 0, toolCalls: 0, usage: null, events: [] };
+      }
       mkdirSync(dirname(absPath), { recursive: true });
       writeFileSync(absPath, content, "utf8");
     }
@@ -66,6 +74,7 @@ export class MockAgent extends CodingAgent {
       turns: 1,
       toolCalls: fixes.length,
       usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 },
+      model: { provider: "mock", id: "mock", revision: null, sampling: null, maxOutputTokens: null, contextLimit: null },
       events: [{ type: "mock_fix_applied", files: fixes.map((f) => f.filePath) }],
       stopReason: "end_turn"
     };

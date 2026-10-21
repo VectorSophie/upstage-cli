@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
 import { loadTask } from "../../task/loader.mjs";
 import { TaskRunner } from "../../task/runner.mjs";
-import { AgentRegistry } from "../../agent/registry.mjs";
+import { defaultRegistry } from "../../agent/registry.mjs";
 import { comparisonTable } from "../../report/table.mjs";
-import { toJSON } from "../../report/generator.mjs";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { join } from "node:path";
+import { randomBytes } from "node:crypto";
 
 export async function compareCommand(argv, options = {}) {
   const taskPath = argv[0];
@@ -29,18 +29,20 @@ export async function compareCommand(argv, options = {}) {
     return;
   }
 
-  const registry = new AgentRegistry();
   const adapters = [];
+  let skipped = 0;
   for (const id of agentIds) {
     try {
-      const adapter = registry.resolve(id);
+      const adapter = defaultRegistry.resolve(id, { model: options.model });
       if (!adapter.isAvailable()) {
         console.warn(`  [warn] agent '${id}' is not available — skipping`);
+        skipped++;
         continue;
       }
       adapters.push(adapter);
     } catch (err) {
       console.error(`  [error] ${err.message}`);
+      skipped++;
     }
   }
 
@@ -76,7 +78,7 @@ export async function compareCommand(argv, options = {}) {
       try {
         const result = await runner.run(task, adapter);
         runs.push(result);
-        console.log(result.status === "pass" ? "PASS" : "FAIL");
+        console.log(result.status.toUpperCase());
       } catch (err) {
         console.log("ERROR");
         console.error(`    ${err.message}`);
@@ -97,10 +99,12 @@ export async function compareCommand(argv, options = {}) {
 
   // Persist comparison JSON
   mkdirSync(runsDir, { recursive: true });
-  const compId = `compare_${Date.now()}_${task.id}`;
+  const compId = `compare_${Date.now()}_${randomBytes(3).toString("hex")}_${task.id}`;
   const compPath = join(runsDir, `${compId}.json`);
   writeFileSync(compPath, JSON.stringify({ id: compId, taskId: task.id, runs }, null, 2), "utf8");
   console.log(`\nSaved: ${compPath}`);
+  // A requested agent that could not be run is an error, even if others ran
+  if (skipped > 0) process.exitCode = 1;
 }
 
 function parseAgentList(raw) {

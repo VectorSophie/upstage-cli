@@ -8,10 +8,10 @@ export function loadTask(taskPath) {
   const taskDir = dirname(absPath);
   const raw = yamlLoad(readFileSync(absPath, "utf8"));
   const spec = resolveImport(raw, absPath);
-  // Resolve repo relative to the task file's directory
-  if (spec.repo && !resolve(spec.repo).startsWith(resolve("/"))) {
-    spec.repo = resolve(taskDir, spec.repo);
-  } else if (spec.repo) {
+  // Resolve a local repo path relative to the task file's directory. Remote
+  // identifiers (github:owner/name) are left as-is; the runner rejects them
+  // with instructions rather than treating them as a local path.
+  if (typeof spec.repo === "string" && spec.repo && !isRemoteRepo(spec.repo)) {
     spec.repo = resolve(taskDir, spec.repo);
   }
   const { valid, errors } = validate(spec);
@@ -35,8 +35,12 @@ export function loadTaskDir(dir) {
       tasks.push(spec);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      throw new Error(`Failed to load task ${entry}: ${msg}`);
+      throw new Error(`Failed to load task ${entry}: ${msg}`, { cause: err });
     }
   }
   return tasks;
+}
+
+export function isRemoteRepo(repo) {
+  return /^(github:|https?:\/\/|git@)/.test(repo);
 }

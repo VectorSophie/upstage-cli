@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "node:fs";
-import { resolve, join, extname, basename } from "node:path";
+import { resolve, join, extname } from "node:path";
 import { dump as yamlDump } from "js-yaml";
 
 const LANG_MAP = {

@@ -1,33 +1,35 @@
 import { resolve } from "node:path";
 import { loadTask } from "../../task/loader.mjs";
 import { TaskRunner } from "../../task/runner.mjs";
-import { MockAgent } from "../../agent/adapters/mock.mjs";
-import { UpstageAgent } from "../../agent/adapters/upstage.mjs";
+import { defaultRegistry } from "../../agent/registry.mjs";
 import { toMarkdown } from "../../report/generator.mjs";
-import { passAtK } from "../../evaluation/pass-at-k.mjs";
+import { summarizeAttempts } from "../../evaluation/pass-at-k.mjs";
 
-function resolveAgent(agentId, options = {}) {
-  switch (agentId) {
-    case "mock": return new MockAgent();
-    case "upstage":
-    case "solar":
-    case "solar-pro2": return new UpstageAgent({ model: options.model });
-    default:
-      throw new Error(`Unknown agent: ${agentId}. Available: mock, upstage`);
+/** Resolve through the shared AgentRegistry; throws a clear error if unknown/unavailable. */
+export function resolveAgent(agentId, options = {}, registry = defaultRegistry) {
+  const adapter = registry.resolve(agentId, { model: options.model });
+  if (!adapter.isAvailable()) {
+    throw new Error(`Agent '${agentId}' is not available (missing API key or binary).`);
   }
+  return adapter;
 }
 
 export async function runCommand(argv, options = {}) {
   const taskPath = argv[0];
   if (!taskPath) {
-    console.error("Usage: harness run <task.yaml> [--agent mock|upstage] [--k N] [--runs-dir ./runs]");
+    console.error("Usage: harness run <task.yaml> [--agent <id>] [--model M] [--k N] [--runs-dir ./runs]");
     process.exitCode = 1;
     return;
   }
 
   const agentId = options.agent || "mock";
   const k = parseInt(options.k || "1", 10);
-  const runsDir = resolve(options.runsDir || "runs");
+  if (!Number.isInteger(k) || k < 1) {
+    console.error(`--k must be a positive integer (got ${options.k})`);
+    process.exitCode = 1;
+    return;
+  }
+  const runsDir = resolve(options["runs-dir"] || options.runsDir || "runs");
 
   let task;
   try {
@@ -38,10 +40,11 @@ export async function runCommand(argv, options = {}) {
     return;
   }
 
-  const adapter = resolveAgent(agentId, options);
-
-  if (!adapter.isAvailable()) {
-    console.error(`Agent '${agentId}' is not available (missing API key or binary).`);
+  let adapter;
+  try {
+    adapter = resolveAgent(agentId, options);
+  } catch (err) {
+    console.error(err.message);
     process.exitCode = 1;
     return;
   }
@@ -56,22 +59,24 @@ export async function runCommand(argv, options = {}) {
     try {
       const result = await runner.run(task, adapter);
       runs.push(result);
-      if (k > 1) console.log(result.status === "pass" ? "PASS" : "FAIL");
+      if (k > 1) console.log(result.status.toUpperCase());
     } catch (err) {
       if (k > 1) console.log("ERROR");
       console.error(`Run ${i + 1} failed: ${err.message}`);
-      runs.push({ status: "fail", ok: false });
+      runs.push({ status: "error", error: err.message });
     }
   }
 
-  const lastRun = runs.find((r) => r.id) || runs[runs.length - 1];
-  if (lastRun?.id) {
+  const lastRun = runs.findLast((r) => r.id);
+  if (lastRun) {
     console.log("\n" + toMarkdown(lastRun));
   }
 
   if (k > 1) {
-    const rate = passAtK(runs, k);
-    console.log(`\npass@${k}: ${(rate * 100).toFixed(1)}%`);
+    const s = summarizeAttempts(runs, k);
+    const pct = (v) => (v == null ? "unknown" : `${(v * 100).toFixed(1)}%`);
+    console.log(`\nattempts: ${s.attempts}  pass: ${s.passed}  fail: ${s.failed}  error: ${s.errored}  incomplete: ${s.incomplete}`);
+    console.log(`pass@${k}: ${pct(s.passAtK)}   pass^${k}: ${pct(s.passHatK)}`);
   }
 
   const anyPassed = runs.some((r) => r.status === "pass");

@@ -18,24 +18,19 @@ function pad(s, n) {
   return s.length >= n ? s : s + " ".repeat(n - s.length);
 }
 
-function rpad(s, n) {
-  s = String(s ?? "");
-  return s.length >= n ? s : " ".repeat(n - s.length) + s;
-}
-
 export function comparisonTable(runs) {
   if (!runs || runs.length === 0) return "No runs to compare.";
 
   const cols = {
     Agent:      { fn: (r) => r.agentId || "?",                        w: 20 },
-    Status:     { fn: (r) => r.status === "pass" ? "PASS ✓" : "FAIL ✗", w: 8 },
+    Status:     { fn: (r) => ({ pass: "PASS ✓", fail: "FAIL ✗", error: "ERROR", incomplete: "INCOMPL" })[r.status] || "FAIL ✗", w: 8 },
     Score:      { fn: (r) => Math.round((r.evaluation?.score || 0) * 100), w: 6 },
     "FTP%":     { fn: (r) => pct(r.evaluation?.failToPassRate),        w: 6 },
     "PTP%":     { fn: (r) => pct(r.evaluation?.passToPassRate),        w: 6 },
     Cost:       { fn: (r) => usd(r.metrics?.estimatedCostUsd),         w: 8 },
     Time:       { fn: (r) => dur(r.durationMs),                        w: 7 },
     Patch:      { fn: (r) => `+${r.metrics?.patch?.linesAdded ?? 0}/-${r.metrics?.patch?.linesRemoved ?? 0}`, w: 9 },
-    Tools:      { fn: (r) => r.metrics?.toolCalls ?? 0,                w: 6 },
+    Tools:      { fn: (r) => r.metrics?.toolCalls ?? " — ",            w: 6 },
     Failure:    { fn: (r) => r.failure?.symptom || "none",             w: 24 }
   };
 

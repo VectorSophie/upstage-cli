@@ -3,8 +3,9 @@ import assert from "node:assert/strict";
 import { writeFileSync, mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 
-import { validate, resolveImport, TASK_SCHEMA } from "../src/task/schema.mjs";
+import { validate, resolveImport } from "../src/task/schema.mjs";
 import { loadTask } from "../src/task/loader.mjs";
 
 // ── validate() ────────────────────────────────────────────────────────────────
@@ -134,7 +135,7 @@ describe("resolveImport — _import composition", () => {
 
 describe("loadTask — integration", () => {
   it("loads fix-missing-import.yaml without errors", () => {
-    const task = loadTask(new URL("../tasks/fix-missing-import.yaml", import.meta.url).pathname.slice(1));
+    const task = loadTask(fileURLToPath(new URL("../tasks/fix-missing-import.yaml", import.meta.url)));
     assert.equal(task.id, "fix-missing-import");
     assert.equal(task.difficulty, "easy");
     assert.ok(Array.isArray(task.checks.fail_to_pass));
@@ -142,8 +143,7 @@ describe("loadTask — integration", () => {
   });
 
   it("loadTask throws on invalid spec", () => {
-    let tmpDir2;
-    tmpDir2 = mkdtempSync(join(tmpdir(), "h1-load-"));
+    const tmpDir2 = mkdtempSync(join(tmpdir(), "h1-load-"));
     const badPath = join(tmpDir2, "bad.yaml");
     writeFileSync(badPath, "id: ''\nrepo: ./x\nprompt: fix\nchecks: {}\n");
     assert.throws(() => loadTask(badPath), /Invalid task/);

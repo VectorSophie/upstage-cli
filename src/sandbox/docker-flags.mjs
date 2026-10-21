@@ -20,7 +20,13 @@ export function buildDockerRunArgs({
   cpus = "0.5",
   env,
   command,
-  commandArgs = []
+  commandArgs = [],
+  // Optional hardening used by the eval harness (harness/src/sandbox/docker.mjs).
+  // All default off so the main agent's DockerExecutor invocation is unchanged.
+  name,
+  pidsLimit,
+  user,
+  hardened = false
 } = {}) {
   if (!image) throw new Error("buildDockerRunArgs requires an `image`");
   if (!workdir) throw new Error("buildDockerRunArgs requires a `workdir`");
@@ -35,6 +41,13 @@ export function buildDockerRunArgs({
     "-v", `${workdir}:${CONTAINER_CWD}:rw`,
     "-w", CONTAINER_CWD
   ];
+
+  if (name) args.push("--name", name);
+  if (pidsLimit) args.push("--pids-limit", String(pidsLimit));
+  if (user) args.push("--user", user);
+  if (hardened) {
+    args.push("--cap-drop", "ALL", "--security-opt", "no-new-privileges", "--memory-swap", memory);
+  }
 
   if (env && typeof env === "object") {
     for (const [key, value] of Object.entries(env)) {

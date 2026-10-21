@@ -11,7 +11,7 @@
 export function passAtK(results, k = 1) {
   const n = results.length;
   if (n === 0) return 0;
-  const c = results.filter((r) => r.status === "pass" || r.ok === true).length;
+  const c = results.filter((r) => r.status === "pass").length;
   if (k > n) {
     throw new Error(`k (${k}) cannot be greater than n (${n})`);
   }
@@ -34,4 +34,43 @@ export function passAtKSuite(results, ks = [1, 3, 5]) {
     }
   }
   return out;
+}
+
+/**
+ * pass^k (Yao et al., 2024 — τ-bench): probability that ALL k i.i.d. attempts
+ * succeed — a reliability metric, unlike pass@k (≥1 of k succeeds).
+ * Unbiased estimator: C(c, k) / C(n, k).
+ */
+export function passHatK(results, k = 1) {
+  const n = results.length;
+  if (n === 0) return 0;
+  if (k > n) throw new Error(`k (${k}) cannot be greater than n (${n})`);
+  const c = results.filter((r) => r.status === "pass").length;
+  let prob = 1.0;
+  for (let i = 0; i < k; i++) {
+    prob *= Math.max(0, c - i) / (n - i);
+  }
+  return Math.max(0, Math.min(1, prob));
+}
+
+/**
+ * Summarise k attempts. Only scorable attempts (status pass|fail) enter the
+ * estimators; error/incomplete attempts are counted separately, and the
+ * metrics are null (unknown) when fewer than k attempts were scorable.
+ */
+export function summarizeAttempts(runs, k = runs.length) {
+  const scorable = runs.filter((r) => r.status === "pass" || r.status === "fail");
+  const count = (s) => runs.filter((r) => r.status === s).length;
+  const enough = k > 0 && scorable.length >= k;
+  return {
+    attempts: runs.length,
+    scorable: scorable.length,
+    passed: count("pass"),
+    failed: count("fail"),
+    errored: runs.length - scorable.length - count("incomplete"),
+    incomplete: count("incomplete"),
+    k,
+    passAtK: enough ? passAtK(scorable, k) : null,
+    passHatK: enough ? passHatK(scorable, k) : null
+  };
 }

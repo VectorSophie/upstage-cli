@@ -1,9 +1,8 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
 import { resolve, join, extname } from "node:path";
 import { execSync } from "node:child_process";
 
 const MAX_FULL_REPO_CHARS = 128_000;
-const DEFAULT_MAX_FILES = 5;
 
 /**
  * 6 context strategies behind --experimental-context.
@@ -85,7 +84,7 @@ function failingTest(task, workdir) {
 }
 
 function recentDiffs(workdir) {
-  let diff = "";
+  let diff;
   try {
     diff = execSync("git log --oneline -10 && git diff HEAD~10..HEAD", {
       cwd: workdir,

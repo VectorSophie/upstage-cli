@@ -16,20 +16,28 @@ export class CostTracker {
   }
 
   _pricing() {
-    const key = Object.keys(PRICING).find((k) => this.model.includes(k));
-    return PRICING[key] || PRICING.default;
+    const key = Object.keys(PRICING).find((k) => k !== "default" && (this.model || "").includes(k));
+    return key ? PRICING[key] : null;
   }
 
+  /**
+   * USD estimate, or null when it can't be known: usage missing, or no price
+   * for this model (a made-up "default" price would be fabrication). Zero is
+   * returned only for genuinely zero usage (e.g. the mock agent).
+   */
   estimate(usage) {
-    if (!usage) return 0;
+    if (!usage) return null;
+    const hasTokens = (usage.promptTokens || 0) + (usage.completionTokens || 0) > 0;
+    if (!hasTokens) return 0;
     const p = this._pricing();
+    if (!p) return null;
     const promptCost = ((usage.promptTokens || 0) / 1_000_000) * p.prompt;
     const completionCost = ((usage.completionTokens || 0) / 1_000_000) * p.completion;
     return Math.round((promptCost + completionCost) * 1_000_000) / 1_000_000;
   }
 
   record(taskId, usage, passed) {
-    const costUsd = this.estimate(usage);
+    const costUsd = this.estimate(usage) ?? 0;
     this._tasks.push({ taskId, costUsd, passed, usage });
     return costUsd;
   }

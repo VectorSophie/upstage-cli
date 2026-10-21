@@ -1,38 +1,72 @@
-import { spawnSync, execSync } from "node:child_process";
-import { mkdtempSync, cpSync, rmSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, copyFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, basename } from "node:path";
-import { createHash } from "node:crypto";
+import { join } from "node:path";
+import { createHash, randomBytes } from "node:crypto";
 
 import { buildDockerRunArgs } from "../../../src/sandbox/docker-flags.mjs";
+import { spawnWithTimeout } from "./native.mjs";
+
+const DEP_FILES = { python: "requirements.txt", node: "package.json" };
+const DOCKER_DAEMON_ERROR = 125;
+
+export class SandboxConfigError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "SandboxConfigError";
+  }
+}
 
 /**
- * DockerSandbox — SWE-bench style 3-tier layered image cache.
+ * DockerSandbox — every command (agent tool calls and evaluation checks) runs
+ * in a fresh `docker run --rm` container with only the task workspace
+ * bind-mounted. Enforced: network (none by default), read-only root, memory
+ * (+swap), CPU, pids, wall-clock timeout (container is force-removed on
+ * timeout), dropped capabilities, no-new-privileges.
  *
- * Tier 1 (base): language runtime image, e.g. python:3.12-slim  — shared
- * Tier 2 (env):  deps pre-installed, tagged by hash of requirements files
- * Tier 3 (run):  per-run bind mount of workdir — zero layer overhead
- *
- * Cache policy controlled by HARNESS_DOCKER_CACHE=base|env|full (default: env)
+ * Dependencies (sandbox.dependencies):
+ *   "image" (default) — the image is used as-is; nothing from the repo is
+ *     installed. Benchmark tasks should pin a prebuilt image (ideally by digest).
+ *   "build" — requirements.txt / package.json from the workspace is installed
+ *     into a derived image by `docker build`. Package installs run arbitrary
+ *     code (setup.py, npm lifecycle scripts) WITH network access, so this is a
+ *     trusted-preparation step: it requires the operator to opt in with
+ *     HARNESS_ALLOW_DEPENDENCY_BUILD=1, otherwise setup fails closed. A task
+ *     file alone can never turn it on.
  */
 export class DockerSandbox {
   constructor(task) {
     this.task = task;
     this.sandbox = task.sandbox || {};
     this.image = this.sandbox.image || "ubuntu:22.04";
-    this.network = this.sandbox.network || "none";
+    const network = this.sandbox.network || "none";
+    if (network === "allowlist") {
+      throw new SandboxConfigError("sandbox.network=allowlist is not supported by the Docker sandbox (no egress filter is implemented); use 'none' or 'host'");
+    }
+    this.requestedNetwork = network;
+    // "host" means "allow outbound"; we never use --network host, only the default bridge
+    this.network = network === "none" ? "none" : "bridge";
     this.memory = this.sandbox.memory || "512m";
-    this.timeout = (this.sandbox.timeout || 120) * 1000;
-    this._containerId = null;
+    this.cpus = String(this.sandbox.cpus || "1");
+    this.pidsLimit = this.sandbox.pids || 256;
+    this.timeoutMs = (this.sandbox.timeout || 120) * 1000;
+    // Run as the invoking user on POSIX so bind-mounted files stay removable by the harness
+    this.user = typeof process.getuid === "function" ? `${process.getuid()}:${process.getgid()}` : undefined;
     this._workdir = null;
+    this.dependencies = this.sandbox.dependencies || "image";
+    if (!["image", "build"].includes(this.dependencies)) {
+      throw new SandboxConfigError(`sandbox.dependencies must be "image" or "build", got: ${this.dependencies}`);
+    }
     this._envImage = null;
+    this._depInfo = null;
+    this._live = new Set();
   }
 
   get type() { return "docker"; }
 
   static isAvailable() {
     try {
-      const r = spawnSync("docker", ["info"], { encoding: "utf8", timeout: 5000 });
+      const r = spawnSync("docker", ["info"], { encoding: "utf8", timeout: 10000 });
       return r.status === 0;
     } catch {
       return false;
@@ -40,96 +74,126 @@ export class DockerSandbox {
   }
 
   async setup(workdir) {
+    if (this.dependencies === "build" && process.env.HARNESS_ALLOW_DEPENDENCY_BUILD !== "1") {
+      throw new SandboxConfigError("sandbox.dependencies=build installs repository dependencies with network access; set HARNESS_ALLOW_DEPENDENCY_BUILD=1 only for trusted repositories");
+    }
     this._workdir = workdir;
-    const cacheMode = process.env.HARNESS_DOCKER_CACHE || "env";
-    if (cacheMode === "base") {
-      this._envImage = this.image;
+    if (this.dependencies === "build") {
+      this._envImage = this._buildEnvImage(workdir);
     } else {
-      this._envImage = await this._buildEnvImage(workdir);
+      this._envImage = this.image;
+      this._depInfo = { mode: "image", method: "none", network: null, depFile: null, depFileSha256: null };
     }
   }
 
-  async exec(command, args = [], { cwd, env } = {}) {
+  async exec(command, args = [], { timeoutMs = this.timeoutMs, env } = {}) {
     if (!this._workdir) throw new Error("DockerSandbox.setup() must be called before exec()");
-
+    const name = `harness-${randomBytes(6).toString("hex")}`;
     const dockerArgs = buildDockerRunArgs({
       image: this._envImage,
       workdir: this._workdir,
-      network: this.network === "none" ? "none" : "bridge",
+      network: this.network,
       memory: this.memory,
-      cpus: "0.5",
+      cpus: this.cpus,
       env,
       command,
-      commandArgs: args
+      commandArgs: args,
+      name,
+      pidsLimit: this.pidsLimit,
+      user: this.user,
+      hardened: true
     });
-
-    const start = Date.now();
-    const result = spawnSync("docker", dockerArgs, {
-      encoding: "utf8",
-      timeout: this.timeout,
-      maxBuffer: 20 * 1024 * 1024
-    });
-
-    return {
-      ok: result.status === 0,
-      stdout: result.stdout || "",
-      stderr: result.stderr || "",
-      exitCode: result.status || 0,
-      durationMs: Date.now() - start
-    };
+    this._live.add(name);
+    try {
+      const r = await spawnWithTimeout("docker", dockerArgs, {
+        timeoutMs,
+        onTimeout: () => removeContainer(name)
+      });
+      if (r.timedOut) removeContainer(name);
+      // 125 = docker itself failed (bad image, daemon error) — not the command's fault
+      const infraError = r.spawnError || r.exitCode === DOCKER_DAEMON_ERROR
+        ? (r.spawnError || r.stderr.trim().slice(0, 500) || "docker run failed")
+        : null;
+      return { ...r, infraError, container: name };
+    } finally {
+      this._live.delete(name);
+    }
   }
 
-  async copyOut(srcPath, destPath) {
+  async execShell(command, opts = {}) {
+    return this.exec("sh", ["-c", command], opts);
+  }
+
+  async copyOut(_srcPath, _destPath) {
     // With bind mounts, files are immediately visible on the host — no-op
   }
 
   async teardown() {
+    for (const name of this._live) removeContainer(name);
+    this._live.clear();
     this._workdir = null;
-    this._envImage = null;
   }
 
-  async _buildEnvImage(workdir) {
-    // Hash the requirements/package files to get a stable env-image tag
-    const hashInput = [workdir, this.image, this.sandbox.allowedBinaries?.join(",") || ""].join("|");
-    const hash = createHash("sha256").update(hashInput).digest("hex").slice(0, 12);
-    const tag = `harness-env-${hash}`;
+  describe() {
+    return {
+      type: "docker",
+      trusted: false,
+      image: this.image,
+      envImage: this._envImage,
+      envImageId: this._envImage ? imageId(this._envImage) : null,
+      dependencies: this._depInfo,
+      network: { requested: this.requestedNetwork, effective: this.network, enforced: true },
+      memory: this.memory,
+      cpus: this.cpus,
+      pidsLimit: this.pidsLimit,
+      timeoutMs: this.timeoutMs,
+      user: this.user || "image-default",
+      enforced: { network: true, filesystem: true, cpu: true, memory: true, pids: true, time: true, readOnlyRoot: true, capDropAll: true },
+      warnings: []
+    };
+  }
 
-    // Check if image already exists (cache hit)
-    const check = spawnSync("docker", ["image", "inspect", tag], { encoding: "utf8" });
-    if (check.status === 0) return tag;
+  _depFile(workdir) {
+    const lang = this.image.startsWith("python") ? "python" : this.image.startsWith("node") ? "node" : null;
+    const file = lang && DEP_FILES[lang];
+    return file && existsSync(join(workdir, file)) ? { lang, file } : null;
+  }
 
-    // Build env image: start from base, copy workdir, install deps
-    const dockerfile = this._generateDockerfile(workdir);
+  _buildEnvImage(workdir) {
+    const dep = this._depFile(workdir);
+    if (!dep) return this.image;
+
+    const hash = createHash("sha256")
+      .update(this.image).update("\0")
+      .update(readFileSync(join(workdir, dep.file)))
+      .digest("hex").slice(0, 16);
+    const tag = `harness-env:${hash}`;
+    if (spawnSync("docker", ["image", "inspect", tag], { stdio: "ignore" }).status === 0) return tag;
+
+    const install = dep.lang === "python"
+      ? "RUN pip install --no-cache-dir -r /deps/requirements.txt"
+      // node deps go outside /workspace (which is bind-mounted over at run time)
+      : "RUN cd /deps && npm install --omit=dev\nENV NODE_PATH=/deps/node_modules";
     const ctxDir = mkdtempSync(join(tmpdir(), "harness-docker-ctx-"));
     try {
-      const { writeFileSync } = await import("node:fs");
-      writeFileSync(join(ctxDir, "Dockerfile"), dockerfile, "utf8");
-      cpSync(workdir, join(ctxDir, "workspace"), { recursive: true });
-
-      const build = spawnSync("docker", ["build", "-t", tag, ctxDir], {
-        encoding: "utf8",
-        timeout: 5 * 60 * 1000
-      });
+      copyFileSync(join(workdir, dep.file), join(ctxDir, dep.file));
+      writeFileSync(join(ctxDir, "Dockerfile"), `FROM ${this.image}\nCOPY ${dep.file} /deps/${dep.file}\n${install}\n`, "utf8");
+      const build = spawnSync("docker", ["build", "-t", tag, ctxDir], { encoding: "utf8", timeout: 10 * 60 * 1000 });
       if (build.status !== 0) {
-        throw new Error(`Docker build failed:\n${build.stderr}`);
+        throw new Error(`Docker env image build failed for ${this.image} (${dep.file}):\n${(build.stderr || build.error?.message || "").slice(-2000)}`);
       }
     } finally {
       rmSync(ctxDir, { recursive: true, force: true });
     }
-
     return tag;
   }
+}
 
-  _generateDockerfile(workdir) {
-    const lines = [`FROM ${this.image}`, "WORKDIR /workspace", "COPY workspace/ /workspace/"];
+function imageId(image) {
+  const r = spawnSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { encoding: "utf8", timeout: 30000 });
+  return r.status === 0 ? r.stdout.trim() : null;
+}
 
-    // Language-specific dep install
-    if (this.image.startsWith("python")) {
-      lines.push("RUN pip install -r requirements.txt 2>/dev/null || true");
-    } else if (this.image.startsWith("node")) {
-      lines.push("RUN npm install 2>/dev/null || true");
-    }
-
-    return lines.join("\n") + "\n";
-  }
+function removeContainer(name) {
+  spawnSync("docker", ["rm", "-f", name], { stdio: "ignore", timeout: 30000 });
 }

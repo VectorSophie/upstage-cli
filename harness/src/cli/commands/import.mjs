@@ -23,14 +23,18 @@ export async function importCommand(argv, options = {}) {
     }
     const absSource = resolve(source);
     console.log(`Loading SWE-bench tasks from ${absSource}...`);
-    const tasks = loadSwebenchFile(absSource);
+    const skipped = [];
+    const tasks = loadSwebenchFile(absSource, { onError: (e) => skipped.push(e) });
+    for (const e of skipped) console.warn(`  [skip] line ${e.line}: ${e.message}`);
     if (tasks.length === 0) {
       console.error("No tasks found in file.");
       process.exitCode = 1;
       return;
     }
     const written = writeSwebenchTasksToDir(tasks, outDir);
-    console.log(`Imported ${tasks.length} SWE-bench tasks → ${outDir}`);
+    console.log(`Imported ${tasks.length} SWE-bench tasks → ${outDir}${skipped.length ? ` (${skipped.length} skipped)` : ""}`);
+    console.log("Note: tasks reference github:<repo> — clone each repo locally and set `repo:` to the clone.");
+    console.log("      Checks are pytest approximations; results are NOT comparable to official SWE-bench scores.");
     if (options.verbose) {
       for (const p of written) console.log(`  ${p}`);
     }

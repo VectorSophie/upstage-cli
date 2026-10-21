@@ -27,15 +27,16 @@ describe("selectSandbox — manager", () => {
     assert.equal(sb.type, "native");
   });
 
-  it("falls back to native when docker unavailable and type:docker requested", () => {
-    if (!SKIP_DOCKER) return; // Docker IS available — skip this fallback test
-    const sb = selectSandbox(makeTask({ sandbox: { type: "docker", image: "python:3.12-slim" } }));
-    assert.ok(sb instanceof NativeSandbox);
+  // Behaviour change (2026-10 audit): no silent native fallback any more.
+  it("refuses (throws) when docker unavailable and type:docker requested", () => {
+    assert.throws(
+      () => selectSandbox(makeTask({ sandbox: { type: "docker", image: "python:3.12-slim" } }), { isDockerAvailable: () => false }),
+      /refusing to fall back/
+    );
   });
 
-  it("returns DockerSandbox when docker available and type:docker", () => {
-    if (SKIP_DOCKER) return; // skip when Docker unavailable
-    const sb = selectSandbox(makeTask({ sandbox: { type: "docker", image: "alpine" } }));
+  it("returns DockerSandbox when docker available and type:docker", { skip: SKIP_DOCKER && "Docker not available — NOT EXECUTED" }, () => {
+    const sb = selectSandbox(makeTask({ sandbox: { type: "docker", image: "alpine:3.20" } }));
     assert.ok(sb instanceof DockerSandbox);
   });
 
@@ -74,12 +75,11 @@ describe("DockerSandbox.isAvailable()", () => {
 
 // ── Docker exec tests (skipped when SKIP_DOCKER=1) ───────────────────────────
 
-describe("DockerSandbox — exec (skipped when SKIP_DOCKER=1)", () => {
+describe("DockerSandbox — exec (real Docker)", { skip: SKIP_DOCKER && "Docker not available — NOT EXECUTED" }, () => {
   it("runs echo in container", async () => {
-    if (SKIP_DOCKER) return;
     const tmp = mkdtempSync(join(tmpdir(), "h6-docker-"));
     try {
-      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine", timeout: 30, network: "none", memory: "128m" } }));
+      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine:3.20", timeout: 30, network: "none", memory: "128m" } }));
       await sb.setup(tmp);
       const result = await sb.exec("echo", ["hello-docker"], { cwd: tmp });
       await sb.teardown();
@@ -91,10 +91,9 @@ describe("DockerSandbox — exec (skipped when SKIP_DOCKER=1)", () => {
   });
 
   it("non-zero exit code → ok:false", async () => {
-    if (SKIP_DOCKER) return;
     const tmp = mkdtempSync(join(tmpdir(), "h6-exit-"));
     try {
-      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine", timeout: 30, network: "none", memory: "128m" } }));
+      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine:3.20", timeout: 30, network: "none", memory: "128m" } }));
       await sb.setup(tmp);
       const result = await sb.exec("sh", ["-c", "exit 42"], { cwd: tmp });
       await sb.teardown();
@@ -106,10 +105,9 @@ describe("DockerSandbox — exec (skipped when SKIP_DOCKER=1)", () => {
   });
 
   it("network:none blocks outbound requests", async () => {
-    if (SKIP_DOCKER) return;
     const tmp = mkdtempSync(join(tmpdir(), "h6-net-"));
     try {
-      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine", timeout: 30, network: "none", memory: "128m" } }));
+      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine:3.20", timeout: 30, network: "none", memory: "128m" } }));
       await sb.setup(tmp);
       const result = await sb.exec("wget", ["-q", "-O-", "https://example.com"], { cwd: tmp });
       await sb.teardown();
@@ -120,11 +118,10 @@ describe("DockerSandbox — exec (skipped when SKIP_DOCKER=1)", () => {
   });
 
   it("workdir files visible inside container", async () => {
-    if (SKIP_DOCKER) return;
     const tmp = mkdtempSync(join(tmpdir(), "h6-files-"));
     try {
       writeFileSync(join(tmp, "sentinel.txt"), "harness-test");
-      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine", timeout: 30, network: "none", memory: "128m" } }));
+      const sb = new DockerSandbox(makeTask({ sandbox: { type: "docker", image: "alpine:3.20", timeout: 30, network: "none", memory: "128m" } }));
       await sb.setup(tmp);
       const result = await sb.exec("cat", ["sentinel.txt"], { cwd: tmp });
       await sb.teardown();
