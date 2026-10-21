@@ -55,7 +55,7 @@ export class ClaudeCodeAgent extends CodingAgent {
   _parseOutput(stdout, durationMs, auditLog) {
     let toolCalls = 0;
     let turns = 0;
-    let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    let usage = null; // unknown unless the stream reports it
     const events = [];
 
     for (const line of stdout.split("\n")) {
