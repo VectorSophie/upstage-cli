@@ -3,13 +3,49 @@ import { resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { CodingAgent } from "../interface.mjs";
 import { createToolPolicy, enforceToolPolicy } from "../tool-policy.mjs";
-import { confineRegistryToSandbox, removeEscapingSymlinks } from "../sandboxed-tools.mjs";
+import { confineRegistryToSandbox, confineFileTools, removeEscapingSymlinks } from "../sandboxed-tools.mjs";
 
 const CLI_ROOT = resolve(fileURLToPath(import.meta.url), "../../../../../src");
 
 async function importFromCli(relPath) {
   const absPath = resolve(CLI_ROOT, relPath);
   return import(pathToFileURL(absPath).href);
+}
+
+/**
+ * The tool registry an agent gets for one attempt — the same one the live
+ * Upstage loop uses, so tests can exercise it without a model:
+ *   - writes are trusted only inside `workdir` (an explicit PolicyEngine; the
+ *     CLI default would trust the harness process's cwd instead)
+ *   - file-tool paths are realpath-confined to `workdir` (docker and native)
+ *   - docker: host-only tools removed, run_shell/run_tests sent to `executor`
+ *   - task agent.tools allow/deny applied last
+ */
+export async function buildAgentRegistry(task, { workdir, executor } = {}) {
+  const { createRegistryWithExtensions } = await importFromCli("tools/create-registry.mjs");
+  const { PolicyEngine } = await importFromCli("core/policy/engine.mjs");
+
+  const policyEngine = new PolicyEngine({
+    allowHighRiskTools: true,
+    requireConfirmationForHighRisk: true,
+    trustedWritePaths: [workdir]
+  });
+  const registry = await createRegistryWithExtensions({
+    policy: { allowHighRiskTools: true, policyEngine },
+    cwd: workdir,
+    permissionMode: task.agent?.permissions || "acceptEdits"
+  });
+
+  const policy = createToolPolicy(task.agent?.tools || {});
+  let removedForIsolation = [];
+  if (executor?.type === "docker") {
+    removeEscapingSymlinks(workdir);
+    removedForIsolation = confineRegistryToSandbox(registry, executor, workdir, { explicitAllow: policy.allow }).removed;
+  } else {
+    confineFileTools(registry, workdir);
+  }
+  const { advertised, removed } = enforceToolPolicy(registry, policy);
+  return { registry, tools: { advertised, removedByPolicy: removed, removedForIsolation } };
 }
 
 export class UpstageAgent extends CodingAgent {
@@ -39,30 +75,16 @@ export class UpstageAgent extends CodingAgent {
 
   async run(task, context) {
     const { runAgentLoop, collectAgentLoop } = await importFromCli("agent/loop.mjs");
-    const { createRegistryWithExtensions } = await importFromCli("tools/create-registry.mjs");
     const { UpstageAdapter } = await importFromCli("model/upstage-adapter.mjs");
     const { createSession } = await importFromCli("runtime/session.mjs");
     const { DEFAULT_LOOP_BUDGET } = await importFromCli("config/defaults.mjs");
 
     const { workdir, auditLog, executor } = context;
 
-    const permissionMode = task.agent?.permissions || "acceptEdits";
     const maxTurns = task.agent?.maxTurns || 6;
     const timeoutMs = (task.sandbox?.timeout || 120) * 1000;
 
-    const registry = await createRegistryWithExtensions({
-      policy: { allowHighRiskTools: true },
-      cwd: workdir,
-      permissionMode
-    });
-
-    const policy = createToolPolicy(task.agent?.tools || {});
-    const isolation = { removedTools: [] };
-    if (executor?.type === "docker") {
-      removeEscapingSymlinks(workdir);
-      isolation.removedTools = confineRegistryToSandbox(registry, executor, workdir, { explicitAllow: policy.allow }).removed;
-    }
-    const { advertised, removed } = enforceToolPolicy(registry, policy);
+    const { registry, tools } = await buildAgentRegistry(task, { workdir, executor });
 
     const modelTools = registry.toModelTools();
     const toolSchemaHash = createHash("sha256").update(JSON.stringify(modelTools)).digest("hex");
@@ -107,12 +129,7 @@ export class UpstageAgent extends CodingAgent {
         maxOutputTokens: null,
         contextLimit: null
       },
-      tools: {
-        advertised,
-        removedByPolicy: removed,
-        removedForIsolation: isolation.removedTools,
-        schemaHash: toolSchemaHash
-      }
+      tools: { ...tools, schemaHash: toolSchemaHash }
     };
   }
 }
