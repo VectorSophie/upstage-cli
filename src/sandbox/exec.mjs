@@ -48,6 +48,14 @@ function hasShellMetacharacters(value) {
   return /[;&|`]/.test(value) || value.includes("$(");
 }
 
+// Precedence: the operator's UPSTAGE_SANDBOX=docker is authoritative — a
+// per-call `sandbox` (which tools take from model-generated arguments) can
+// opt INTO docker but never downgrade a docker requirement to local.
+export function resolveSandboxMode(requested) {
+  if (process.env.UPSTAGE_SANDBOX === "docker") return "docker";
+  return requested ?? "local";
+}
+
 function normalizeOptions(options = {}) {
   const {
     cwd,
@@ -56,7 +64,7 @@ function normalizeOptions(options = {}) {
     allowlist = DEFAULT_ALLOWED,
     networkBlocked = false,
     env = process.env,
-    sandbox = process.env.UPSTAGE_SANDBOX === "docker" ? "docker" : "local",
+    sandbox: requestedSandbox,
     sessionId,
     onStdout,
     onStderr
@@ -68,7 +76,7 @@ function normalizeOptions(options = {}) {
     allowlist,
     networkBlocked,
     env,
-    sandbox,
+    sandbox: resolveSandboxMode(requestedSandbox),
     sessionId,
     onStdout,
     onStderr

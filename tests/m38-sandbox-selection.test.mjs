@@ -10,7 +10,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { resolveSandboxExecutor, DockerUnavailableError } from "../src/sandbox/select-executor.mjs";
-import { runSandboxedProcess } from "../src/sandbox/exec.mjs";
+import { runSandboxedProcess, resolveSandboxMode } from "../src/sandbox/exec.mjs";
 import { DockerExecutor } from "../src/sandbox/docker-executor.mjs";
 
 test("sandbox:'local' (default) resolves to no docker executor", () => {
@@ -98,14 +98,39 @@ test("sandbox:'docker' never forwards the full host process.env by default (no w
   }
 });
 
-test("explicit sandbox:'local' overrides UPSTAGE_SANDBOX=docker", async () => {
+test("UPSTAGE_SANDBOX=docker is authoritative: a per-call sandbox:'local' cannot downgrade it", async () => {
+  // Was a fail-open: run_shell/run_tests forward the model's `sandbox` arg, so
+  // a model could pick "local" and run on the host despite the operator
+  // requiring Docker.
   const prev = process.env.UPSTAGE_SANDBOX;
   process.env.UPSTAGE_SANDBOX = "docker";
   try {
-    const result = await runSandboxedProcess("echo", ["hi"], { cwd: process.cwd(), sandbox: "local" });
-    assert.equal(result.ok, true);
+    assert.equal(resolveSandboxMode("local"), "docker");
+    assert.equal(resolveSandboxMode(undefined), "docker");
+    if (DockerExecutor.isAvailable()) {
+      // /.dockerenv exists only inside a container
+      const result = await runSandboxedProcess("ls", ["/.dockerenv"], { cwd: process.cwd(), sandbox: "local" });
+      assert.equal(result.ok, true, `must have run inside the container: ${result.stderr}`);
+    } else {
+      await assert.rejects(
+        () => runSandboxedProcess("echo", ["hi"], { cwd: process.cwd(), sandbox: "local" }),
+        (err) => err.code === "DOCKER_UNAVAILABLE"
+      );
+    }
   } finally {
     if (prev === undefined) delete process.env.UPSTAGE_SANDBOX;
     else process.env.UPSTAGE_SANDBOX = prev;
+  }
+});
+
+test("without a docker requirement, explicit sandbox:'local' and opting into docker both stand", () => {
+  const prev = process.env.UPSTAGE_SANDBOX;
+  delete process.env.UPSTAGE_SANDBOX;
+  try {
+    assert.equal(resolveSandboxMode("local"), "local");
+    assert.equal(resolveSandboxMode(undefined), "local");
+    assert.equal(resolveSandboxMode("docker"), "docker");
+  } finally {
+    if (prev !== undefined) process.env.UPSTAGE_SANDBOX = prev;
   }
 });
