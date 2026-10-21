@@ -11,7 +11,7 @@ import { ClaudeCodeAgent } from "../src/agent/adapters/claude-code.mjs";
 import { AiderAgent } from "../src/agent/adapters/aider.mjs";
 import { OpenCodeAgent } from "../src/agent/adapters/opencode.mjs";
 import { AgentRegistry, defaultRegistry } from "../src/agent/registry.mjs";
-import { comparisonTable, deltaColumn } from "../src/report/table.mjs";
+import { comparisonTable } from "../src/report/table.mjs";
 
 // ── CodingAgent abstract base ─────────────────────────────────────────────────
 

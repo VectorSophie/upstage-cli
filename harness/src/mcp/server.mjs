@@ -1,6 +1,6 @@
-import { createReadStream, readdirSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { readdirSync, writeFileSync, readFileSync } from "node:fs";
 import { execSync } from "node:child_process";
-import { resolve, join } from "node:path";
+import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 
 /**

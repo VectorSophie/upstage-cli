@@ -18,11 +18,6 @@ function pad(s, n) {
   return s.length >= n ? s : s + " ".repeat(n - s.length);
 }
 
-function rpad(s, n) {
-  s = String(s ?? "");
-  return s.length >= n ? s : " ".repeat(n - s.length) + s;
-}
-
 export function comparisonTable(runs) {
   if (!runs || runs.length === 0) return "No runs to compare.";
 

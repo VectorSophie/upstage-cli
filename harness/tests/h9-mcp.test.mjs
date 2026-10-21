@@ -67,7 +67,7 @@ describe("MCP stdio server", () => {
   });
 
   after(() => {
-    try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("server sends capabilities on startup", () => {

@@ -33,7 +33,6 @@ export class AiderAgent extends CodingAgent {
     ];
     if (this._model) args.push("--model", this._model);
 
-    const start = Date.now();
     const result = spawnSync("aider", args, {
       cwd: workdir,
       encoding: "utf8",
@@ -41,8 +40,6 @@ export class AiderAgent extends CodingAgent {
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env }
     });
-
-    const durationMs = Date.now() - start;
 
     if (result.error) {
       return this._errorResult(result.error.message);

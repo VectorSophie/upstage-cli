@@ -1,14 +1,11 @@
 import { describe, it, before, after } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
+import { mkdtempSync, rmSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { tmpdir } from "node:os";
-import { execSync } from "node:child_process";
 
 import { ReplayEngine } from "../src/replay/engine.mjs";
-import { TaskRunner } from "../src/task/runner.mjs";
-import { MockAgent } from "../src/agent/adapters/mock.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURE_DIR = resolve(__dirname, "../fixtures/flaky-test");
@@ -76,16 +73,14 @@ function makeTask(repoPath) {
 describe("ReplayEngine", () => {
   let tmpDir;
   let task;
-  let runner;
 
   before(() => {
     tmpDir = mkdtempSync(join(tmpdir(), "h8-"));
     task = makeTask(FIXTURE_DIR);
-    runner = new TaskRunner({ runsDir: join(tmpDir, "runs") });
   });
 
   after(() => {
-    try { rmSync(tmpDir, { recursive: true, force: true }); } catch {}
+    rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it("creates a stub agent from run artifact", () => {

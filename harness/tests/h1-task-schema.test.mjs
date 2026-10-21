@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
-import { validate, resolveImport, TASK_SCHEMA } from "../src/task/schema.mjs";
+import { validate, resolveImport } from "../src/task/schema.mjs";
 import { loadTask } from "../src/task/loader.mjs";
 
 // ── validate() ────────────────────────────────────────────────────────────────
@@ -143,8 +143,7 @@ describe("loadTask — integration", () => {
   });
 
   it("loadTask throws on invalid spec", () => {
-    let tmpDir2;
-    tmpDir2 = mkdtempSync(join(tmpdir(), "h1-load-"));
+    const tmpDir2 = mkdtempSync(join(tmpdir(), "h1-load-"));
     const badPath = join(tmpDir2, "bad.yaml");
     writeFileSync(badPath, "id: ''\nrepo: ./x\nprompt: fix\nchecks: {}\n");
     assert.throws(() => loadTask(badPath), /Invalid task/);

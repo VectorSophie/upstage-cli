@@ -41,12 +41,12 @@ export class ClaudeCodeAgent extends CodingAgent {
     const durationMs = Date.now() - start;
 
     if (result.error) {
-      return this._errorResult(result.error.message, durationMs);
+      return this._errorResult(result.error.message);
     }
 
     if (result.status !== 0) {
       const msg = (result.stderr || "").trim() || `claude exited with code ${result.status}`;
-      return this._errorResult(msg, durationMs);
+      return this._errorResult(msg);
     }
 
     return this._parseOutput(result.stdout || "", durationMs, auditLog);
@@ -89,7 +89,7 @@ export class ClaudeCodeAgent extends CodingAgent {
     };
   }
 
-  _errorResult(message, durationMs) {
+  _errorResult(message) {
     return { ok: false, error: message, turns: 0, toolCalls: 0, usage: null, events: [], stopReason: "error" };
   }
 }
