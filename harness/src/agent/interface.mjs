@@ -7,9 +7,11 @@
  *   error?: string,
  *   turns: number,
  *   toolCalls: number,
- *   usage: { promptTokens, completionTokens, totalTokens } | null,
+ *   usage: { promptTokens, completionTokens, totalTokens } | null,   // null = unknown
  *   events: AgentEvent[],
- *   stopReason?: string
+ *   stopReason?: string,
+ *   model?: { provider, id, revision, sampling, maxOutputTokens, contextLimit },
+ *   tools?: { advertised, removedByPolicy, removedForIsolation, schemaHash }
  * }
  */
 export class CodingAgent {
@@ -26,8 +28,18 @@ export class CodingAgent {
   }
 
   /**
+   * True only if every command this agent executes goes through
+   * context.executor (the task sandbox). Agents that spawn their own host
+   * processes must leave this false — the runner refuses to run them on
+   * sandbox.type=docker tasks rather than pretend they are isolated.
+   */
+  get supportsSandbox() {
+    return false;
+  }
+
+  /**
    * @param {object} task - resolved task spec
-   * @param {object} context - { workdir, sandbox, auditLog, costTracker, task }
+   * @param {object} context - { workdir, sandbox (config), executor (NativeSandbox|DockerSandbox), auditLog, costTracker, task }
    * @returns {Promise<AgentResult>}
    */
   async run(_task, _context) {
