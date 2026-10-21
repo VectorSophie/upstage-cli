@@ -36,6 +36,9 @@ export const TASK_SCHEMA = {
         memory: { type: "string" },
         cpus: { type: "number" },
         pids: { type: "number" },
+        // "image": use the image as-is; "build": install the repo's dependency
+        // file (needs operator opt-in, see sandbox/docker.mjs)
+        dependencies: { type: "string", enum: ["image", "build"] },
         allowedBinaries: { type: "array", items: { type: "string" } }
       }
     },
@@ -119,6 +122,9 @@ export function validate(spec) {
   }
   if (spec.sandbox?.type && !["native", "docker"].includes(spec.sandbox.type)) {
     errors.push(`invalid sandbox.type: ${spec.sandbox.type}`);
+  }
+  if (spec.sandbox?.dependencies !== undefined && !["image", "build"].includes(spec.sandbox.dependencies)) {
+    errors.push(`invalid sandbox.dependencies: ${spec.sandbox.dependencies}`);
   }
   if (spec.checks !== undefined && (typeof spec.checks !== "object" || spec.checks === null || Array.isArray(spec.checks))) {
     errors.push("checks must be an object with fail_to_pass/pass_to_pass/custom lists");

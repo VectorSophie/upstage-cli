@@ -24,10 +24,15 @@ export class SandboxConfigError extends Error {
  * (+swap), CPU, pids, wall-clock timeout (container is force-removed on
  * timeout), dropped capabilities, no-new-privileges.
  *
- * Optional dependency layer: if the workspace has requirements.txt /
- * package.json and the image is python* / node*, an env image is built once
- * (keyed by image + dependency-file hash). A failed build is an error, never
- * a silent "|| true". HARNESS_DOCKER_CACHE=base skips it.
+ * Dependencies (sandbox.dependencies):
+ *   "image" (default) — the image is used as-is; nothing from the repo is
+ *     installed. Benchmark tasks should pin a prebuilt image (ideally by digest).
+ *   "build" — requirements.txt / package.json from the workspace is installed
+ *     into a derived image by `docker build`. Package installs run arbitrary
+ *     code (setup.py, npm lifecycle scripts) WITH network access, so this is a
+ *     trusted-preparation step: it requires the operator to opt in with
+ *     HARNESS_ALLOW_DEPENDENCY_BUILD=1, otherwise setup fails closed. A task
+ *     file alone can never turn it on.
  */
 export class DockerSandbox {
   constructor(task) {
@@ -48,7 +53,12 @@ export class DockerSandbox {
     // Run as the invoking user on POSIX so bind-mounted files stay removable by the harness
     this.user = typeof process.getuid === "function" ? `${process.getuid()}:${process.getgid()}` : undefined;
     this._workdir = null;
+    this.dependencies = this.sandbox.dependencies || "image";
+    if (!["image", "build"].includes(this.dependencies)) {
+      throw new SandboxConfigError(`sandbox.dependencies must be "image" or "build", got: ${this.dependencies}`);
+    }
     this._envImage = null;
+    this._depInfo = null;
     this._live = new Set();
   }
 
@@ -64,9 +74,16 @@ export class DockerSandbox {
   }
 
   async setup(workdir) {
+    if (this.dependencies === "build" && process.env.HARNESS_ALLOW_DEPENDENCY_BUILD !== "1") {
+      throw new SandboxConfigError("sandbox.dependencies=build installs repository dependencies with network access; set HARNESS_ALLOW_DEPENDENCY_BUILD=1 only for trusted repositories");
+    }
     this._workdir = workdir;
-    const cacheMode = process.env.HARNESS_DOCKER_CACHE || "env";
-    this._envImage = cacheMode === "base" ? this.image : this._buildEnvImage(workdir);
+    if (this.dependencies === "build") {
+      this._envImage = this._buildEnvImage(workdir);
+    } else {
+      this._envImage = this.image;
+      this._depInfo = { mode: "image", method: "none", network: null, depFile: null, depFileSha256: null };
+    }
   }
 
   async exec(command, args = [], { timeoutMs = this.timeoutMs, env } = {}) {
@@ -123,6 +140,8 @@ export class DockerSandbox {
       trusted: false,
       image: this.image,
       envImage: this._envImage,
+      envImageId: this._envImage ? imageId(this._envImage) : null,
+      dependencies: this._depInfo,
       network: { requested: this.requestedNetwork, effective: this.network, enforced: true },
       memory: this.memory,
       cpus: this.cpus,
@@ -168,6 +187,11 @@ export class DockerSandbox {
     }
     return tag;
   }
+}
+
+function imageId(image) {
+  const r = spawnSync("docker", ["image", "inspect", "--format", "{{.Id}}", image], { encoding: "utf8", timeout: 30000 });
+  return r.status === 0 ? r.stdout.trim() : null;
 }
 
 function removeContainer(name) {

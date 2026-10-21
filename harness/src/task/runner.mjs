@@ -189,6 +189,7 @@ export class TaskRunner {
 
       const evaluation = aggregate(checkResults, metrics, task.scoring || {}, durationMs, timeoutSec);
 
+      const sandboxInfo = sandbox.describe();
       const runResult = {
         id: rid,
         instance_id: task.id,
@@ -219,7 +220,7 @@ export class TaskRunner {
           model_patch: patchRecord.unifiedDiff,
           filesChanged: patchRecord.filesChanged
         },
-        sandbox: sandbox.describe(),
+        sandbox: sandboxInfo,
         provenance: {
           harness: getHarnessInfo(),
           task: {
@@ -234,6 +235,12 @@ export class TaskRunner {
           model: agentResult.model ?? null,
           limits: { maxTurns: task.agent?.maxTurns ?? null, maxTokens: task.agent?.maxTokens ?? null, timeoutSec },
           tools: agentResult.tools ?? null,
+          environment: {
+            image: sandboxInfo.image ?? null,
+            envImage: sandboxInfo.envImage ?? null,
+            envImageId: sandboxInfo.envImageId ?? null,
+            dependencies: sandboxInfo.dependencies ?? null
+          },
           seed: null
         },
         safety: { riskFlags: [], secretsDetected: false },
