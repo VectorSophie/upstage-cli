@@ -49,15 +49,22 @@ export class PatchTracker {
     const infoDir = join(this.workdir, ".git", "info");
     mkdirSync(infoDir, { recursive: true });
     appendFileSync(join(infoDir, "exclude"), `\n${EXCLUDES.join("\n")}\n`);
-    this._git(["add", "-A"]);
+    // -f: ignored files present at the start (fixture caches, build outputs)
+    // are part of the snapshot too, so reset() can restore them exactly and
+    // still remove everything else with clean -x
+    this._git(["add", "-A", "-f"]);
     this._git(["commit", "-q", "--allow-empty", "--no-verify", "-m", "harness: initial state"]);
     return this._git(["rev-parse", "HEAD"]);
   }
 
-  /** Restore the workspace to `commit` (discarding baseline-run side effects). */
+  /**
+   * Restore the workspace to exactly the captureInitial() snapshot, discarding
+   * baseline side effects — including ignored ones (__pycache__, .pytest_cache,
+   * build output). Only paths inside this repo's work tree are touched.
+   */
   async reset(commit) {
     this._git(["reset", "-q", "--hard", commit]);
-    this._git(["clean", "-fdq"]);
+    this._git(["clean", "-ffdxq"]);
   }
 
   /** Apply a unified diff (e.g. a SWE-bench test_patch). Throws on failure. */
