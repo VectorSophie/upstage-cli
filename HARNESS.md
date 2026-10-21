@@ -111,6 +111,7 @@ sandbox:
   memory: 512m            # docker only
   cpus: 1                 # docker only
   pids: 256               # docker only
+  dependencies: image     # docker only: image (default, install nothing) | build (needs HARNESS_ALLOW_DEPENDENCY_BUILD=1)
   allowedBinaries: [python, pytest, pip, ruff]
 
 agent:
@@ -516,10 +517,22 @@ Every command, both evaluation checks **and** agent-controlled execution, runs i
 | Time | per-command timeout; the container is force-removed (`docker rm -f`) on timeout |
 | Teardown | in `finally` and on SIGINT/SIGTERM: live containers removed, workspace deleted |
 
-Optional dependency layer: if the workspace has `requirements.txt` (python* image) or
-`package.json` (node* image), an env image `harness-env:<hash>` is built once, keyed by the
-image plus the dependency file's content. A failed build is an error.
-`HARNESS_DOCKER_CACHE=base` skips the layer.
+**Dependencies** (`sandbox.dependencies`). Preparing an environment is trusted work and is
+kept apart from untrusted agent execution:
+
+- `image` (default): the image is used as-is and nothing from the repository is installed.
+  Benchmark tasks should point `image:` at a prebuilt image with the dependencies baked in,
+  pinned by digest (`python@sha256:…`) where possible.
+- `build`: `requirements.txt` (python* image) or `package.json` (node* image) is installed into
+  a derived image `harness-env:<hash>` by `docker build`. Package installation runs arbitrary
+  code (setup.py, npm lifecycle scripts) **with network access**, and the task's
+  `network: none` does not apply to the build. So `build` also requires the operator to set
+  `HARNESS_ALLOW_DEPENDENCY_BUILD=1`; otherwise setup fails with a `SandboxConfigError`.
+  A task file alone can never enable it. A failed build is an error.
+
+The run record carries `provenance.environment`: the base image, the env image and its
+image ID, and `dependencies` (mode, method `none` | `cached` | `docker-build`, network
+used for the build, dependency file, and its SHA-256).
 
 **Agent tools under Docker.** Adapters declare `supportsSandbox`. Host-process agents
 (`claude-code`, `aider`, `opencode`) are refused on docker tasks. For `upstage`:
@@ -531,6 +544,16 @@ image plus the dependency file's content. A failed build is an error.
 - in-process file tools stay, but every path is resolved with `realpath` and must stay
   inside the workspace, and symlinks that escape the workspace are removed after every
   container command
+
+**Write root and file paths (docker and native).** The agent's `PolicyEngine` is built with
+the attempt's workdir as its only trusted write root (the main CLI default would be the
+harness process's cwd). Every path argument of the file tools is checked against the
+workspace with `realpath`, including nested ones such as `apply_patch`'s `patch.path`.
+The per-tool list is `PATH_ARGS` in `sandboxed-tools.mjs`, and h13 checks it against the
+tool schemas. A file tool's check-then-access and a container command never run
+concurrently, so a command cannot plant a symlink between the check and the write.
+Limits: this is user-space checking, not a kernel boundary. On a native task, nothing
+stops another host process from racing it, and `run_shell` itself is not confined.
 
 ```yaml
 sandbox:
@@ -589,7 +612,7 @@ because their CLIs choose their own tools.
 
 ```bash
 cd harness
-npm test             # h1–h5, h7–h11: no Docker, no API key
+npm test             # h1–h5, h7–h11, h13: no Docker, no API key
 npm run test:docker  # h6 + h12: REAL Docker; reported as skipped ("NOT EXECUTED") without it
 npm run smoke        # mock agent on fix-flaky-test
 ```
@@ -607,6 +630,7 @@ npm run smoke        # mock agent on fix-flaky-test
 | `h9-mcp.test.mjs` | MCP tool calls over stdio pipe |
 | `h10-import.test.mjs` | SWE-bench / Aider importers |
 | `h11-correctness.test.mjs` | Audit regressions: real patch scoring, outcome rules, tool allow/deny/aliases/malformed calls, mocked Docker tool confinement, process-tree timeout kill, identical attempt state, pinned commit + hidden test patch, registry CLI resolution, malformed adapters, null usage/cost, pass^k, run ids, redaction |
+| `h13-workspace-confinement.test.mjs` | Trusted write root = attempt workdir (write/edit/apply_patch work, no `SECURITY_OVERRIDE`), outside/nested/symlink/junction escapes rejected (native and docker registries), `PATH_ARGS` vs tool schemas, check/exec serialization, dependency-build trust gate, pristine `reset()` with ignored files |
 | `h12-docker-isolation.test.mjs` | Real Docker: host file unreachable, no network, cgroup memory/cpu/pids limits, read-only root, timeout removes the container, run_shell routed into the container, container-planted symlink escape, end-to-end docker task |
 
 Replay limitation: replay does not re-apply the recorded file edits, so a replayed run
