@@ -3,14 +3,16 @@ import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, cpSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
 
 import { TaskRunner } from "../src/task/runner.mjs";
 import { MockAgent } from "../src/agent/adapters/mock.mjs";
 import { CodingAgent } from "../src/agent/interface.mjs";
 
-const FIXTURE_MISSING_IMPORT = resolve(new URL("../fixtures/missing-import", import.meta.url).pathname.slice(1));
-const FIXTURE_SECURITY_BUG = resolve(new URL("../fixtures/security-bug", import.meta.url).pathname.slice(1));
+// fileURLToPath, not .pathname.slice(1) — the latter only works on Windows
+const FIXTURE_MISSING_IMPORT = fileURLToPath(new URL("../fixtures/missing-import", import.meta.url));
+const FIXTURE_SECURITY_BUG = fileURLToPath(new URL("../fixtures/security-bug", import.meta.url));
 
 function makeTask(overrides = {}) {
   return {
