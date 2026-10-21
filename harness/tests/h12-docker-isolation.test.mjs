@@ -3,7 +3,7 @@
 // tests live in h11.
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
+import { mkdtempSync, writeFileSync, readFileSync, rmSync, mkdirSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { spawnSync } from "node:child_process";
@@ -14,6 +14,7 @@ import { TaskRunner } from "../src/task/runner.mjs";
 import { MockAgent } from "../src/agent/adapters/mock.mjs";
 import { CodingAgent } from "../src/agent/interface.mjs";
 import { confineRegistryToSandbox } from "../src/agent/sandboxed-tools.mjs";
+import { buildAgentRegistry } from "../src/agent/adapters/upstage.mjs";
 import { ToolRegistry } from "../../src/tools/registry.mjs";
 import { runShellTool } from "../../src/tools/builtin/run-shell.mjs";
 import { readFileTool } from "../../src/tools/builtin/read-file.mjs";
@@ -110,14 +111,12 @@ describe("DockerSandbox — real isolation", { skip }, () => {
   it("docker daemon-level failure is an infra error, not a check failure", async () => {
     await withWorkspace(async ({ ws }) => {
       const sb = new DockerSandbox({ sandbox: { type: "docker", image: "harness-h12-does-not-exist:nope", network: "none" } });
-      process.env.HARNESS_DOCKER_CACHE = "base";
       try {
         await sb.setup(ws);
         const r = await sb.execShell("true", { timeoutMs: 60000 });
         assert.equal(r.ok, false);
         assert.ok(r.infraError, "missing image → infraError");
       } finally {
-        delete process.env.HARNESS_DOCKER_CACHE;
         await sb.teardown();
       }
     });
@@ -156,6 +155,33 @@ describe("Agent tool execution is routed into Docker", { skip }, () => {
         const r = await reg.execute("read_file", { path: "leak.txt" }, { cwd: ws });
         assert.equal(r.ok, false, "must not read through an escaping symlink");
         assert.ok(!JSON.stringify(r).includes("TOP-SECRET-LN"));
+      } finally {
+        await sb.teardown();
+      }
+    });
+  });
+});
+
+describe("Live-adapter registry (buildAgentRegistry) on a real DockerSandbox", { skip }, () => {
+  it("workspace edits succeed; a container-planted symlink cannot be written through by apply_patch", async () => {
+    await withWorkspace(async ({ root, ws }) => {
+      writeFileSync(join(root, "host-secret.txt"), "TOP-SECRET-AP");
+      writeFileSync(join(ws, "a.txt"), "one\n");
+      const sb = await sandboxFor(ws);
+      const task = { id: "h12-reg", agent: { permissions: "bypassPermissions", tools: { allow: [], deny: [] } } };
+      const { registry, tools } = await buildAgentRegistry(task, { workdir: ws, executor: sb });
+      const exec = (n, a) => registry.execute(n, a, { cwd: ws });
+      try {
+        assert.ok(!tools.advertised.includes("web_fetch") && tools.advertised.includes("apply_patch"));
+        assert.equal((await exec("write_file", { path: "a.txt", content: "two\n" })).ok, true);
+        assert.equal((await exec("apply_patch", { patch: { version: 1, path: "a.txt", newContent: "three\n" } })).ok, true);
+        const seen = await exec("run_shell", { command: "cat a.txt" });
+        assert.equal(seen.data.stdout.trim(), "three", "the container sees the agent's edit");
+
+        await exec("run_shell", { command: "ln -s ../host-secret.txt leak.txt" });
+        const r = await exec("apply_patch", { patch: { version: 1, path: "leak.txt", newContent: "PWNED" } });
+        assert.equal(r.ok, false);
+        assert.equal(readFileSync(join(root, "host-secret.txt"), "utf8"), "TOP-SECRET-AP");
       } finally {
         await sb.teardown();
       }
