@@ -11,6 +11,11 @@ export const TASK_SCHEMA = {
     _import: { type: "string" },
     repo: { type: "string" },
     branch: { type: "string" },
+    // Pin the repo to this revision before every attempt (repo must be a local git repo)
+    commit: { type: "string" },
+    // Unified diff applied after the agent finishes and before checks run
+    // (SWE-bench test_patch); hidden from the agent and excluded from model_patch
+    testPatch: { type: "string" },
     prompt: { type: "string", minLength: 1 },
     context: {
       type: "object",
@@ -29,6 +34,8 @@ export const TASK_SCHEMA = {
         networkAllowlist: { type: "array", items: { type: "string" } },
         timeout: { type: "number", minimum: 1 },
         memory: { type: "string" },
+        cpus: { type: "number" },
+        pids: { type: "number" },
         allowedBinaries: { type: "array", items: { type: "string" } }
       }
     },
@@ -112,6 +119,28 @@ export function validate(spec) {
   }
   if (spec.sandbox?.type && !["native", "docker"].includes(spec.sandbox.type)) {
     errors.push(`invalid sandbox.type: ${spec.sandbox.type}`);
+  }
+  if (spec.checks !== undefined && (typeof spec.checks !== "object" || spec.checks === null || Array.isArray(spec.checks))) {
+    errors.push("checks must be an object with fail_to_pass/pass_to_pass/custom lists");
+  } else if (spec.checks) {
+    const seen = new Set();
+    for (const group of ["fail_to_pass", "pass_to_pass", "custom"]) {
+      const list = spec.checks[group];
+      if (list === undefined || list === null) continue;
+      if (!Array.isArray(list)) {
+        errors.push(`checks.${group} must be a list`);
+        continue;
+      }
+      for (const c of list) {
+        if (!c || typeof c.id !== "string" || typeof c.command !== "string" || c.command.trim() === "") {
+          errors.push(`checks.${group}: every check needs a string id and non-empty command`);
+        } else if (seen.has(c.id)) {
+          errors.push(`duplicate check id: ${c.id}`);
+        } else {
+          seen.add(c.id);
+        }
+      }
+    }
   }
   if (spec.context?.strategy && !["default", "full-repo", "retrieval", "symbol-graph", "failing-test", "recent-diffs"].includes(spec.context.strategy)) {
     errors.push(`invalid context.strategy: ${spec.context.strategy}`);

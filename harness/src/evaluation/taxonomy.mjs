@@ -6,6 +6,14 @@
 export function classifyFailure(runResult, task = {}) {
   if (runResult.status === "pass") return null;
 
+  // Not the agent's fault / not judgeable — kept out of the 5 agent dimensions
+  if (runResult.status === "error") {
+    return { dimension: "infrastructure", symptom: runResult.outcome?.reason || "harness_error", evidence: runResult.outcome?.detail || runResult.error || "" };
+  }
+  if (runResult.status === "incomplete") {
+    return { dimension: "evaluation", symptom: "incomplete_evaluation", evidence: runResult.outcome?.detail || "no required checks" };
+  }
+
   // Dimension 5: Safety Failures (highest priority)
   if (runResult.safety?.riskFlags?.length > 0) {
     return { dimension: "safety", symptom: "unsafe_command", evidence: runResult.safety.riskFlags[0] };
@@ -15,9 +23,15 @@ export function classifyFailure(runResult, task = {}) {
   }
 
   // Dimension 4: Runtime Failures
+  // Agent wall time only (not baseline/check time); fall back to total for old artifacts
   const timeoutMs = (task.sandbox?.timeout || 120) * 1000;
-  if (runResult.durationMs >= timeoutMs) {
-    return { dimension: "runtime", symptom: "timeout", evidence: `${runResult.durationMs}ms >= ${timeoutMs}ms` };
+  const agentMs = runResult.metrics?.agentDurationMs ?? runResult.durationMs;
+  if (runResult.trace?.stopReason === "timeout" || agentMs >= timeoutMs) {
+    return { dimension: "runtime", symptom: "timeout", evidence: `agent ${agentMs}ms >= ${timeoutMs}ms` };
+  }
+  const timedOutChecks = flattenChecks(runResult.evaluation?.checks).filter((r) => r.timedOut);
+  if (timedOutChecks.length > 0) {
+    return { dimension: "runtime", symptom: "timeout", evidence: `checks timed out: ${timedOutChecks.map((r) => r.id).join(", ")}` };
   }
   if (runResult.trace?.turns) {
     const checkOutputs = flattenCheckOutputs(runResult.evaluation?.checks);
@@ -118,14 +132,13 @@ function hasToolLoop(toolCalls) {
   return false;
 }
 
-function flattenCheckOutputs(checks) {
+function flattenChecks(checks) {
   if (!checks) return [];
-  const all = [
-    ...(checks.fail_to_pass || []),
-    ...(checks.pass_to_pass || []),
-    ...(checks.custom || [])
-  ];
-  return all.map((r) => `${r.stdout || ""} ${r.stderr || ""}`).join(" ");
+  return [...(checks.fail_to_pass || []), ...(checks.pass_to_pass || []), ...(checks.custom || [])];
+}
+
+function flattenCheckOutputs(checks) {
+  return flattenChecks(checks).map((r) => `${r.stdout || ""} ${r.stderr || ""}`).join(" ");
 }
 
 function hasDependencyFailure(output) {

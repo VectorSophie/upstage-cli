@@ -24,6 +24,7 @@ export class AuditLog {
         if (last) {
           last.ok = event.ok;
           last.durationMs = event.durationMs || 0;
+          if (event.result !== undefined) last.result = truncate(event.result);
         }
       } else if (event.type === "thinking") {
         if (!this._currentTurn) {
@@ -63,4 +64,14 @@ export class AuditLog {
   events() {
     return this._events;
   }
+}
+
+function truncate(value, limit = 2000) {
+  let text;
+  try {
+    text = typeof value === "string" ? value : JSON.stringify(value);
+  } catch {
+    text = String(value);
+  }
+  return text && text.length > limit ? `${text.slice(0, limit)}…[truncated ${text.length - limit} chars]` : text;
 }

@@ -41,6 +41,12 @@ export function speedScore(durationMs, timeoutMs) {
   return clamp(1 - durationMs / timeoutMs, 0, 1);
 }
 
+/**
+ * Legacy composite score, kept for backward compatibility. It is NOT an
+ * authoritative ranking — run status comes from determineOutcome() (checks.mjs).
+ * Components whose input is unknown (e.g. cost without provider usage) are
+ * reported as null and left out, with the remaining weights renormalised.
+ */
 export function aggregate(checkResults, metrics, scoringConfig = {}, durationMs = 0, timeoutSeconds = 120) {
   const weights = { ...DEFAULT_WEIGHTS, ...(scoringConfig.weights || {}) };
   const costBudgetUsd = scoringConfig.costBudgetUsd || DEFAULT_COST_BUDGET;
@@ -48,25 +54,37 @@ export function aggregate(checkResults, metrics, scoringConfig = {}, durationMs 
   const ftp = failToPassRate(checkResults.fail_to_pass || []);
   const ptp = passToPassRate(checkResults.pass_to_pass || []);
 
-  const cs = checksScore(ftp, ptp);
-  const pm = patchMinimalityScore(metrics.patch?.linesAdded || 0, metrics.patch?.linesRemoved || 0);
-  const tc = toolCallScore(metrics.toolCalls || 0);
-  const co = costScore(metrics.estimatedCostUsd || 0, costBudgetUsd);
-  const sp = speedScore(durationMs, timeoutSeconds * 1000);
+  const breakdown = {
+    checksScore: checksScore(ftp, ptp),
+    patchMinimalityScore: patchMinimalityScore(metrics.patch?.linesAdded || 0, metrics.patch?.linesRemoved || 0),
+    toolCallScore: metrics.toolCalls == null ? null : toolCallScore(metrics.toolCalls),
+    costScore: metrics.estimatedCostUsd == null ? null : costScore(metrics.estimatedCostUsd, costBudgetUsd),
+    speedScore: speedScore(durationMs, timeoutSeconds * 1000)
+  };
+  const weightOf = {
+    checksScore: weights.checks,
+    patchMinimalityScore: weights.patchMinimality,
+    toolCallScore: weights.toolCallCount,
+    costScore: weights.costUsd,
+    speedScore: weights.speedMs
+  };
 
-  const score = clamp(
-    weights.checks * cs +
-    weights.patchMinimality * pm +
-    weights.toolCallCount * tc +
-    weights.costUsd * co +
-    weights.speedMs * sp
-  );
+  let sum = 0;
+  let wsum = 0;
+  for (const [k, v] of Object.entries(breakdown)) {
+    if (v == null) continue;
+    sum += (weightOf[k] || 0) * v;
+    wsum += weightOf[k] || 0;
+  }
+  const totalWeight = Object.values(weightOf).reduce((a, b) => a + (b || 0), 0);
+  const score = clamp(wsum > 0 ? (sum / wsum) * totalWeight : 0);
 
   return {
     score: Math.round(score * 100) / 100,
     failToPassRate: ftp,
     passToPassRate: ptp,
     checks: checkResults,
-    breakdown: { checksScore: cs, patchMinimalityScore: pm, toolCallScore: tc, costScore: co, speedScore: sp }
+    breakdown,
+    compositeIsAuthoritative: false
   };
 }
