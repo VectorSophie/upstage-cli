@@ -56,3 +56,42 @@ jobs:
           name: coverage-node-${{ matrix.node }}
           path: coverage/
           retention-days: 7
+
+  harness:
+    name: Harness (Node 22)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: harness
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3"
+
+      - name: Install root dependencies
+        # harness imports src/ (tool registry, sandbox flags) from the repo root
+        run: bun install --frozen-lockfile
+        working-directory: .
+
+      - name: Install harness dependencies
+        run: npm ci
+
+      - name: Syntax check
+        run: npm run check
+
+      - name: Test
+        run: npm test
+
+      - name: Docker isolation tests (real Docker)
+        run: npm run test:docker
+
+      - name: Smoke test (mock agent)
+        run: npm run smoke -- --runs-dir ${{ runner.temp }}/harness-runs
