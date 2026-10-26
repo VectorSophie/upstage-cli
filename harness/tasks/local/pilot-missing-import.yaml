@@ -1,0 +1,62 @@
+id: local-pilot-missing-import
+version: 1
+description: >
+  Local-model pilot task (Python/Flask). Requires `pytest` and `flask` installed
+  in the sandbox (native) or image (docker); skip or use the node pilot task if
+  those are unavailable. Same common evaluation envelope as pilot-flaky-test.yaml.
+  Run with --agent kanana|exaone|exaone-nothink|ax|solar-open2.
+
+repo: ../../fixtures/missing-import
+branch: main
+
+prompt: |
+  The Flask application fails with a NameError when GET /items/<id> is called.
+  Read app.py, find the missing import, and fix it. Do not modify any test files.
+
+context:
+  strategy: default
+  maxFiles: 10
+  includeTests: true
+
+sandbox:
+  type: native
+  network: none
+  timeout: 300
+
+agent:
+  permissions: acceptEdits
+  maxTurns: 8
+  maxTokens: 8192
+  tools:
+    allow: [read_file, write_file, search_code, repo_map]
+    deny: []
+
+checks:
+  fail_to_pass:
+    - id: test-startup
+      command: pytest tests/test_app.py::test_startup -x -q
+      timeout: 60
+      weight: 0.7
+  pass_to_pass:
+    - id: test-health
+      command: pytest tests/test_app.py::test_health -x -q
+      timeout: 60
+      weight: 0.15
+    - id: test-list
+      command: pytest tests/test_app.py::test_list -x -q
+      timeout: 60
+      weight: 0.15
+
+scoring:
+  weights:
+    checks: 0.60
+    patchMinimality: 0.20
+    toolCallCount: 0.10
+    costUsd: 0.05
+    speedMs: 0.05
+  costBudgetUsd: 0.50
+
+tags: [python, flask, local-pilot, easy]
+difficulty: easy
+expectedPatchScope: [app.py]
+expectedMaxLines: 3

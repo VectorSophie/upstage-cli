@@ -1,0 +1,66 @@
+id: local-pilot-flaky-test
+version: 1
+description: >
+  Local-model pilot task (node-based, no external deps). Exercises a real file
+  edit, read/write tool calls, and a verifiable test-based outcome. Runs
+  identically for all four local models — pick the model with --agent
+  (kanana | exaone | exaone-nothink | ax | solar-open2). This file encodes the
+  COMMON evaluation envelope (identical prompt, tools, turn/wall limits, context);
+  see harness/docs/LOCAL_MODELS.md for the per-model output-budget note.
+
+# Node fixture — runnable without python/flask/pytest.
+repo: ../../fixtures/flaky-test
+branch: main
+
+prompt: |
+  The test in tests/fetcher.test.mjs fails because it is missing an `await` before
+  the fetchData() call. Read the file, then fix it. Do not modify the source file
+  fetcher.mjs.
+
+context:
+  strategy: default
+  maxFiles: 10
+  includeTests: true
+
+# ── Shared evaluation envelope (identical for every model in a comparison) ──
+sandbox:
+  type: native          # switch to docker for isolated runs; all four support it
+  network: none
+  timeout: 300          # shared wall-clock budget (sec) for agent + each check
+
+agent:
+  permissions: acceptEdits
+  maxTurns: 8            # identical agent-turn limit
+  # Per-call OUTPUT cap. The local adapter clamps this to each model's validated
+  # ceiling (Kanana/EXAONE 8192; A.X/Solar 4096 — Solar's keeps prompt+output
+  # inside its 8K context). A single number is NOT automatically fair; see docs.
+  maxTokens: 8192
+  tools:
+    allow: [read_file, write_file, search_code, repo_map]
+    deny: []
+
+checks:
+  fail_to_pass:
+    - id: test-data-fetch
+      command: node --test --test-name-pattern "test_data_fetch" tests/fetcher.test.mjs
+      timeout: 30
+      weight: 0.7
+  pass_to_pass:
+    - id: test-config-parse
+      command: node --test --test-name-pattern "test_config|test_parse" tests/fetcher.test.mjs
+      timeout: 30
+      weight: 0.3
+
+scoring:
+  weights:
+    checks: 0.70
+    patchMinimality: 0.20
+    toolCallCount: 0.05
+    costUsd: 0.03
+    speedMs: 0.02
+  costBudgetUsd: 0.25
+
+tags: [javascript, async, local-pilot, easy]
+difficulty: easy
+expectedPatchScope: [tests/fetcher.test.mjs]
+expectedMaxLines: 2
