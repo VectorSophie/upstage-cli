@@ -3,6 +3,7 @@ import { UpstageAgent } from "./adapters/upstage.mjs";
 import { ClaudeCodeAgent } from "./adapters/claude-code.mjs";
 import { AiderAgent } from "./adapters/aider.mjs";
 import { OpenCodeAgent } from "./adapters/opencode.mjs";
+import { LocalModelAgent } from "./adapters/local.mjs";
 
 const BUILTIN_ADAPTERS = [
   { ids: ["mock"], factory: () => new MockAgent() },
@@ -11,7 +12,18 @@ const BUILTIN_ADAPTERS = [
   { ids: ["solar-pro2"], factory: (opts) => new UpstageAgent({ ...opts, model: opts.model || "solar-pro2" }) },
   { ids: ["claude", "claude-code"], factory: (opts) => new ClaudeCodeAgent(opts) },
   { ids: ["aider"], factory: (opts) => new AiderAgent(opts) },
-  { ids: ["opencode"], factory: (opts) => new OpenCodeAgent(opts) }
+  { ids: ["opencode"], factory: (opts) => new OpenCodeAgent(opts) },
+  // Locally served Korean models (one shared adapter; model-specific serving is
+  // pure config in local-models.mjs). `local --model <key>` is the generic form;
+  // the per-model ids below are convenience aliases. Note `solar-open2` is the
+  // local Nota-NVFP4 checkpoint — deliberately NOT `solar`/`solar-pro2`, which
+  // are the Upstage cloud API.
+  { ids: ["local"], factory: (opts) => new LocalModelAgent(opts) },
+  { ids: ["kanana"], factory: (opts) => new LocalModelAgent({ ...opts, model: "kanana" }) },
+  { ids: ["exaone"], factory: (opts) => new LocalModelAgent({ ...opts, model: "exaone" }) },
+  { ids: ["exaone-nothink"], factory: (opts) => new LocalModelAgent({ ...opts, model: "exaone-nothink" }) },
+  { ids: ["ax"], factory: (opts) => new LocalModelAgent({ ...opts, model: "ax" }) },
+  { ids: ["solar-open2"], factory: (opts) => new LocalModelAgent({ ...opts, model: "solar-open2" }) }
 ];
 
 export class AgentRegistry {
