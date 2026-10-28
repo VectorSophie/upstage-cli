@@ -284,9 +284,12 @@ export class TaskRunner {
   async _baseline(task, sandbox, patchTracker, initialCommit, timeoutSec, workdir = null) {
     const p2p = task.checks.pass_to_pass || [];
     const f2p = task.checks.fail_to_pass || [];
-    // Required custom checks are acceptance checks (like fail_to_pass): they
-    // must FAIL on the untouched repo, or the task would reward a no-op.
-    const customAcceptance = (task.checks.custom || []).filter((c) => c.required !== false);
+    // Trace-aware custom evaluators are agent-dependent acceptance checks (like
+    // fail_to_pass): they MUST fail on the untouched repo (empty trace), or the
+    // task would reward a no-op. Shell custom checks are left out of baseline
+    // validation (they are often environment invariants, e.g. "running in a
+    // container", that legitimately hold before the agent runs).
+    const customAcceptance = (task.checks.custom || []).filter((c) => c.required !== false && typeof c.evaluator === "string");
     if (p2p.length === 0 && f2p.length === 0 && customAcceptance.length === 0) {
       return { pass_to_pass: [], fail_to_pass: [], custom: [] };
     }
