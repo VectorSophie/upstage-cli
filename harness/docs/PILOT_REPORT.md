@@ -137,6 +137,45 @@ Solar at the ceiling the harness config pins; the conservative launcher default
 
 ---
 
+## Run 3 — hardened T3-v3 (`tool-continuation-v3`), live under Docker
+
+Final review of the v2 evaluator found three ways to pass without a genuine,
+unmodified generator execution (all reproduced): (A) a command merely *containing*
+`challenge.mjs`; (C) a token in stderr/echo/metadata; (B) modify→run→restore of
+the generator (the post-run hash is time-of-check ≠ time-of-use). The evaluator
+was hardened — exact **command identity**, **stdout-only** extraction of a
+successful execution, and an **immutable generator** mounted read-only outside the
+workspace (Docker) so B is structurally impossible. Details in
+`docs/T3_TRACE_EVALUATION.md`.
+
+T3-v3 runs under **real Docker isolation** (`node:22-alpine`), the generator
+mounted read-only at `/opt/t3/challenge.mjs`; the agent must run exactly
+`node /opt/t3/challenge.mjs`. One attempt per model, live model inference:
+
+| Model | Task pass | Clean completion | stopReason | challenge execs | note |
+|---|---|---|---|---|---|
+| Kanana 2 | ✅ | ✅ | done | 1× | exact command, stdout token consumed |
+| EXAONE 4.5 | ❌ capability | ❌ | tool_error | 1× | ran the challenge, then `read_file out.txt` **before writing it** → ENOENT ended the loop; out.txt never created |
+| A.X 4.0 | ✅ | ✅ | done | 1× | exact command, stdout token consumed |
+| Solar Open 2 (NVFP4) | ✅ | ❌ | budget_exhausted | 3× | exact command each time, token consumed |
+
+**Task pass 3/4; clean completion 2/4.** All passes are now genuinely proven:
+the exact trusted command executed in a container, its stdout token was consumed,
+and the generator was read-only (unforgeable). EXAONE's failure is a real
+capability miss (premature `read_file` of a not-yet-written file, ending the run
+on the loop's fail-fast tool-error path — the same over-eager-verification
+behaviour analysed below), correctly scored a **task fail, not an evaluator or
+infrastructure error**. This is a single bounded attempt per model, not a
+statistically meaningful comparison.
+
+> **Evaluator-revision note.** The Run 2 (T3-v2) results were produced under the
+> **pre-hardening** evaluator and are **not** relabeled as passing the hardened
+> evaluator. Run 3 is the canonical hardened evidence. Old v2 raw traces predate
+> the structured-stdout and read-only-mount evidence, so they are not treated as
+> proof of execution-time integrity.
+
+---
+
 ## EXAONE termination analysis (trace evidence)
 
 EXAONE produces correct patches but never terminates cleanly. From the saved
