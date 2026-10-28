@@ -105,7 +105,11 @@ export class LocalModelAgent extends CodingAgent {
       presencePenalty: cfg.sampling.presencePenalty,
       maxTokens,
       chatTemplateKwargs: cfg.chatTemplateKwargs || undefined,
-      timeoutMs: this._timeoutMs
+      timeoutMs: this._timeoutMs,
+      // Hard wall-clock deadline for the whole agent run: no single inference
+      // request (or its retries) may outlive the task's agent budget. Matches the
+      // loop's maxWallTimeMs so a long request can't blow past it between steps.
+      deadline: Date.now() + timeoutMs
     });
 
     const session = createSession(workdir);
@@ -126,14 +130,23 @@ export class LocalModelAgent extends CodingAgent {
 
     if (auditLog) auditLog.recordEvents(events);
 
-    // A model/transport failure (adapter threw → loop stops with MODEL_ERROR) is
-    // INFRASTRUCTURE, not a task outcome. Re-throw so the runner records it as
-    // status=error (agent_adapter_error), keeping it distinct from a genuine task
-    // failure where the model ran but produced a wrong/incomplete patch. Other
-    // non-ok stop reasons (budget_exhausted, tool_error, needs_user_input,
-    // policy_blocked) mean the agent actually ran, so they flow through to checks.
-    if (!result?.ok && result?.stopReason === "model_error") {
-      throw new Error(result?.response || "local model adapter error");
+    // Classify a non-ok MODEL_ERROR termination:
+    //  - a [deadline] abort is AGENT-BUDGET exhaustion (we ran out of wall-clock
+    //    inside a request) — a runtime/budget outcome, NOT an infrastructure
+    //    failure. Surface it as budget_exhausted and let the result flow to the
+    //    runner (status driven by checks), distinct from an API error.
+    //  - anything else (protocol/server/auth/network/genuine timeout) is
+    //    INFRASTRUCTURE → re-throw so the runner records status=error.
+    // Other non-ok stop reasons (output_truncated, budget_exhausted, tool_error,
+    // needs_user_input, policy_blocked) mean the agent actually ran → flow through.
+    let stopReason = result?.stopReason;
+    const errMsg = result?.ok ? "" : result?.response || "";
+    if (!result?.ok && stopReason === "model_error") {
+      if (/\[deadline\]/.test(errMsg)) {
+        stopReason = "budget_exhausted";
+      } else {
+        throw new Error(errMsg || "local model adapter error");
+      }
     }
 
     const turns = Array.isArray(result?.trace) ? result.trace.filter((t) => t.step !== undefined).length : null;
@@ -147,7 +160,7 @@ export class LocalModelAgent extends CodingAgent {
       toolCalls: events.filter((e) => e.type === "tool_start").length,
       usage: extractUsage(events),
       events,
-      stopReason: result?.stopReason,
+      stopReason,
       // Provenance sink (runner stores this verbatim into provenance.model).
       model: {
         provider: prov.provider,
@@ -165,6 +178,7 @@ export class LocalModelAgent extends CodingAgent {
         logitsProcessor: prov.logitsProcessor,
         maxNumSeqs: prov.maxNumSeqs ?? null,
         baseUrl: this._resolvedBaseUrl(),
+        lastFinishReason: adapter.lastFinishReason ?? null,
         sampling: {
           temperature: adapter.temperature ?? null,
           topP: adapter.topP ?? null,
