@@ -41,6 +41,11 @@ export function classifyFailure(runResult, task = {}) {
   }
   if (runResult.evaluation?.checks) {
     const stopReason = runResult.trace?.stopReason || "";
+    if (stopReason === "output_truncated") {
+      // Generation ran past its output budget (finish_reason=length) or was
+      // content-filtered — a runtime truncation, distinct from a wrong answer.
+      return { dimension: "runtime", symptom: "output_truncated", evidence: `stopReason=${stopReason}` };
+    }
     if (stopReason === "budget_exhausted" || stopReason === "max_turns") {
       return { dimension: "runtime", symptom: "budget_exhausted", evidence: `stopReason=${stopReason}` };
     }
