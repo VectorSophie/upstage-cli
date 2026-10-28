@@ -79,10 +79,13 @@ export const TASK_SCHEMA = {
   },
   $defs: {
     check: {
-      required: ["id", "command"],
+      // A check is either a shell `command` or a trace-aware `evaluator`.
+      required: ["id"],
       properties: {
         id: { type: "string" },
         command: { type: "string" },
+        evaluator: { type: "string" },
+        config: { type: "object" },
         timeout: { type: "number" },
         weight: { type: "number" },
         required: { type: "boolean" }
@@ -138,8 +141,12 @@ export function validate(spec) {
         continue;
       }
       for (const c of list) {
-        if (!c || typeof c.id !== "string" || typeof c.command !== "string" || c.command.trim() === "") {
-          errors.push(`checks.${group}: every check needs a string id and non-empty command`);
+        const hasCommand = c && typeof c.command === "string" && c.command.trim() !== "";
+        const hasEvaluator = c && typeof c.evaluator === "string" && c.evaluator.trim() !== "";
+        if (!c || typeof c.id !== "string" || (!hasCommand && !hasEvaluator)) {
+          errors.push(`checks.${group}: every check needs a string id and either a non-empty command or a non-empty evaluator`);
+        } else if (hasCommand && hasEvaluator) {
+          errors.push(`checks.${group}: check '${c.id}' sets both command and evaluator (pick one)`);
         } else if (seen.has(c.id)) {
           errors.push(`duplicate check id: ${c.id}`);
         } else {

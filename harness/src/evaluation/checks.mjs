@@ -1,16 +1,23 @@
 import { NativeSandbox } from "../sandbox/native.mjs";
+import { runEvaluatorCheck } from "./evaluators.mjs";
 
 const OUTPUT_LIMIT = 4000;
 
 /**
- * Runs one check through `sandbox` (a NativeSandbox/DockerSandbox, or a
- * workdir string for a one-off native run — kept for backward compatibility).
+ * Runs one check. A check is EITHER a shell command run through `sandbox`
+ * (a NativeSandbox/DockerSandbox, or a workdir string for a one-off native run)
+ * OR a trace-aware evaluator named by `check.evaluator`, which runs in the
+ * trusted harness process against `ctx` ({ workdir, trace, task }).
  *
  * Result: { id, passed, exitCode, timedOut, infraError, durationMs, stdout, stderr, weight, required }
  * `infraError` is set when the check could not be executed at all (docker
- * daemon error, spawn failure) — that is an evaluation error, not a failure.
+ * daemon error, spawn failure, unknown evaluator) — an evaluation error, not a
+ * failure.
  */
-export async function runCheck(check, sandbox, defaultTimeout = 120) {
+export async function runCheck(check, sandbox, defaultTimeout = 120, ctx = null) {
+  if (check.evaluator) {
+    return runEvaluatorCheck(check, ctx || {});
+  }
   const sb = typeof sandbox === "string" ? nativeFor(sandbox) : sandbox;
   const timeoutMs = (check.timeout || defaultTimeout) * 1000;
   const r = await sb.execShell(check.command, { timeoutMs });
@@ -28,10 +35,10 @@ export async function runCheck(check, sandbox, defaultTimeout = 120) {
   };
 }
 
-export async function runAll(checks, sandbox, defaultTimeout = 120) {
+export async function runAll(checks, sandbox, defaultTimeout = 120, ctx = null) {
   const results = [];
   for (const check of checks) {
-    results.push(await runCheck(check, sandbox, defaultTimeout));
+    results.push(await runCheck(check, sandbox, defaultTimeout, ctx));
   }
   return results;
 }

@@ -6,7 +6,7 @@
 // no network pull.
 import { describe, it, before, after, beforeEach, afterEach } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync, rmSync, mkdirSync } from "node:fs";
+import { mkdtempSync, writeFileSync, rmSync, mkdirSync, cpSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -109,5 +109,85 @@ describe("LocalModelAgent — real Docker isolation", { skip }, () => {
     // tools provenance records what the policy/isolation removed (fail-closed path ran)
     assert.ok(result.provenance.tools, "tools provenance present");
     assert.ok(Array.isArray(result.provenance.tools.advertised));
+  });
+});
+
+// T3 tool-result-continuation evaluator under REAL Docker isolation: the
+// challenge runs INSIDE the container (node:22-alpine), and the trusted
+// trace-aware evaluator (host-side) verifies it from the bind-mounted workspace
+// + the harness trace — proving the mechanism is isolation-agnostic.
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+import { dirname, resolve as presolve } from "node:path";
+
+const NODE_IMG = process.env.HARNESS_NODE_IMAGE || "node:22-alpine";
+const hasNodeImg = DOCKER && (() => { try { return spawnSync("docker", ["image", "inspect", NODE_IMG], { stdio: "ignore" }).status === 0; } catch { return false; } })();
+const skipT3 = DOCKER ? (hasNodeImg ? false : `${NODE_IMG} image not present — NOT EXECUTED`) : skip;
+
+const HERE18 = dirname(fileURLToPath(import.meta.url));
+const V2_FIXTURE = presolve(HERE18, "../fixtures/tool-continuation-v2");
+const V2_GEN_SHA = createHash("sha256").update(readFileSync(join(V2_FIXTURE, "challenge.mjs"))).digest("hex");
+
+function tokenFromBody(opts) {
+  const body = typeof opts?.body === "string" ? opts.body : "";
+  const m = body.match(/T3-[0-9a-f]{32}/g);
+  return m ? m[m.length - 1] : null;
+}
+
+describe("T3 trace evaluator — real Docker isolation", { skip: skipT3 }, () => {
+  let t3root;
+  beforeEach(() => {
+    t3root = mkdtempSync(join(tmpdir(), "h17t3-"));
+    cpSync(V2_FIXTURE, join(t3root, "fixture"), { recursive: true });
+    writeFileSync(join(t3root, "task.yaml"), [
+      "id: t3-docker",
+      "version: 2",
+      "repo: ./fixture",
+      "prompt: 'Run node challenge.mjs and write its token to out.txt.'",
+      `sandbox: { type: docker, image: ${NODE_IMG}, network: none, timeout: 60 }`,
+      "agent: { permissions: bypassPermissions, maxTurns: 6, tools: { allow: [run_shell, write_file] } }",
+      "checks:",
+      "  custom:",
+      "    - id: t3",
+      "      evaluator: tool-result-continuation",
+      "      required: true",
+      "      config:",
+      "        command: 'challenge.mjs'",
+      "        outputFile: 'out.txt'",
+      "        tokenPattern: 'T3-[0-9a-f]{32}'",
+      "        generatorFile: 'challenge.mjs'",
+      `        generatorSha256: '${V2_GEN_SHA}'`,
+      "  pass_to_pass:",
+      "    - { id: gen-exists, command: 'test -f challenge.mjs', timeout: 20, weight: 0.0 }"
+    ].join("\n"));
+  });
+  afterEach(() => { globalThis.fetch = realFetch; try { rmSync(t3root, { recursive: true, force: true }); } catch { /* best effort */ } });
+
+  it("challenge executes in-container; agent writes the emitted token → PASS, isolated", async () => {
+    stubModel((n, opts) => {
+      if (n === 1) return toolCall(n, "run_shell", { command: "node challenge.mjs" });
+      if (n === 2) { const tok = tokenFromBody(opts); assert.ok(tok, "stub must see the token the container emitted"); return toolCall(n, "write_file", { path: "out.txt", content: tok }); }
+      return stop("Done.");
+    });
+    const result = await new TaskRunner({ runsDir: null }).run(loadTask(join(t3root, "task.yaml")), defaultRegistry.resolve("kanana"));
+    assert.equal(result.status, "pass", `expected pass, got ${result.status} (${result.outcome?.detail})`);
+    assert.equal(result.sandbox.type, "docker");
+    assert.equal(result.sandbox.trusted, false);
+    assert.equal(result.sandbox.network.enforced, true);
+    assert.ok(result.patch.filesChanged.includes("out.txt"));
+    assert.ok(!result.patch.filesChanged.includes("challenge.mjs"));
+  });
+
+  it("writing a token the container never emitted → FAIL (result not consumed), still isolated", async () => {
+    stubModel((n) => {
+      if (n === 1) return toolCall(n, "run_shell", { command: "node challenge.mjs" });
+      if (n === 2) return toolCall(n, "write_file", { path: "out.txt", content: `T3-${"0".repeat(32)}` });
+      return stop("done");
+    });
+    const result = await new TaskRunner({ runsDir: null }).run(loadTask(join(t3root, "task.yaml")), defaultRegistry.resolve("ax"));
+    assert.equal(result.status, "fail", `expected fail, got ${result.status}`);
+    assert.equal(result.sandbox.type, "docker");
   });
 });
