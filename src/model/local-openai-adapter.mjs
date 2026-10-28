@@ -365,23 +365,26 @@ export class LocalOpenAIAdapter {
         }
         return response;
       } catch (error) {
-        // `timedOut` marks our own per-attempt timer firing (vs an external abort).
-        if (timedOut && !isTimeoutError(error)) error = Object.assign(new Error("request timed out"), { name: "TimeoutError" });
+        // `timedOut` marks our own per-attempt timer firing. Classify against a
+        // normalized view (a fast synchronous throw before the timer may not look
+        // like a timeout), but keep `error` as the caught binding so each throw's
+        // `cause` is the original (lint: no-ex-assign + preserve-caught-error).
+        const normalized = timedOut && !isTimeoutError(error) ? Object.assign(new Error("request timed out"), { name: "TimeoutError" }) : error;
         // Distinguish a deadline/cancellation abort from a genuine server timeout.
         if (externalSignal?.aborted) {
           throw new Error(`Local model request failed [cancelled] (${this.model} @ ${this.baseUrl}): caller cancelled`, { cause: error });
         }
-        if (isTimeoutError(error) && this.deadline !== null && Date.now() >= this.deadline) {
+        if (isTimeoutError(normalized) && this.deadline !== null && Date.now() >= this.deadline) {
           throw new Error(
             `Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): exceeded agent-run budget`,
             { cause: error }
           );
         }
-        lastError = error;
-        const retriable = isTimeoutError(error);
+        lastError = normalized;
+        const retriable = isTimeoutError(normalized);
         if (!retriable || attempt >= this.maxRetries) {
-          const category = classifyError({ error });
-          throw new Error(`Local model request failed [${category}] (${this.model} @ ${this.baseUrl}): ${error.message}`, { cause: error });
+          const category = classifyError({ error: normalized });
+          throw new Error(`Local model request failed [${category}] (${this.model} @ ${this.baseUrl}): ${normalized.message}`, { cause: error });
         }
         if (!(await this._backoffWithinDeadline(attempt))) {
           throw new Error(`Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): no budget left to retry`, { cause: error });
