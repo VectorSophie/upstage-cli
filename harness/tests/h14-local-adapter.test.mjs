@@ -273,3 +273,119 @@ describe("LocalOpenAIAdapter — payload and auth", () => {
     assert.equal(mk({ baseUrl: "http://h/v1/" }).baseUrl, "http://h/v1");
   });
 });
+
+// ── P1-B: response validation ────────────────────────────────────────────────
+
+import { validateChatResponse, ProtocolError } from "../../src/model/local-openai-adapter.mjs";
+
+describe("validateChatResponse — structural validation (P1-B)", () => {
+  const ok = (message, extra = {}) => ({ choices: [{ message, finish_reason: "stop" }], ...extra });
+
+  it("accepts a normal content message", () => {
+    const r = validateChatResponse(ok({ role: "assistant", content: "hi" }));
+    assert.equal(r.content, "hi");
+  });
+  it("accepts null content when tool calls are present", () => {
+    const r = validateChatResponse({ choices: [{ message: { role: "assistant", content: null, tool_calls: [{ id: "c1", type: "function", function: { name: "f", arguments: "{}" } }] }, finish_reason: "tool_calls" }] });
+    assert.equal(r.content, "");
+    assert.equal(r.toolCalls.length, 1);
+  });
+  it("accepts null content when reasoning is present", () => {
+    const r = validateChatResponse({ choices: [{ message: { role: "assistant", content: null, reasoning: "thinking" }, finish_reason: "length" }] });
+    assert.equal(r.reasoning, "thinking");
+  });
+  it("rejects missing choices", () => {
+    assert.throws(() => validateChatResponse({ usage: {} }), ProtocolError);
+  });
+  it("rejects empty choices array", () => {
+    assert.throws(() => validateChatResponse({ choices: [] }), ProtocolError);
+  });
+  it("rejects a choice with no message object", () => {
+    assert.throws(() => validateChatResponse({ choices: [{ finish_reason: "stop" }] }), ProtocolError);
+  });
+  it("rejects non-array tool_calls", () => {
+    assert.throws(() => validateChatResponse(ok({ role: "assistant", content: "x", tool_calls: {} })), ProtocolError);
+  });
+  it("rejects a tool call missing function.name", () => {
+    assert.throws(() => validateChatResponse(ok({ role: "assistant", content: "", tool_calls: [{ id: "c", type: "function", function: { arguments: "{}" } }] })), ProtocolError);
+  });
+  it("rejects non-string content", () => {
+    assert.throws(() => validateChatResponse(ok({ role: "assistant", content: { a: 1 } })), ProtocolError);
+  });
+  it("rejects a wholly empty turn (no content/tools/reasoning) when not truncated", () => {
+    assert.throws(() => validateChatResponse({ choices: [{ message: { role: "assistant", content: null }, finish_reason: "stop" }] }), ProtocolError);
+  });
+  it("does NOT reject an empty turn when finish_reason=length (truncation handled upstream)", () => {
+    const r = validateChatResponse({ choices: [{ message: { role: "assistant", content: null }, finish_reason: "length" }] });
+    assert.equal(r.finishReason, "length");
+    assert.equal(r.content, "");
+  });
+  it("defaults absent tool-call arguments to '{}' rather than rejecting", () => {
+    const r = validateChatResponse(ok({ role: "assistant", content: "", tool_calls: [{ id: "c", type: "function", function: { name: "f" } }] }));
+    assert.equal(r.toolCalls[0].function.arguments, "{}");
+  });
+  it("complete() surfaces a malformed 200 as a [protocol] error", async () => {
+    stub(() => json({ not: "an openai response" }));
+    await assert.rejects(() => mk().complete({ messages: [] }), /\[protocol\]/);
+  });
+});
+
+// ── P1-C: wall-clock deadline ────────────────────────────────────────────────
+
+describe("LocalOpenAIAdapter — deadline enforcement (P1-C)", () => {
+  it("refuses to start a request once the deadline has passed → [deadline]", async () => {
+    let called = false;
+    stub(() => { called = true; return json(msg({ role: "assistant", content: "x" })); });
+    const a = mk({ deadline: Date.now() - 1 });
+    await assert.rejects(() => a.complete({ messages: [] }), /\[deadline\]/);
+    assert.equal(called, false, "must not issue the HTTP request after the deadline");
+  });
+
+  it("caps the per-request timeout to the remaining budget", async () => {
+    let seenTimeout = null;
+    // Capture the AbortSignal's timeout by observing when it aborts.
+    globalThis.fetch = async (_url, opts) => {
+      return await new Promise((_resolve, reject) => {
+        const t0 = Date.now();
+        opts.signal.addEventListener("abort", () => { seenTimeout = Date.now() - t0; reject(Object.assign(new Error("aborted"), { name: "AbortError" })); });
+      });
+    };
+    // timeoutMs huge, but only 150ms of budget remains → request must abort ~150ms.
+    const a = mk({ timeoutMs: 600000, deadline: Date.now() + 150, maxRetries: 0 });
+    await assert.rejects(() => a.complete({ messages: [] }), /\[deadline\]/);
+    assert.ok(seenTimeout !== null && seenTimeout < 2000, `aborted by remaining-budget cap (~${seenTimeout}ms)`);
+  });
+
+  it("does not retry when the backoff would cross the deadline", async () => {
+    let calls = 0;
+    stub(() => { calls += 1; return new Response("busy", { status: 503 }); });
+    // 503 is retriable, but initialRetryDelay 1000ms and only 50ms budget → no retry.
+    const a = mk({ maxRetries: 3, initialRetryDelayMs: 1000, deadline: Date.now() + 50 });
+    await a.complete({ messages: [] }).catch(() => {});
+    assert.equal(calls, 1, "must not sleep past the deadline to retry");
+  });
+
+  it("honors caller cancellation → [cancelled]", async () => {
+    const controller = new AbortController();
+    globalThis.fetch = async (_url, opts) => new Promise((_r, reject) => {
+      opts.signal.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" })));
+    });
+    const a = mk({ maxRetries: 0, timeoutMs: 60000 });
+    const p = a.complete({ messages: [], signal: controller.signal });
+    controller.abort();
+    await assert.rejects(() => p, /\[cancelled\]/);
+  });
+
+  it("a genuine request timeout within budget classifies as [timeout], not [deadline]", async () => {
+    stub(() => { const e = new Error("aborted"); e.name = "AbortError"; throw e; });
+    const a = mk({ maxRetries: 0, timeoutMs: 20 }); // no deadline set → not a budget hit
+    await assert.rejects(() => a.complete({ messages: [] }), /\[timeout\]/);
+  });
+
+  it("tracks lastFinishReason from the most recent completion", async () => {
+    const a = mk();
+    stub(() => json(msg({ role: "assistant", content: "x" }, { finish_reason: "length" })));
+    await a.complete({ messages: [] });
+    assert.equal(a.lastFinishReason, "length");
+  });
+});

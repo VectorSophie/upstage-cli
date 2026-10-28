@@ -174,4 +174,21 @@ describe("LocalModelAgent — full harness pipeline (mocked endpoint)", () => {
     // A.X is non-thinking → no reasoning parser in provenance
     assert.equal(result.provenance.model.reasoningParser, null);
   });
+
+  it("a truncated completion (finish_reason=length) is recorded as output_truncated, never a pass", async () => {
+    // Model runs out of output budget mid-reasoning and emits no tool call.
+    stubModel(() => json({
+      choices: [{ message: { role: "assistant", content: "Let me think about this. First I will", reasoning: "" }, finish_reason: "length" }],
+      usage: { prompt_tokens: 40, completion_tokens: 8192, total_tokens: 8232 }
+    }));
+    const task = loadTask(TASK_PATH);
+    const adapter = defaultRegistry.resolve("kanana");
+    const result = await new TaskRunner({ runsDir: null }).run(task, adapter);
+
+    assert.notEqual(result.status, "pass"); // truncation must never be a success
+    assert.equal(result.trace.stopReason, "output_truncated"); // preserved in the trace
+    assert.equal(result.patch.filesChanged.length, 0); // nothing was edited
+    // classified as a runtime truncation, not a wrong-answer failure
+    assert.equal(result.failure?.symptom, "output_truncated");
+  });
 });
