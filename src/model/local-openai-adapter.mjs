@@ -1,4 +1,4 @@
-import { fetchWithRetry, normalizeUsage, isTimeoutError } from "./fetch-utils.mjs";
+import { normalizeUsage, isTimeoutError, isRetriableStatus, delay } from "./fetch-utils.mjs";
 import { streamResponse, accumulateStream } from "../core/streaming.mjs";
 
 // Adapter for a locally served, OpenAI-compatible chat/completions endpoint
@@ -65,6 +65,7 @@ export function reasoningMetrics(reasoningText, rawUsage) {
  * context_length | network | unknown.
  */
 export function classifyError({ status = null, error = null } = {}) {
+  if (error && (error.name === "ProtocolError" || error.category === "protocol")) return "protocol";
   if (error && isTimeoutError(error)) return "timeout";
   if (typeof status === "number") {
     if (status === 401 || status === 403) return "auth";
@@ -85,19 +86,101 @@ export function isContextLengthError(bodyText) {
   );
 }
 
-async function readJsonResponse(response) {
-  const data = await response.json();
-  const choice = Array.isArray(data.choices) && data.choices[0] ? data.choices[0] : null;
-  const message = choice?.message || {};
+// A structurally invalid but HTTP-200 response is a PROTOCOL violation, not a
+// normal completion and not a transport error. Thrown so the caller tags it
+// [protocol] and the harness records it as an error (never a silent empty DONE).
+export class ProtocolError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "ProtocolError";
+    this.category = "protocol";
+  }
+}
+
+// Finish reasons that mean the generation did NOT complete normally. Exported so
+// the agent loop can refuse to treat them as an ordinary DONE response.
+export const TRUNCATION_FINISH_REASONS = new Set(["length", "content_filter"]);
+
+/**
+ * Validate an OpenAI-compatible chat/completions body and project the fields we
+ * use. Rejects (ProtocolError) a missing/empty `choices`, a missing `message`
+ * object, a non-array or malformed `tool_calls`, a non-string/non-null `content`,
+ * and a wholly empty turn (no content, no tool calls, no reasoning) UNLESS the
+ * finish_reason marks it as a legitimate truncation (handled upstream). Null
+ * content is preserved as valid when tool calls or reasoning accompany it.
+ */
+export function validateChatResponse(data) {
+  if (!data || typeof data !== "object") {
+    throw new ProtocolError("response body is not a JSON object");
+  }
+  if (!Array.isArray(data.choices) || data.choices.length === 0) {
+    throw new ProtocolError("response has no `choices`");
+  }
+  const choice = data.choices[0];
+  if (!choice || typeof choice !== "object" || !choice.message || typeof choice.message !== "object") {
+    throw new ProtocolError("first choice has no `message` object");
+  }
+  const message = choice.message;
+  const finishReason = choice.finish_reason ?? null;
+
+  if (message.content !== undefined && message.content !== null && typeof message.content !== "string") {
+    throw new ProtocolError(`message.content has invalid type (${typeof message.content})`);
+  }
+
+  let toolCalls = [];
+  if (message.tool_calls !== undefined && message.tool_calls !== null) {
+    if (!Array.isArray(message.tool_calls)) {
+      throw new ProtocolError("message.tool_calls is not an array");
+    }
+    for (const tc of message.tool_calls) {
+      if (!tc || typeof tc !== "object" || !tc.function || typeof tc.function !== "object") {
+        throw new ProtocolError("malformed tool call (missing function object)");
+      }
+      if (typeof tc.function.name !== "string" || tc.function.name.length === 0) {
+        throw new ProtocolError("malformed tool call (missing function.name)");
+      }
+      // arguments is an OpenAI JSON *string*; absence is tolerated (defaulted to
+      // "{}"), but a non-string arguments field is a protocol violation. We do
+      // NOT validate that the string parses — malformed JSON args are handled
+      // (and classified) downstream by the tool executor, not hidden here.
+      if (tc.function.arguments !== undefined && tc.function.arguments !== null && typeof tc.function.arguments !== "string") {
+        throw new ProtocolError("malformed tool call (function.arguments is not a string)");
+      }
+      if (tc.function.arguments === undefined || tc.function.arguments === null) {
+        tc.function.arguments = "{}";
+      }
+    }
+    toolCalls = message.tool_calls;
+  }
+
   const reasoning = extractReasoning(message);
+  const hasContent = typeof message.content === "string" && message.content.length > 0;
+  if (!hasContent && toolCalls.length === 0 && !reasoning && !TRUNCATION_FINISH_REASONS.has(finishReason)) {
+    throw new ProtocolError(
+      `empty response (no content, tool calls, or reasoning; finish_reason=${finishReason ?? "absent"})`
+    );
+  }
+
   return {
+    // Null content is legitimate alongside tool calls / reasoning; normalize to
+    // "" for the loop, which treats content as a string.
     content: typeof message.content === "string" ? message.content : "",
-    toolCalls: Array.isArray(message.tool_calls) ? message.tool_calls : [],
+    toolCalls,
     reasoning,
-    finishReason: choice?.finish_reason ?? null,
+    finishReason,
     usage: normalizeUsage(data.usage),
     reasoningMetrics: reasoningMetrics(reasoning, data.usage)
   };
+}
+
+async function readJsonResponse(response) {
+  let data;
+  try {
+    data = await response.json();
+  } catch (err) {
+    throw new ProtocolError(`response body is not valid JSON: ${err.message}`);
+  }
+  return validateChatResponse(data);
 }
 
 export class LocalOpenAIAdapter {
@@ -130,6 +213,16 @@ export class LocalOpenAIAdapter {
       options.chatTemplateKwargs && typeof options.chatTemplateKwargs === "object" ? options.chatTemplateKwargs : null;
     this.timeoutMs = typeof options.timeoutMs === "number" && options.timeoutMs > 0 ? options.timeoutMs : DEFAULT_TIMEOUT_MS;
     this.maxRetries = typeof options.maxRetries === "number" && options.maxRetries >= 0 ? options.maxRetries : 2;
+    // Absolute wall-clock deadline (epoch ms) for the whole agent run. When set,
+    // no single request may outlive it: each request's effective timeout is
+    // min(timeoutMs, remaining), retries never sleep past it, and once it is
+    // reached the adapter stops instead of starting another request. null = no
+    // extra cap beyond timeoutMs.
+    this.deadline = typeof options.deadline === "number" && options.deadline > 0 ? options.deadline : null;
+    this.initialRetryDelayMs =
+      typeof options.initialRetryDelayMs === "number" && options.initialRetryDelayMs >= 0 ? options.initialRetryDelayMs : 1000;
+    // The provider finish_reason of the most recent completion, for provenance.
+    this.lastFinishReason = null;
     // Per-run reasoning accounting. The agent loop consumes only content/toolCalls/
     // usage, so we accumulate reasoning signals here for provenance. All three are
     // kept separate; providerReasoningTokens stays null unless a positive count is
@@ -190,6 +283,12 @@ export class LocalOpenAIAdapter {
     return payload;
   }
 
+  // Remaining wall-clock budget (ms) before the agent-run deadline, or Infinity
+  // when no deadline is set.
+  _remainingMs() {
+    return this.deadline === null ? Infinity : this.deadline - Date.now();
+  }
+
   async complete({ messages, tools = [], stream = false, onToken, toolChoice, signal } = {}) {
     if (!this.isConfigured()) {
       throw new Error(`Local model adapter has no base URL configured for model '${this.model}'`);
@@ -198,27 +297,7 @@ export class LocalOpenAIAdapter {
     const headers = { "Content-Type": "application/json" };
     if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
 
-    const doFetch = () => {
-      // Per-attempt timeout; external `signal` (cancellation) is honored too.
-      const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
-      const combined = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
-      return fetch(`${this.baseUrl}/chat/completions`, {
-        method: "POST",
-        headers,
-        body: JSON.stringify(payload),
-        signal: combined
-      });
-    };
-
-    let response;
-    try {
-      response = await fetchWithRetry(doFetch, { maxRetries: this.maxRetries });
-    } catch (error) {
-      const category = classifyError({ error });
-      throw new Error(`Local model request failed [${category}] (${this.model} @ ${this.baseUrl}): ${error.message}`, {
-        cause: error
-      });
-    }
+    const response = await this._fetchWithDeadline(payload, headers, signal);
 
     if (!response.ok) {
       const bodyText = await response.text().catch(() => "");
@@ -232,8 +311,85 @@ export class LocalOpenAIAdapter {
     if (stream) {
       return accumulateStream(streamResponse(response), "openai", onToken);
     }
-    const result = await readJsonResponse(response);
+    let result;
+    try {
+      result = await readJsonResponse(response);
+    } catch (error) {
+      if (error instanceof ProtocolError) {
+        throw new Error(`Local model protocol error [protocol] from ${this.model}: ${error.message}`, { cause: error });
+      }
+      throw error;
+    }
+    this.lastFinishReason = result.finishReason ?? null;
     this._recordReasoning(result);
     return result;
+  }
+
+  /**
+   * Deadline- and cancellation-aware fetch with bounded retries. Each attempt is
+   * aborted at min(timeoutMs, remaining-budget); retries respect the same
+   * deadline (we never sleep past it and never start an attempt once it has
+   * passed). A deadline hit is thrown as [deadline] (agent-budget exhaustion,
+   * distinct from a server [timeout] or [server_error]) so the caller can tell
+   * "we ran out of time" from "the server failed".
+   */
+  async _fetchWithDeadline(payload, headers, externalSignal) {
+    const body = JSON.stringify(payload);
+    let lastError = null;
+    for (let attempt = 0; attempt <= this.maxRetries; attempt++) {
+      const remaining = this._remainingMs();
+      if (remaining <= 0) {
+        throw new Error(
+          `Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): agent-run budget exhausted before request`,
+          { cause: lastError || undefined }
+        );
+      }
+      if (externalSignal?.aborted) {
+        throw new Error(`Local model request failed [cancelled] (${this.model} @ ${this.baseUrl}): caller cancelled`);
+      }
+      const perAttemptTimeout = Math.max(1, Math.min(this.timeoutMs, remaining));
+      const timeoutSignal = AbortSignal.timeout(perAttemptTimeout);
+      const combined = externalSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : timeoutSignal;
+      try {
+        const response = await fetch(`${this.baseUrl}/chat/completions`, { method: "POST", headers, body, signal: combined });
+        if (isRetriableStatus(response.status) && attempt < this.maxRetries) {
+          lastError = new Error(`retriable status ${response.status}`);
+          if (!(await this._backoffWithinDeadline(attempt))) return response; // no time to retry → return as-is
+          continue;
+        }
+        return response;
+      } catch (error) {
+        // Distinguish a deadline/cancellation abort from a genuine server timeout.
+        if (externalSignal?.aborted) {
+          throw new Error(`Local model request failed [cancelled] (${this.model} @ ${this.baseUrl}): caller cancelled`, { cause: error });
+        }
+        if (isTimeoutError(error) && this.deadline !== null && Date.now() >= this.deadline) {
+          throw new Error(
+            `Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): exceeded agent-run budget`,
+            { cause: error }
+          );
+        }
+        lastError = error;
+        const retriable = isTimeoutError(error);
+        if (!retriable || attempt >= this.maxRetries) {
+          const category = classifyError({ error });
+          throw new Error(`Local model request failed [${category}] (${this.model} @ ${this.baseUrl}): ${error.message}`, { cause: error });
+        }
+        if (!(await this._backoffWithinDeadline(attempt))) {
+          throw new Error(`Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): no budget left to retry`, { cause: error });
+        }
+      }
+    }
+    const category = classifyError({ error: lastError });
+    throw new Error(`Local model request failed [${category}] (${this.model} @ ${this.baseUrl}) after retries: ${lastError?.message ?? "unknown"}`, { cause: lastError || undefined });
+  }
+
+  // Sleep the exponential backoff for `attempt`, but only if it fits inside the
+  // remaining budget. Returns false (don't retry) when it would cross the deadline.
+  async _backoffWithinDeadline(attempt) {
+    const backoff = this.initialRetryDelayMs * 2 ** attempt;
+    if (this.deadline !== null && Date.now() + backoff >= this.deadline) return false;
+    if (backoff > 0) await delay(backoff);
+    return true;
   }
 }
