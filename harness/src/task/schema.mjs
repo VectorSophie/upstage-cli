@@ -39,7 +39,17 @@ export const TASK_SCHEMA = {
         // "image": use the image as-is; "build": install the repo's dependency
         // file (needs operator opt-in, see sandbox/docker.mjs)
         dependencies: { type: "string", enum: ["image", "build"] },
-        allowedBinaries: { type: "array", items: { type: "string" } }
+        allowedBinaries: { type: "array", items: { type: "string" } },
+        // Trusted read-only bind mounts (Docker only). host is resolved relative
+        // to the task file; container must be absolute and outside /workspace.
+        readonlyMounts: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["host", "container"],
+            properties: { host: { type: "string" }, container: { type: "string" } }
+          }
+        }
       }
     },
     agent: {

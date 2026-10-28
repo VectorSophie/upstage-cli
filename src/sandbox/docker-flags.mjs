@@ -26,7 +26,12 @@ export function buildDockerRunArgs({
   name,
   pidsLimit,
   user,
-  hardened = false
+  hardened = false,
+  // Optional read-only bind mounts for trusted, agent-immutable files (e.g. a
+  // challenge generator mounted outside the writable workspace). Each entry is
+  // {host, container}; always mounted :ro and never allowed to shadow the
+  // writable workspace. Defaults to none, so existing callers are unchanged.
+  mounts = []
 } = {}) {
   if (!image) throw new Error("buildDockerRunArgs requires an `image`");
   if (!workdir) throw new Error("buildDockerRunArgs requires a `workdir`");
@@ -41,6 +46,16 @@ export function buildDockerRunArgs({
     "-v", `${workdir}:${CONTAINER_CWD}:rw`,
     "-w", CONTAINER_CWD
   ];
+
+  for (const m of Array.isArray(mounts) ? mounts : []) {
+    if (!m || typeof m.host !== "string" || typeof m.container !== "string") {
+      throw new Error("buildDockerRunArgs mount needs string host and container");
+    }
+    if (!m.container.startsWith("/") || m.container === CONTAINER_CWD || m.container.startsWith(`${CONTAINER_CWD}/`)) {
+      throw new Error(`read-only mount container path must be absolute and outside ${CONTAINER_CWD}: ${m.container}`);
+    }
+    args.push("-v", `${m.host}:${m.container}:ro`);
+  }
 
   if (name) args.push("--name", name);
   if (pidsLimit) args.push("--pids-limit", String(pidsLimit));

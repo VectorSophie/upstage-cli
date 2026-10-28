@@ -14,6 +14,15 @@ export function loadTask(taskPath) {
   if (typeof spec.repo === "string" && spec.repo && !isRemoteRepo(spec.repo)) {
     spec.repo = resolve(taskDir, spec.repo);
   }
+  // Resolve read-only mount host paths relative to the task file (like repo).
+  // These point at trusted, version-controlled files outside the agent
+  // workspace (e.g. a challenge generator); the agent never writes them.
+  if (Array.isArray(spec.sandbox?.readonlyMounts)) {
+    spec.sandbox.readonlyMounts = spec.sandbox.readonlyMounts.map((m) => ({
+      ...m,
+      host: typeof m.host === "string" ? resolve(taskDir, m.host) : m.host
+    }));
+  }
   const { valid, errors } = validate(spec);
   if (!valid) {
     throw new Error(`Invalid task spec at ${absPath}:\n  ${errors.join("\n  ")}`);

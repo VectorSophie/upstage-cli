@@ -49,18 +49,56 @@ function infraResult(check, detail) {
   };
 }
 
-function argCommand(args) {
-  if (!args || typeof args !== "object") return "";
-  if (typeof args.command === "string") return args.command;
-  if (typeof args.cmd === "string") return args.cmd;
-  if (Array.isArray(args.command)) return args.command.join(" ");
-  return "";
+// Shell constructs that must never appear in an authorized generator
+// invocation: command chaining / pipes / subshells / backticks (mirrors the
+// executor's own block), plus comments and redirects (which a shell would act
+// on and which can smuggle a filename or fabricate output).
+const META = /[;&|`]|\$\(/;
+const UNSAFE = /[#<>\r\n]/;
+
+/**
+ * Tokenise a run_shell command the same way the sandbox executor does, and
+ * refuse anything that is not a single clean invocation. Returns the argv, or
+ * null if the command is unsafe/compound. Identity is then an EXACT argv match,
+ * never a substring — `echo T3-… challenge.mjs` and `foo # challenge.mjs` do
+ * not tokenise to the expected argv and are rejected.
+ */
+function tokenizeCommand(command) {
+  if (Array.isArray(command)) {
+    const argv = command.map(String);
+    return argv.some((a) => META.test(a) || UNSAFE.test(a)) ? null : argv;
+  }
+  if (typeof command !== "string") return null;
+  const c = command.trim();
+  if (c === "" || META.test(c) || UNSAFE.test(c)) return null;
+  return c.split(/\s+/);
 }
 
-function resultString(result) {
-  if (result == null) return "";
-  if (typeof result === "string") return result;
-  try { return JSON.stringify(result); } catch { return String(result); }
+function argvOf(args) {
+  if (!args || typeof args !== "object") return null;
+  if (typeof args.command === "string" || Array.isArray(args.command)) return tokenizeCommand(args.command);
+  if (typeof args.cmd === "string") return tokenizeCommand(args.cmd);
+  return null;
+}
+
+function argvEqual(a, b) {
+  return Array.isArray(a) && Array.isArray(b) && a.length === b.length && a.every((x, i) => x === b[i]);
+}
+
+/**
+ * The stdout of a successful, complete execution — or null. Reads the STRUCTURED
+ * result the audit log preserves (`resultData`), so a token in stderr, in the
+ * echoed command, or in serialized metadata can never be mistaken for generator
+ * output. Fails closed: a failed, timed-out, truncated, or non-zero-exit result,
+ * or one without structured stdout, yields null.
+ */
+function execStdout(tc) {
+  const rd = tc && tc.resultData;
+  if (!rd || typeof rd.stdout !== "string") return null;
+  if (rd.ok !== true) return null;
+  if (rd.timedOut === true || rd.truncated === true) return null;
+  if (typeof rd.code === "number" && rd.code !== 0) return null;
+  return rd.stdout;
 }
 
 function extractTokens(str, re) {
@@ -80,31 +118,40 @@ function hashFile(p) {
 }
 
 /**
- * tool-result-continuation — proves the agent ran a specific generator command
- * and wrote the value that command actually emitted.
+ * tool-result-continuation (hardened) — proves the agent executed the exact,
+ * trusted generator and wrote the value that execution actually emitted.
  *
  * config:
- *   command         substring identifying the challenge command (default "challenge.mjs")
- *   tools           tool names that count as an execution (default ["run_shell","run"])
- *   outputFile      file the agent must write (default "out.txt")
- *   tokenPattern    regex source for the token (default "T3-[0-9a-f]{32}")
- *   generatorFile   generator source file to pin (optional but recommended)
- *   generatorSha256 expected sha256 of generatorFile (held in the trusted task,
- *                   not in the agent workspace — forging the generator is rejected)
+ *   command          EXACT command the agent must run, e.g. "node /opt/t3/challenge.mjs".
+ *                    Matched as a tokenised argv (not a substring); compound /
+ *                    commented / redirected commands are rejected. (default "node challenge.mjs")
+ *   tools            tool names that count as an execution (default ["run_shell","run"])
+ *   outputFile       file the agent must write (default "out.txt")
+ *   tokenPattern     regex source for the token (default "T3-[0-9a-f]{32}")
+ *   immutableGenerator  true ⇒ the generator executes from a read-only location
+ *                    the agent cannot modify (e.g. a Docker read-only mount), so
+ *                    integrity is structural and no post-hoc file hash is used.
+ *   generatorFile/generatorSha256  (legacy, native best-effort) a post-run
+ *                    workspace-file hash; documented as NOT execution-time proof.
  *
  * Passes iff ALL hold:
- *   1. a successful `tools` call ran `command` and its RECORDED result contained
- *      a token matching tokenPattern  → the required tool call really happened
- *      and returned a valid result (not just present in the final files);
- *   2. the generator file is byte-identical to its pinned hash  → the agent did
- *      not rewrite the generator to emit a value of its choosing;
- *   3. `outputFile` equals one of the tokens the generator actually emitted in
- *      the trace  → the agent consumed and used the tool result, not an
- *      arbitrary / hardcoded / guessed value.
+ *   1. a successful, complete `tools` call ran EXACTLY `command` (argv identity,
+ *      not substring) — defeats filename-in-args / comment / chaining spoofing;
+ *   2. that call's STDOUT (isolated from stderr/metadata; ok + exit 0 + not
+ *      timed-out/truncated) contained a token matching tokenPattern — defeats
+ *      stderr/echo/metadata spoofing and failed/truncated executions;
+ *   3. the generator could not have been forged: under immutableGenerator it is
+ *      mounted read-only outside the workspace; otherwise the legacy workspace
+ *      hash is checked (weaker, native only);
+ *   4. `outputFile` equals one of the tokens a qualifying execution emitted on
+ *      stdout — the agent consumed and used the recorded result.
  */
 export function toolResultContinuation(check, ctx = {}) {
   const cfg = check.config || {};
-  const cmdNeedle = cfg.command || "challenge.mjs";
+  const expectArgv = tokenizeCommand(cfg.command || "node challenge.mjs");
+  if (!expectArgv) {
+    return infraResult(check, `invalid config.command (must be a single clean invocation): ${JSON.stringify(cfg.command)}`);
+  }
   const execTools = new Set(cfg.tools || ["run_shell", "run"]);
   const outputFile = cfg.outputFile || "out.txt";
   let tokenRe;
@@ -118,46 +165,52 @@ export function toolResultContinuation(check, ctx = {}) {
   if (!workdir) return infraResult(check, "evaluator missing workdir context");
   const trace = Array.isArray(ctx.trace) ? ctx.trace : [];
 
-  // 1) the challenge command actually executed and returned a token
-  const execCalls = trace.filter(
-    (tc) => tc && execTools.has(tc.tool) && tc.ok === true && argCommand(tc.args).includes(cmdNeedle)
-  );
-  if (execCalls.length === 0) {
+  // 1) the EXACT trusted command executed (argv identity, not substring)
+  const idCalls = trace.filter((tc) => tc && execTools.has(tc.tool) && argvEqual(argvOf(tc.args), expectArgv));
+  if (idCalls.length === 0) {
     return checkResult(
       check,
       false,
-      `no successful ${[...execTools].join("/")} call executed '${cmdNeedle}' — tool-result continuation not demonstrated (the output file alone does not prove the tool ran)`
-    );
-  }
-  const emitted = new Set();
-  for (const tc of execCalls) {
-    for (const t of extractTokens(resultString(tc.result), tokenRe)) emitted.add(t);
-  }
-  if (emitted.size === 0) {
-    return checkResult(
-      check,
-      false,
-      `'${cmdNeedle}' ran but its recorded result carried no token matching ${tokenRe} — the tool result was not a valid challenge response`
+      `no ${[...execTools].join("/")} call ran exactly \`${expectArgv.join(" ")}\` — a command merely mentioning the generator, or a chained/commented/redirected command, does not count`
     );
   }
 
-  // 2) the generator was not tampered with (trusted authority = pinned sha)
-  if (cfg.generatorFile && cfg.generatorSha256) {
+  // 2) a successful, complete execution whose STDOUT carried a valid token
+  const emitted = new Set();
+  let hadValidExec = false;
+  for (const tc of idCalls) {
+    const stdout = execStdout(tc);
+    if (stdout === null) continue; // failed / timed-out / truncated / no structured stdout
+    hadValidExec = true;
+    for (const t of extractTokens(stdout, tokenRe)) emitted.add(t);
+  }
+  if (!hadValidExec) {
+    return checkResult(check, false, `\`${expectArgv.join(" ")}\` ran but no execution succeeded cleanly with structured stdout (failed, timed out, truncated, or non-zero exit)`);
+  }
+  if (emitted.size === 0) {
+    return checkResult(check, false, `\`${expectArgv.join(" ")}\` ran but its stdout carried no token matching ${tokenRe} (a token in stderr or echoed metadata does not count)`);
+  }
+
+  // 3) generator integrity
+  if (cfg.immutableGenerator) {
+    // Integrity is structural (read-only mount outside the agent-writable
+    // workspace); nothing to hash. The command identity above already pins the
+    // trusted path, which the agent cannot replace.
+  } else if (cfg.generatorFile && cfg.generatorSha256) {
+    // Legacy native best-effort: a post-run hash. NOTE: this is NOT proof the
+    // file was unmodified at execution time (an agent can modify→run→restore);
+    // use immutableGenerator for a real guarantee.
     const gp = join(workdir, cfg.generatorFile);
     if (!existsSync(gp)) {
       return checkResult(check, false, `generator '${cfg.generatorFile}' is missing from the workspace`);
     }
     const actual = hashFile(gp);
     if (actual !== cfg.generatorSha256) {
-      return checkResult(
-        check,
-        false,
-        `generator '${cfg.generatorFile}' was modified (sha ${actual.slice(0, 12)}… ≠ pinned ${cfg.generatorSha256.slice(0, 12)}…) — a self-emitted / forged token is not accepted`
-      );
+      return checkResult(check, false, `generator '${cfg.generatorFile}' was modified (sha ${actual.slice(0, 12)}… ≠ pinned ${cfg.generatorSha256.slice(0, 12)}…)`);
     }
   }
 
-  // 3) the agent used the emitted value
+  // 4) the agent used a genuinely-emitted value
   const op = join(workdir, outputFile);
   if (!existsSync(op)) {
     return checkResult(check, false, `'${outputFile}' was not created`);
@@ -172,13 +225,13 @@ export function toolResultContinuation(check, ctx = {}) {
     return checkResult(
       check,
       false,
-      `'${outputFile}' (${JSON.stringify(written.slice(0, 48))}) does not match any token the challenge actually emitted — the result was ignored, hardcoded, or guessed`
+      `'${outputFile}' (${JSON.stringify(written.slice(0, 48))}) does not match any token the trusted execution emitted on stdout — ignored, hardcoded, guessed, or forged`
     );
   }
   return checkResult(
     check,
     true,
-    `challenge '${cmdNeedle}' executed ${execCalls.length}×, generator intact, '${outputFile}' matches the emitted token`
+    `exact command \`${expectArgv.join(" ")}\` executed, stdout token consumed into '${outputFile}'${cfg.immutableGenerator ? " (read-only generator)" : ""}`
   );
 }
 

@@ -27,7 +27,13 @@ checks:
       required: true
       weight: 1.0
       config:
-        command: "challenge.mjs"
+        # Exact command identity (argv match), hardened evaluator. v2 is the
+        # NATIVE variant: it hardens A (command spoofing) and C (stdout-only),
+        # but generator integrity is only best-effort (post-run file hash) —
+        # native shares filesystem identity with the agent, so a modify/run/
+        # restore (bypass B) is not fully prevented here. Use v3 (Docker,
+        # read-only mounted generator) for the structural B guarantee.
+        command: "node challenge.mjs"
         tools: [run_shell, run]
         outputFile: "out.txt"
         tokenPattern: "T3-[0-9a-f]{32}"

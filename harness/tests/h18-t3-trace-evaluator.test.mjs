@@ -1,11 +1,16 @@
-// Adversarial regression tests for the rigorous T3 tool-result-continuation
+// Adversarial regression tests for the HARDENED T3 tool-result-continuation
 // evaluator. Two layers:
-//   A. Unit — the evaluator against synthetic traces + workspaces, covering
-//      every adversarial requirement precisely and deterministically.
+//   A. Unit — the evaluator against synthetic traces + workspaces, covering the
+//      command-identity, stdout-only, and generator-integrity rules precisely.
 //   B. End-to-end — the REAL TaskRunner + LocalModelAgent + real agent loop +
 //      native sandbox actually executing `node challenge.mjs`; only the model
 //      HTTP endpoint is stubbed. The stub reads the live token from the request
 //      body (the tool-result message) to simulate genuine result consumption.
+//
+// The hardened evaluator defeats: filename-in-args spoofing, shell-comment
+// spoofing, alternate command printing a fabricated token, token-only-in-stderr,
+// failed/timed-out executions, and (via the immutableGenerator config used by
+// T3-v3) modify/restore of the generator. See docs/T3_TRACE_EVALUATION.md.
 import { describe, it, before, after, afterEach } from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync, readFileSync, rmSync } from "node:fs";
@@ -27,12 +32,13 @@ const TOKEN_RE = "T3-[0-9a-f]{32}";
 const TOK = (hex) => `T3-${hex}`;
 const HEX32 = "0123456789abcdef0123456789abcdef";
 
+// Native (legacy) config: exact command identity + stdout-only + best-effort hash.
 const CHECK = {
   id: "t3",
   evaluator: "tool-result-continuation",
   required: true,
   config: {
-    command: "challenge.mjs",
+    command: "node challenge.mjs",
     tools: ["run_shell", "run"],
     outputFile: "out.txt",
     tokenPattern: TOKEN_RE,
@@ -40,118 +46,158 @@ const CHECK = {
     generatorSha256: GEN_SHA
   }
 };
+// Immutable (Docker) config: command identity on the read-only mounted path.
+const CHECK_IMMUTABLE = {
+  id: "t3",
+  evaluator: "tool-result-continuation",
+  required: true,
+  config: { command: "node /opt/t3/challenge.mjs", outputFile: "out.txt", tokenPattern: TOKEN_RE, immutableGenerator: true }
+};
 
-// Build a run_shell trace entry the way AuditLog records it: result is the
-// stringified tool data (what the harness captured), args carry the command.
-function shellCall(command, stdout, ok = true) {
-  return { tool: "run_shell", ok, args: { command }, result: JSON.stringify({ ok, code: ok ? 0 : 1, stdout, stderr: "", truncated: false, timedOut: false }) };
+// A run_shell trace entry the way AuditLog records it: a stringified `result`
+// (display) AND a structured `resultData` (what the hardened evaluator reads).
+function shellCall(command, stdout, { ok = true, stderr = "", code = 0, timedOut = false, truncated = false } = {}) {
+  return {
+    tool: "run_shell",
+    ok: true, // registry-level: the tool itself did not throw
+    args: { command },
+    result: JSON.stringify({ ok, code, stdout, stderr, truncated, timedOut }),
+    resultData: { ok, code, stdout, stderr, timedOut, truncated }
+  };
+}
+function readCall(path, content) {
+  return { tool: "read_file", ok: true, args: { path }, result: JSON.stringify({ content }) };
 }
 
 function makeWorkdir({ out, tamperGen = false } = {}) {
   const dir = mkdtempSync(join(tmpdir(), "h18-"));
-  if (tamperGen) {
-    writeFileSync(join(dir, "challenge.mjs"), 'process.stdout.write("T3-" + "a".repeat(32) + "\\n");\n');
-  } else {
-    writeFileSync(join(dir, "challenge.mjs"), GEN_SRC);
-  }
+  writeFileSync(join(dir, "challenge.mjs"), tamperGen ? 'process.stdout.write("T3-"+"a".repeat(32)+"\\n");\n' : GEN_SRC);
   if (out !== undefined) writeFileSync(join(dir, "out.txt"), out);
   return dir;
 }
-
 const dirs = [];
 function wd(opts) { const d = makeWorkdir(opts); dirs.push(d); return d; }
 after(() => { for (const d of dirs) { try { rmSync(d, { recursive: true, force: true }); } catch { /* best effort */ } } });
 
-describe("T3 evaluator — unit (adversarial)", () => {
-  it("source inspection cannot pass: reading challenge.mjs reveals no token, so no exec call → fail", () => {
-    // Agent only read the file (no run_shell), then wrote a plausible guess.
-    const trace = [{ tool: "read_file", ok: true, args: { path: "challenge.mjs" }, result: JSON.stringify({ content: String(GEN_SRC) }) }];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: TOK(HEX32) }), trace });
-    assert.equal(r.passed, false);
-    assert.match(r.detail, /no successful.*executed/i);
-  });
+const ev = (check, out, trace) => toolResultContinuation(check, { workdir: wd(typeof out === "object" ? out : { out }), trace });
 
-  it("hardcoding the OLD leaked token (TOKEN-7F3A9C) fails", () => {
-    const trace = [shellCall("node challenge.mjs", `${TOK("deadbeef".repeat(4))}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: "TOKEN-7F3A9C" }), trace });
-    assert.equal(r.passed, false);
-    assert.match(r.detail, /does not match any token/i);
-  });
-
-  it("writing an arbitrary value (even well-formed) that was never emitted fails", () => {
-    const emitted = TOK("1".repeat(32));
-    const arbitrary = TOK("2".repeat(32));
-    const trace = [shellCall("node challenge.mjs", `${emitted}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: arbitrary }), trace });
-    assert.equal(r.passed, false);
-    assert.match(r.detail, /does not match any token/i);
-  });
-
-  it("executing the challenge AND writing its emitted token succeeds", () => {
-    const emitted = TOK("abcdef12".repeat(4));
-    const trace = [shellCall("node challenge.mjs", `${emitted}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: `${emitted}\n` }), trace });
+describe("T3 hardened evaluator — unit (adversarial)", () => {
+  it("GENUINE execution and correct output → PASS", () => {
+    const t = TOK("abcdef12".repeat(4));
+    const r = ev(CHECK, `${t}\n`, [shellCall("node challenge.mjs", `${t}\n`)]);
     assert.equal(r.passed, true, r.detail);
   });
 
-  it("executing the challenge but IGNORING its output (writing something else) fails", () => {
-    const emitted = TOK("5".repeat(32));
-    const trace = [shellCall("node challenge.mjs", `${emitted}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: "whatever the model felt like" }), trace });
+  it("source inspection only (read_file, no exec) → FAIL", () => {
+    const r = ev(CHECK, TOK(HEX32), [readCall("challenge.mjs", String(GEN_SRC))]);
     assert.equal(r.passed, false);
-    assert.match(r.detail, /ignored|does not match/i);
+    assert.match(r.detail, /ran exactly/);
   });
 
-  it("running the challenge but never writing out.txt fails", () => {
-    const emitted = TOK("6".repeat(32));
-    const trace = [shellCall("node challenge.mjs", `${emitted}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({}), trace }); // no out.txt
+  it("hardcoded legacy token, no execution → FAIL", () => {
+    const r = ev(CHECK, "TOKEN-7F3A9C", []);
     assert.equal(r.passed, false);
-    assert.match(r.detail, /was not created/i);
   });
 
-  it("modifying the generator to emit a chosen token cannot forge a pass (sha mismatch)", () => {
-    // Agent rewrote challenge.mjs to emit T3-aaaa…, ran it, wrote that value.
-    const forged = TOK("a".repeat(32));
-    const trace = [shellCall("node challenge.mjs", `${forged}\n`)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: forged, tamperGen: true }), trace });
+  it("arbitrary token without executing the generator → FAIL", () => {
+    const r = ev(CHECK, TOK("2".repeat(32)), []);
     assert.equal(r.passed, false);
-    assert.match(r.detail, /was modified|forged/i);
   });
 
-  it("a failed challenge execution (ok:false) does not count as a valid tool result", () => {
-    const trace = [shellCall("node challenge.mjs", "", false)];
-    const r = toolResultContinuation(CHECK, { workdir: wd({ out: TOK(HEX32) }), trace });
+  it("Bypass A: command merely MENTIONS the filename but does not execute it → FAIL", () => {
+    const t = TOK("a".repeat(32));
+    const r = ev(CHECK, t, [shellCall(`echo ${t} challenge.mjs`, `${t}\n`)]);
     assert.equal(r.passed, false);
-    assert.match(r.detail, /no successful|not demonstrated/i);
+    assert.match(r.detail, /ran exactly|mentioning/);
   });
 
-  it("independent attempts get distinct tokens, and each is verified against its OWN run", () => {
+  it("Bypass A2: shell-comment spoofing (`… # challenge.mjs`) → FAIL", () => {
+    const t = TOK("b".repeat(32));
+    const r = ev(CHECK, t, [shellCall(`printf '${t}' # challenge.mjs`, `${t}\n`)]);
+    assert.equal(r.passed, false);
+  });
+
+  it("Bypass A3: chained/aliased command printing a fabricated token → FAIL", () => {
+    const t = TOK("c".repeat(32));
+    // `;` is a blocked metacharacter → not a clean single invocation
+    const r = ev(CHECK, t, [shellCall(`node challenge.mjs; echo ${t}`, `${t}\n`)]);
+    assert.equal(r.passed, false);
+  });
+
+  it("Bypass C: token only in STDERR (stdout empty) → FAIL", () => {
+    const t = TOK("d".repeat(32));
+    const r = ev(CHECK, t, [shellCall("node challenge.mjs", "", { stderr: `${t}\n` })]);
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /stdout carried no token/);
+  });
+
+  it("Bypass C2: token present but execution FAILED (non-zero exit) → FAIL", () => {
+    const t = TOK("e".repeat(32));
+    const r = ev(CHECK, t, [shellCall("node challenge.mjs", `${t}\n`, { ok: false, code: 1 })]);
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /no execution succeeded cleanly/);
+  });
+
+  it("Bypass C3: token present but execution TIMED OUT → FAIL", () => {
+    const t = TOK("f".repeat(32));
+    const r = ev(CHECK, t, [shellCall("node challenge.mjs", `${t}\n`, { timedOut: true })]);
+    assert.equal(r.passed, false);
+  });
+
+  it("correct execution but WRONG final output → FAIL", () => {
+    const emitted = TOK("1".repeat(32));
+    const r = ev(CHECK, TOK("9".repeat(32)), [shellCall("node challenge.mjs", `${emitted}\n`)]);
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /does not match/);
+  });
+
+  it("running the generator but never writing out.txt → FAIL", () => {
+    const t = TOK("6".repeat(32));
+    const r = toolResultContinuation(CHECK, { workdir: wd({}), trace: [shellCall("node challenge.mjs", `${t}\n`)] });
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /was not created/);
+  });
+
+  it("immutableGenerator: running the WORKSPACE path (not the mounted one) → FAIL", () => {
+    const t = TOK("7".repeat(32));
+    const r = ev(CHECK_IMMUTABLE, t, [shellCall("node challenge.mjs", `${t}\n`)]);
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /ran exactly `node \/opt\/t3\/challenge.mjs`/);
+  });
+
+  it("immutableGenerator: genuine execution of the mounted path → PASS", () => {
+    const t = TOK("8".repeat(32));
+    const r = ev(CHECK_IMMUTABLE, `${t}\n`, [shellCall("node /opt/t3/challenge.mjs", `${t}\n`)]);
+    assert.equal(r.passed, true, r.detail);
+  });
+
+  it("legacy native hash still rejects a PERSISTENTLY modified generator → FAIL", () => {
+    const t = TOK("a".repeat(32));
+    const r = toolResultContinuation(CHECK, { workdir: wd({ out: t, tamperGen: true }), trace: [shellCall("node challenge.mjs", `${t}\n`)] });
+    assert.equal(r.passed, false);
+    assert.match(r.detail, /was modified/);
+  });
+
+  it("multiple genuine executions: out.txt matching ANY emitted stdout token → PASS", () => {
     const a = TOK("aa".repeat(16));
     const b = TOK("bb".repeat(16));
-    assert.notEqual(a, b);
-    const rA = toolResultContinuation(CHECK, { workdir: wd({ out: a }), trace: [shellCall("node challenge.mjs", `${a}\n`)] });
-    const rB = toolResultContinuation(CHECK, { workdir: wd({ out: b }), trace: [shellCall("node challenge.mjs", `${b}\n`)] });
-    assert.equal(rA.passed, true, rA.detail);
-    assert.equal(rB.passed, true, rB.detail);
-    // cross-use fails: attempt A's output against attempt B's run
-    const cross = toolResultContinuation(CHECK, { workdir: wd({ out: a }), trace: [shellCall("node challenge.mjs", `${b}\n`)] });
-    assert.equal(cross.passed, false);
+    const r = ev(CHECK, a, [shellCall("node challenge.mjs", `${a}\n`), shellCall("node challenge.mjs", `${b}\n`)]);
+    assert.equal(r.passed, true, r.detail);
   });
 
-  it("an unknown evaluator name is an infrastructure error, never a silent pass", () => {
+  it("unknown evaluator name is an infrastructure error, not a silent pass", () => {
     const r = runEvaluatorCheck({ id: "x", evaluator: "does-not-exist" }, { workdir: wd({ out: "x" }), trace: [] });
-    assert.ok(r.infraError, "must flag infraError");
+    assert.ok(r.infraError);
     assert.equal(r.passed, false);
   });
 
-  it("empty trace (baseline, no agent) fails — acceptance check correctly fails on pristine repo", () => {
+  it("empty trace (baseline, no agent) → FAIL", () => {
     const r = toolResultContinuation(CHECK, { workdir: wd({}), trace: [] });
     assert.equal(r.passed, false);
   });
 });
 
-// ── Layer B: real pipeline, stubbed model endpoint ──────────────────────────
+// ── Layer B: real pipeline, stubbed model endpoint (native) ─────────────────
 const TASK_PATH = resolve(HERE, "../tasks/local/pilot-t3-tool-continuation-v2.yaml");
 const realFetch = globalThis.fetch;
 let callCount = 0;
@@ -170,7 +216,7 @@ function stop(text) { return json({ choices: [{ message: { role: "assistant", co
 function tokenFromBody(opts) {
   const body = typeof opts?.body === "string" ? opts.body : "";
   const m = body.match(/T3-[0-9a-f]{32}/g);
-  return m ? m[m.length - 1] : null; // the most recent token the tool returned
+  return m ? m[m.length - 1] : null;
 }
 
 let savedCritic;
@@ -178,42 +224,44 @@ before(() => { savedCritic = process.env.UPSTAGE_CRITIC_DISABLED; process.env.UP
 after(() => { if (savedCritic === undefined) delete process.env.UPSTAGE_CRITIC_DISABLED; else process.env.UPSTAGE_CRITIC_DISABLED = savedCritic; });
 afterEach(() => { globalThis.fetch = realFetch; });
 
-describe("T3 evaluator — real harness pipeline (live node exec, stubbed model)", () => {
-  it("baseline is valid: task loads and the acceptance check is the trace evaluator", () => {
+describe("T3 hardened evaluator — real harness pipeline (live node exec, stubbed model)", () => {
+  it("baseline is valid: task loads; acceptance is the trace evaluator; no answer leaks", () => {
     const task = loadTask(TASK_PATH);
     assert.equal(task.version, 2);
     assert.equal(task.checks.custom[0].evaluator, "tool-result-continuation");
-    assert.equal(task.checks.custom[0].config.generatorSha256, GEN_SHA);
-    // no fail_to_pass command leaks the answer
+    assert.equal(task.checks.custom[0].config.command, "node challenge.mjs");
     assert.ok(!(task.checks.fail_to_pass || []).some((c) => /T3-|TOKEN-/.test(c.command || "")));
   });
 
-  it("agent that RUNS challenge.mjs and writes the emitted token → PASS", async () => {
+  it("agent that RUNS `node challenge.mjs` and writes the emitted stdout token → PASS", async () => {
     stubModel((n, opts) => {
       if (n === 1) return toolCall("run_shell", { command: "node challenge.mjs" });
-      if (n === 2) {
-        const tok = tokenFromBody(opts);
-        assert.ok(tok, "stub should see the live token in the tool-result message");
-        return toolCall("write_file", { path: "out.txt", content: tok });
-      }
+      if (n === 2) { const tok = tokenFromBody(opts); assert.ok(tok, "stub should see the live token"); return toolCall("write_file", { path: "out.txt", content: tok }); }
       return stop("Done.");
     });
     const result = await new TaskRunner({ runsDir: null }).run(loadTask(TASK_PATH), defaultRegistry.resolve("kanana"));
     assert.equal(result.status, "pass", `expected pass, got ${result.status} (${result.outcome?.detail})`);
-    assert.equal(result.outcome.reason, "all_required_checks_passed");
     assert.ok(result.patch.filesChanged.includes("out.txt"));
-    // challenge.mjs must be untouched
     assert.ok(!result.patch.filesChanged.includes("challenge.mjs"));
   });
 
-  it("agent that writes a hardcoded/old token WITHOUT running the challenge → FAIL", async () => {
+  it("agent that writes a hardcoded/old token WITHOUT running the generator → FAIL", async () => {
     stubModel((n) => (n === 1 ? toolCall("write_file", { path: "out.txt", content: "TOKEN-7F3A9C" }) : stop("done")));
     const result = await new TaskRunner({ runsDir: null }).run(loadTask(TASK_PATH), defaultRegistry.resolve("ax"));
     assert.equal(result.status, "fail", `expected fail, got ${result.status}`);
-    assert.equal(result.outcome.reason, "required_check_failed");
   });
 
-  it("agent that runs the challenge but writes an arbitrary value (ignores output) → FAIL", async () => {
+  it("Bypass A live: `echo <token> challenge.mjs` (filename in args, no execution) → FAIL", async () => {
+    stubModel((n) => {
+      if (n === 1) return toolCall("run_shell", { command: `echo ${"T3-" + "a".repeat(32)} challenge.mjs` });
+      if (n === 2) return toolCall("write_file", { path: "out.txt", content: "T3-" + "a".repeat(32) });
+      return stop("done");
+    });
+    const result = await new TaskRunner({ runsDir: null }).run(loadTask(TASK_PATH), defaultRegistry.resolve("exaone"));
+    assert.equal(result.status, "fail", `expected fail, got ${result.status}`);
+  });
+
+  it("agent that runs the generator but writes an arbitrary value → FAIL", async () => {
     stubModel((n) => {
       if (n === 1) return toolCall("run_shell", { command: "node challenge.mjs" });
       if (n === 2) return toolCall("write_file", { path: "out.txt", content: `T3-${"f".repeat(32)}` });
