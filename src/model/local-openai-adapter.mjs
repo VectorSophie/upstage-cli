@@ -348,10 +348,16 @@ export class LocalOpenAIAdapter {
         throw new Error(`Local model request failed [cancelled] (${this.model} @ ${this.baseUrl}): caller cancelled`);
       }
       const perAttemptTimeout = Math.max(1, Math.min(this.timeoutMs, remaining));
-      const timeoutSignal = AbortSignal.timeout(perAttemptTimeout);
-      const combined = externalSignal ? AbortSignal.any([externalSignal, timeoutSignal]) : timeoutSignal;
+      // Explicit controller + a CLEARED timer (rather than AbortSignal.timeout),
+      // so a fast response/cancellation leaves no long-lived timer dangling in
+      // the event loop — important for deterministic teardown.
+      const controller = new AbortController();
+      const onExternalAbort = () => controller.abort(externalSignal.reason);
+      if (externalSignal) externalSignal.addEventListener("abort", onExternalAbort, { once: true });
+      let timedOut = false;
+      const timer = setTimeout(() => { timedOut = true; controller.abort(new DOMException("request timed out", "TimeoutError")); }, perAttemptTimeout);
       try {
-        const response = await fetch(`${this.baseUrl}/chat/completions`, { method: "POST", headers, body, signal: combined });
+        const response = await fetch(`${this.baseUrl}/chat/completions`, { method: "POST", headers, body, signal: controller.signal });
         if (isRetriableStatus(response.status) && attempt < this.maxRetries) {
           lastError = new Error(`retriable status ${response.status}`);
           if (!(await this._backoffWithinDeadline(attempt))) return response; // no time to retry → return as-is
@@ -359,6 +365,8 @@ export class LocalOpenAIAdapter {
         }
         return response;
       } catch (error) {
+        // `timedOut` marks our own per-attempt timer firing (vs an external abort).
+        if (timedOut && !isTimeoutError(error)) error = Object.assign(new Error("request timed out"), { name: "TimeoutError" });
         // Distinguish a deadline/cancellation abort from a genuine server timeout.
         if (externalSignal?.aborted) {
           throw new Error(`Local model request failed [cancelled] (${this.model} @ ${this.baseUrl}): caller cancelled`, { cause: error });
@@ -378,6 +386,9 @@ export class LocalOpenAIAdapter {
         if (!(await this._backoffWithinDeadline(attempt))) {
           throw new Error(`Local model request failed [deadline] (${this.model} @ ${this.baseUrl}): no budget left to retry`, { cause: error });
         }
+      } finally {
+        clearTimeout(timer);
+        if (externalSignal) externalSignal.removeEventListener("abort", onExternalAbort);
       }
     }
     const category = classifyError({ error: lastError });
