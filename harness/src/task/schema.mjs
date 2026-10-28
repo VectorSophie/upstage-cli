@@ -40,14 +40,15 @@ export const TASK_SCHEMA = {
         // file (needs operator opt-in, see sandbox/docker.mjs)
         dependencies: { type: "string", enum: ["image", "build"] },
         allowedBinaries: { type: "array", items: { type: "string" } },
-        // Trusted read-only bind mounts (Docker only). host is resolved relative
-        // to the task file; container must be absolute and outside /workspace.
+        // Trusted read-only bind mounts (Docker only). A task references a mount
+        // by NAME from the harness-owned registry (src/sandbox/mount-registry.mjs);
+        // it may NOT supply host/container paths. See the loader for enforcement.
         readonlyMounts: {
           type: "array",
           items: {
             type: "object",
-            required: ["host", "container"],
-            properties: { host: { type: "string" }, container: { type: "string" } }
+            required: ["asset"],
+            properties: { asset: { type: "string" } }
           }
         }
       }

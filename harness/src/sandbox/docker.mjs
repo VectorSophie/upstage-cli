@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { buildDockerRunArgs } from "../../../src/sandbox/docker-flags.mjs";
 import { spawnWithTimeout } from "./native.mjs";
+import { assertMountAllowed } from "./mount-registry.mjs";
 
 const DEP_FILES = { python: "requirements.txt", node: "package.json" };
 const DOCKER_DAEMON_ERROR = 125;
@@ -81,6 +82,10 @@ export class DockerSandbox {
     if (this.dependencies === "build" && process.env.HARNESS_ALLOW_DEPENDENCY_BUILD !== "1") {
       throw new SandboxConfigError("sandbox.dependencies=build installs repository dependencies with network access; set HARNESS_ALLOW_DEPENDENCY_BUILD=1 only for trusted repositories");
     }
+    // Independent trust-boundary check: every read-only mount host must
+    // canonicalise within an allowed root (fail-closed), regardless of how this
+    // sandbox was constructed. Resolve to the canonical host for the bind.
+    this.readonlyMounts = this.readonlyMounts.map((m) => assertMountAllowed(m));
     this._workdir = workdir;
     if (this.dependencies === "build") {
       this._envImage = this._buildEnvImage(workdir);

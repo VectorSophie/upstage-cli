@@ -60,6 +60,31 @@ fixture code; referenced by **name**, so a task can never make the harness
 execute untrusted JS) and reads only the harness-authored trace and the final
 workspace — it does not weaken Docker isolation (the agent still runs confined).
 
+### Read-only mount trust boundary (who may mount what)
+
+`sandbox.readonlyMounts` could otherwise let a task bind-mount an arbitrary host
+file into the container. Task YAML is **not** always trusted (benchmark datasets
+and third-party task definitions reach `loadTask` the same way), so authorization
+is held in harness code, never in the task — a fail-closed, two-layer policy
+(`src/sandbox/mount-registry.mjs`):
+
+1. **Named registry.** A task references a mount by **name**
+   (`readonlyMounts: [{ asset: "t3-challenge-v3" }]`); it may **not** supply a
+   `host` or `container` path. The loader maps the name to a fixed, harness-owned
+   `{host, container}` pair and rejects unknown names or any raw path
+   (fail-closed, before a sandbox is built). A task therefore cannot mount an
+   arbitrary file or expand its own permissions.
+2. **Independent allowlist.** Every mount host that reaches `DockerSandbox` is
+   canonicalised with `realpath` (resolving symlinks and `..`) and must fall
+   within an allowed root — the harness `fixtures/` tree, plus any
+   operator-configured roots in `HARNESS_MOUNT_ALLOW_ROOTS` (an environment
+   setting, not task input). This catches symlink escapes and any path that
+   bypasses the registry, and runs in `setup()` before any container launches.
+
+The container path is additionally restricted to be absolute and outside
+`/workspace` (so a mount can never shadow the writable workspace), both in the
+policy and in `buildDockerRunArgs`.
+
 ### Why each adversarial path fails (hardened)
 
 | Attack | Result |
@@ -108,3 +133,8 @@ live T3-v3 pilot instead.
 - `tests/h17-local-docker.test.mjs` — real Docker isolation: genuine mounted-path
   run passes; an overwrite of the read-only mount fails (bypass B impossible);
   decoy substitution (running a workspace copy) fails.
+- `tests/h19-mount-policy.test.mjs` — the read-only mount trust boundary: the
+  trusted asset resolves; unknown assets, raw host paths in task YAML, arbitrary
+  absolute paths, symlink escapes, non-existent hosts, and `/workspace` container
+  paths are all rejected; the operator-root env extends the allowlist;
+  `DockerSandbox.setup` rejects an out-of-root mount before any container runs.

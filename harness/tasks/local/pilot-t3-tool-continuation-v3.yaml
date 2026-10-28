@@ -21,8 +21,10 @@ sandbox:
   image: node:22-alpine
   network: none
   timeout: 300
+  # Referenced by NAME from the harness-owned trusted registry
+  # (src/sandbox/mount-registry.mjs). Tasks cannot supply host/container paths.
   readonlyMounts:
-    - { host: ../../fixtures/tool-continuation-v3/challenge.mjs, container: /opt/t3/challenge.mjs }
+    - { asset: t3-challenge-v3 }
 agent:
   permissions: bypassPermissions
   maxTurns: 8

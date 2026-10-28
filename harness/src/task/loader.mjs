@@ -2,6 +2,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { resolve, dirname, extname, basename } from "node:path";
 import { load as yamlLoad } from "js-yaml";
 import { validate, resolveImport } from "./schema.mjs";
+import { resolveMountAsset } from "../sandbox/mount-registry.mjs";
 
 export function loadTask(taskPath) {
   const absPath = resolve(taskPath);
@@ -14,14 +15,25 @@ export function loadTask(taskPath) {
   if (typeof spec.repo === "string" && spec.repo && !isRemoteRepo(spec.repo)) {
     spec.repo = resolve(taskDir, spec.repo);
   }
-  // Resolve read-only mount host paths relative to the task file (like repo).
-  // These point at trusted, version-controlled files outside the agent
-  // workspace (e.g. a challenge generator); the agent never writes them.
-  if (Array.isArray(spec.sandbox?.readonlyMounts)) {
-    spec.sandbox.readonlyMounts = spec.sandbox.readonlyMounts.map((m) => ({
-      ...m,
-      host: typeof m.host === "string" ? resolve(taskDir, m.host) : m.host
-    }));
+  // Read-only mounts are referenced by NAME from the trusted harness registry
+  // (src/sandbox/mount-registry.mjs). A task may NOT supply host/container paths
+  // — authorization lives in harness code, not untrusted task YAML, so a task
+  // cannot mount arbitrary host files or expand its own permissions. Unknown
+  // assets (or any attempt to pass a raw path) are rejected here, fail-closed,
+  // before any sandbox is built.
+  if (spec.sandbox?.readonlyMounts !== undefined) {
+    if (!Array.isArray(spec.sandbox.readonlyMounts)) {
+      throw new Error(`Invalid task spec at ${absPath}: sandbox.readonlyMounts must be a list`);
+    }
+    spec.sandbox.readonlyMounts = spec.sandbox.readonlyMounts.map((m) => {
+      if (!m || typeof m.asset !== "string" || m.asset.trim() === "") {
+        throw new Error(`Invalid task spec at ${absPath}: each sandbox.readonlyMounts entry must be { asset: <name> } referencing a trusted registry asset`);
+      }
+      if (m.host !== undefined || m.container !== undefined) {
+        throw new Error(`Invalid task spec at ${absPath}: sandbox.readonlyMounts may not specify host/container paths; reference a trusted asset by name`);
+      }
+      return resolveMountAsset(m.asset); // → { host, container }, canonicalised + allowlisted
+    });
   }
   const { valid, errors } = validate(spec);
   if (!valid) {
