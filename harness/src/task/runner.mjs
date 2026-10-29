@@ -121,7 +121,7 @@ export class TaskRunner {
       const initialCommit = await patchTracker.captureInitial({ commit: task.commit || null });
       await sandbox.setup(workdir);
 
-      const baseline = await this._baseline(task, sandbox, patchTracker, initialCommit, timeoutSec);
+      const baseline = await this._baseline(task, sandbox, patchTracker, initialCommit, timeoutSec, workdir);
 
       // ── Agent ────────────────────────────────────────────────────────────
       const agentContext = { workdir, sandbox: task.sandbox || {}, executor: sandbox, auditLog, task };
@@ -155,10 +155,14 @@ export class TaskRunner {
           infraError = `test patch does not apply on top of the agent's changes: ${err.message}`;
         }
       }
+      // Trusted evaluation context for trace-aware evaluators: the harness-
+      // recorded tool-call trace (which the agent cannot forge) and the final
+      // workspace. Shell checks ignore it.
+      const evalCtx = { workdir, trace: auditLog.toolCalls(), task };
       const checkResults = { fail_to_pass: [], pass_to_pass: [], custom: [] };
       if (!infraError) {
         for (const group of Object.keys(checkResults)) {
-          checkResults[group] = await runAll(task.checks[group] || [], sandbox, timeoutSec);
+          checkResults[group] = await runAll(task.checks[group] || [], sandbox, timeoutSec, evalCtx);
         }
       }
 
@@ -277,10 +281,18 @@ export class TaskRunner {
    * must fail — otherwise a do-nothing agent could "pass". Then restores the
    * workspace so the agent starts from the pristine snapshot.
    */
-  async _baseline(task, sandbox, patchTracker, initialCommit, timeoutSec) {
+  async _baseline(task, sandbox, patchTracker, initialCommit, timeoutSec, workdir = null) {
     const p2p = task.checks.pass_to_pass || [];
     const f2p = task.checks.fail_to_pass || [];
-    if (p2p.length === 0 && f2p.length === 0) return { pass_to_pass: [], fail_to_pass: [] };
+    // Trace-aware custom evaluators are agent-dependent acceptance checks (like
+    // fail_to_pass): they MUST fail on the untouched repo (empty trace), or the
+    // task would reward a no-op. Shell custom checks are left out of baseline
+    // validation (they are often environment invariants, e.g. "running in a
+    // container", that legitimately hold before the agent runs).
+    const customAcceptance = (task.checks.custom || []).filter((c) => c.required !== false && typeof c.evaluator === "string");
+    if (p2p.length === 0 && f2p.length === 0 && customAcceptance.length === 0) {
+      return { pass_to_pass: [], fail_to_pass: [], custom: [] };
+    }
 
     if (task.testPatch) {
       try {
@@ -289,11 +301,15 @@ export class TaskRunner {
         throw new Error(`Baseline failed: test patch does not apply to the base repo: ${err.message}`, { cause: err });
       }
     }
-    const p2pResults = await runAll(p2p, sandbox, timeoutSec);
-    const f2pResults = await runAll(f2p, sandbox, timeoutSec);
+    // No agent has run → empty trace. A trace-aware acceptance check must fail
+    // against the pristine workspace exactly as a fail_to_pass command does.
+    const baselineCtx = { workdir, trace: [], task };
+    const p2pResults = await runAll(p2p, sandbox, timeoutSec, baselineCtx);
+    const f2pResults = await runAll(f2p, sandbox, timeoutSec, baselineCtx);
+    const customResults = await runAll(customAcceptance, sandbox, timeoutSec, baselineCtx);
     await patchTracker.reset(initialCommit);
 
-    const broken = [...p2pResults, ...f2pResults].filter((r) => r.infraError);
+    const broken = [...p2pResults, ...f2pResults, ...customResults].filter((r) => r.infraError);
     if (broken.length > 0) {
       throw new Error(`Baseline failed: checks could not be executed: ${broken.map((r) => `${r.id} (${r.infraError})`).join(", ")}`);
     }
@@ -301,11 +317,11 @@ export class TaskRunner {
     if (p2pFailed.length > 0) {
       throw new Error(`Baseline failed: pass_to_pass checks were already failing before agent ran: ${p2pFailed.map((r) => r.id).join(", ")}`);
     }
-    const f2pPassing = f2pResults.filter((r) => r.passed);
-    if (f2pPassing.length > 0) {
-      throw new Error(`Baseline invalid: fail_to_pass checks already pass before agent ran (task would reward a no-op): ${f2pPassing.map((r) => r.id).join(", ")}`);
+    const accPassing = [...f2pResults, ...customResults].filter((r) => r.passed);
+    if (accPassing.length > 0) {
+      throw new Error(`Baseline invalid: acceptance (fail_to_pass/custom) checks already pass before agent ran (task would reward a no-op): ${accPassing.map((r) => r.id).join(", ")}`);
     }
     const brief = (r) => ({ id: r.id, passed: r.passed, exitCode: r.exitCode, timedOut: r.timedOut, durationMs: r.durationMs });
-    return { pass_to_pass: p2pResults.map(brief), fail_to_pass: f2pResults.map(brief) };
+    return { pass_to_pass: p2pResults.map(brief), fail_to_pass: f2pResults.map(brief), custom: customResults.map(brief) };
   }
 }

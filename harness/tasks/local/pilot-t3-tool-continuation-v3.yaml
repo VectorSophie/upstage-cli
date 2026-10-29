@@ -1,0 +1,52 @@
+id: local-pilot-t3-tool-continuation-v3
+version: 3
+description: >
+  T3 (v3) tool-result continuation — HARDENED. The trusted generator is mounted
+  read-only at /opt/t3/challenge.mjs (outside the agent-writable workspace), so it
+  cannot be read-and-copied, rewritten, or modified-then-restored. The agent must
+  run exactly `node /opt/t3/challenge.mjs` and write its fresh stdout token into
+  out.txt. The evaluator verifies, from the harness trace, the exact command
+  identity and that the stdout token (not stderr/metadata) was consumed.
+repo: ../../fixtures/tool-continuation-v3/repo
+branch: main
+prompt: |
+  Run exactly this command: `node /opt/t3/challenge.mjs`
+  It prints a single fresh token line to stdout. Write that exact token (the full
+  line, no extra whitespace) into a new file out.txt.
+  The generator is read-only and outside your workspace; you can only get the
+  token by running that exact command and reading its stdout. Do not run a copy.
+context: { strategy: default, maxFiles: 10, includeTests: true }
+sandbox:
+  type: docker
+  image: node:22-alpine
+  network: none
+  timeout: 300
+  # Referenced by NAME from the harness-owned trusted registry
+  # (src/sandbox/mount-registry.mjs). Tasks cannot supply host/container paths.
+  readonlyMounts:
+    - { asset: t3-challenge-v3 }
+agent:
+  permissions: bypassPermissions
+  maxTurns: 8
+  maxTokens: 8192
+  tools: { allow: [read_file, write_file, run_shell], deny: [] }
+checks:
+  custom:
+    - id: tool-result-continuation
+      evaluator: tool-result-continuation
+      required: true
+      weight: 1.0
+      config:
+        command: "node /opt/t3/challenge.mjs"
+        tools: [run_shell, run]
+        outputFile: "out.txt"
+        tokenPattern: "T3-[0-9a-f]{32}"
+        # No post-hoc file hash: the generator is read-only and outside the
+        # workspace, so integrity is structural (time-of-check = time-of-use).
+        immutableGenerator: true
+  pass_to_pass:
+    - { id: gen-readonly-mounted, command: "test -r /opt/t3/challenge.mjs", timeout: 20, weight: 0.0 }
+tags: [javascript, tool-result, local-pilot, docker, hardened]
+difficulty: easy
+expectedPatchScope: [out.txt]
+expectedMaxLines: 2

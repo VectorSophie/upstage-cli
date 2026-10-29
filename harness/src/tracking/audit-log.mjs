@@ -25,6 +25,23 @@ export class AuditLog {
           last.ok = event.ok;
           last.durationMs = event.durationMs || 0;
           if (event.result !== undefined) last.result = truncate(event.result);
+          // Preserve a STRUCTURED, length-capped copy of an execution result
+          // (run_shell/run_tests return {ok,code,stdout,stderr,timedOut}). A
+          // trace-aware evaluator needs stdout isolated from stderr/metadata and
+          // the exit/timeout flags — the stringified `result` above conflates
+          // them. Only kept for exec-shaped results (a string `stdout` field).
+          if (event.result && typeof event.result === "object" && typeof event.result.stdout === "string") {
+            last.resultData = {
+              // The command's own success (exit 0 / not failed), not the
+              // registry-level "tool didn't throw" flag.
+              ok: event.result.ok === true,
+              code: typeof event.result.code === "number" ? event.result.code : null,
+              stdout: capText(event.result.stdout, 8000),
+              stderr: capText(event.result.stderr, 2000),
+              timedOut: event.result.timedOut === true,
+              truncated: event.result.truncated === true
+            };
+          }
         }
       } else if (event.type === "thinking") {
         if (!this._currentTurn) {
@@ -64,6 +81,11 @@ export class AuditLog {
   events() {
     return this._events;
   }
+}
+
+function capText(value, limit) {
+  if (typeof value !== "string") return "";
+  return value.length > limit ? `${value.slice(0, limit)}…[truncated ${value.length - limit} chars]` : value;
 }
 
 function truncate(value, limit = 2000) {

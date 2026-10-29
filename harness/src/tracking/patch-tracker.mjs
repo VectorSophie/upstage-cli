@@ -4,7 +4,17 @@ import { join } from "node:path";
 
 // Interpreter/test caches created by baseline or check runs must never show up
 // in the agent's patch.
-const EXCLUDES = ["__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", ".harness-*"];
+const EXCLUDES = [
+  "__pycache__/", "*.pyc", ".pytest_cache/", ".mypy_cache/", ".ruff_cache/", ".harness-*",
+  // The CLI's own per-workspace cache (retrieval index under .upstage-cli/index/)
+  // written by context-building is an infra artifact, not an agent edit — same
+  // rationale as the interpreter/test caches above. Excluding it keeps model_patch
+  // (and the patch-minimality metric) fair across agents that run through the CLI
+  // loop. Scoped to .upstage-cli/ only (the CLI's private session/index store,
+  // never a task target); project config under .upstage/ is left visible in case
+  // a task legitimately edits it.
+  ".upstage-cli/"
+];
 const IDENT = ["-c", "user.email=harness@upstage", "-c", "user.name=Harness", "-c", "commit.gpgsign=false", "-c", "core.autocrlf=false"];
 
 export class PatchTracker {

@@ -1,0 +1,22 @@
+id: local-pilot-t4-multi-step
+version: 1
+description: "T4 multi-step repair — parser.mjs has two related bugs; inspect, fix, and make the tests pass."
+repo: ../../fixtures/multi-step
+branch: main
+prompt: |
+  The test suite tests/parser.test.mjs is failing. Inspect parser.mjs, fix the
+  bug(s) in parseCsvLine so all tests pass, and do not edit the test file.
+context: { strategy: default, maxFiles: 10, includeTests: true }
+sandbox: { type: native, network: none, timeout: 300 }
+agent:
+  permissions: bypassPermissions
+  maxTurns: 10
+  maxTokens: 8192
+  tools: { allow: [read_file, write_file, run_shell, search_code], deny: [] }
+checks:
+  fail_to_pass:
+    - { id: parser-tests, command: node --test tests/parser.test.mjs, timeout: 30, weight: 1.0 }
+tags: [javascript, multi-step, local-pilot, medium]
+difficulty: medium
+expectedPatchScope: [parser.mjs]
+expectedMaxLines: 6

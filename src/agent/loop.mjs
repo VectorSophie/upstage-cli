@@ -806,6 +806,31 @@ async function* processCompletionWithTools({
     yield evt;
   }
 
+  // Truncation guard: if the provider reported finish_reason=length (output
+  // budget exhausted) or content_filter, the generation is UNFINISHED. It must
+  // not be reported as a normal DONE completion, and any tool call it was
+  // mid-way through must NOT be executed (its arguments may be cut off). Only
+  // adapters that populate `finishReason` (the local adapter) trip this; the
+  // Upstage/OpenAI adapters leave it undefined, so their behavior is unchanged.
+  if (completion.finishReason === "length" || completion.finishReason === "content_filter") {
+    const why =
+      completion.finishReason === "length"
+        ? "output budget exhausted before a final answer"
+        : "content filtered by the provider";
+    return {
+      terminal: {
+        ok: false,
+        state: AgentState.FAIL,
+        stopReason: StopReason.OUTPUT_TRUNCATED,
+        response: `Stopped: generation truncated (finish_reason=${completion.finishReason}) — ${why}.`,
+        trace,
+        session
+      },
+      state: AgentState.FAIL,
+      toolCalls
+    };
+  }
+
   // Cost guardrail (§2.2): a hard stop, same shape/convention as the
   // tool-call and wall-time budgets just below — separate from the
   // tokenBudgeter's context-window warning, which only ever warns and

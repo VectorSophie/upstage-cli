@@ -6,6 +6,7 @@ import { createHash, randomBytes } from "node:crypto";
 
 import { buildDockerRunArgs } from "../../../src/sandbox/docker-flags.mjs";
 import { spawnWithTimeout } from "./native.mjs";
+import { assertMountAllowed } from "./mount-registry.mjs";
 
 const DEP_FILES = { python: "requirements.txt", node: "package.json" };
 const DOCKER_DAEMON_ERROR = 125;
@@ -53,6 +54,10 @@ export class DockerSandbox {
     // Run as the invoking user on POSIX so bind-mounted files stay removable by the harness
     this.user = typeof process.getuid === "function" ? `${process.getuid()}:${process.getgid()}` : undefined;
     this._workdir = null;
+    // Trusted read-only bind mounts (e.g. an immutable challenge generator).
+    // Host paths are resolved by the task loader; container paths must be
+    // absolute and outside the workspace (buildDockerRunArgs enforces this).
+    this.readonlyMounts = Array.isArray(this.sandbox.readonlyMounts) ? this.sandbox.readonlyMounts : [];
     this.dependencies = this.sandbox.dependencies || "image";
     if (!["image", "build"].includes(this.dependencies)) {
       throw new SandboxConfigError(`sandbox.dependencies must be "image" or "build", got: ${this.dependencies}`);
@@ -77,6 +82,10 @@ export class DockerSandbox {
     if (this.dependencies === "build" && process.env.HARNESS_ALLOW_DEPENDENCY_BUILD !== "1") {
       throw new SandboxConfigError("sandbox.dependencies=build installs repository dependencies with network access; set HARNESS_ALLOW_DEPENDENCY_BUILD=1 only for trusted repositories");
     }
+    // Independent trust-boundary check: every read-only mount host must
+    // canonicalise within an allowed root (fail-closed), regardless of how this
+    // sandbox was constructed. Resolve to the canonical host for the bind.
+    this.readonlyMounts = this.readonlyMounts.map((m) => assertMountAllowed(m));
     this._workdir = workdir;
     if (this.dependencies === "build") {
       this._envImage = this._buildEnvImage(workdir);
@@ -101,7 +110,8 @@ export class DockerSandbox {
       name,
       pidsLimit: this.pidsLimit,
       user: this.user,
-      hardened: true
+      hardened: true,
+      mounts: this.readonlyMounts
     });
     this._live.add(name);
     try {
@@ -147,6 +157,7 @@ export class DockerSandbox {
       cpus: this.cpus,
       pidsLimit: this.pidsLimit,
       timeoutMs: this.timeoutMs,
+      readonlyMounts: this.readonlyMounts.map((m) => ({ container: m.container })),
       user: this.user || "image-default",
       enforced: { network: true, filesystem: true, cpu: true, memory: true, pids: true, time: true, readOnlyRoot: true, capDropAll: true },
       warnings: []

@@ -1,0 +1,51 @@
+id: local-pilot-t3-tool-continuation-v2
+version: 2
+description: >
+  T3 (v2) tool-result continuation — rigorous. The agent must RUN
+  `node challenge.mjs`, which emits a fresh runtime token, and write that exact
+  token into out.txt. The answer is NOT in the prompt or any source file; it is
+  verified from the harness-recorded trace plus a pinned generator hash, so it
+  cannot be read, guessed, hardcoded, or forged by editing workspace files.
+repo: ../../fixtures/tool-continuation-v2
+branch: main
+prompt: |
+  Run the command `node challenge.mjs`. It prints a single token line to stdout.
+  Write that exact token (the full line, no extra whitespace) into a new file out.txt.
+  The token changes every run and is not stored anywhere — you can only obtain it
+  by running the script and reading its output. Do not modify challenge.mjs.
+context: { strategy: default, maxFiles: 10, includeTests: true }
+sandbox: { type: native, network: none, timeout: 300 }
+agent:
+  permissions: bypassPermissions
+  maxTurns: 8
+  maxTokens: 8192
+  tools: { allow: [read_file, write_file, run_shell], deny: [] }
+checks:
+  custom:
+    - id: tool-result-continuation
+      evaluator: tool-result-continuation
+      required: true
+      weight: 1.0
+      config:
+        # Exact command identity (argv match), hardened evaluator. v2 is the
+        # NATIVE variant: it hardens A (command spoofing) and C (stdout-only),
+        # but generator integrity is only best-effort (post-run file hash) —
+        # native shares filesystem identity with the agent, so a modify/run/
+        # restore (bypass B) is not fully prevented here. Use v3 (Docker,
+        # read-only mounted generator) for the structural B guarantee.
+        command: "node challenge.mjs"
+        tools: [run_shell, run]
+        outputFile: "out.txt"
+        tokenPattern: "T3-[0-9a-f]{32}"
+        generatorFile: "challenge.mjs"
+        # sha256 of fixtures/tool-continuation-v2/challenge.mjs — the trusted
+        # immutability authority, held here (not in the agent workspace). If the
+        # agent rewrites the generator, this no longer matches and a forged
+        # token is rejected.
+        generatorSha256: "355c43e6457558f1ae3cc248af26937fab6e110f97e694c9b7a22c107a6e347d"
+  pass_to_pass:
+    - { id: gen-exists, command: "test -f challenge.mjs", timeout: 20, weight: 0.0 }
+tags: [javascript, tool-result, local-pilot, easy]
+difficulty: easy
+expectedPatchScope: [out.txt]
+expectedMaxLines: 2

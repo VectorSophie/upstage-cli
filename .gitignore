@@ -126,3 +126,6 @@ Thumbs.db
 
 # upstage-cli runtime checkpoints (scratch)
 .upstage/checkpoints/
+
+# Harness scratch (agent run checkpoints created during tests)
+harness/.upstage/
