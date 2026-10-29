@@ -1,0 +1,21 @@
+_import: ./_base-benchmark-v1.yaml
+id: bv1-c1-one-wrong-op-ko
+description: "tool-selection (Korean prompt) — fix only the one wrong operator"
+repo: ../../fixtures/benchmark-v1/c1-one-wrong-op
+prompt: |
+  math.mjs의 add/sub/mul 중 정확히 하나만 잘못 구현되어 있습니다. 나머지는 올바르며 그대로 두어야 합니다.
+  잘못된 함수 하나만 찾아 수정하여 app.test.mjs가 통과하고 sanity 체크도 계속 통과하도록 하세요.
+  테스트 파일이나 관련 없는 파일은 수정하지 마세요.
+checks:
+  fail_to_pass:
+    - { id: fix, command: 'node --test --test-name-pattern "^fix_" app.test.mjs', timeout: 40 }
+  pass_to_pass:
+    - { id: sanity, command: 'node --test --test-name-pattern "^sanity_" sanity.test.mjs', timeout: 40, weight: 0.0 }
+tags: [benchmark-v1, category-c, korean]
+difficulty: easy
+language: ko
+expectedPatchScope: [math.mjs]
+expectedMaxLines: 20
+# Scored test files; restored from the pristine fixture after the agent
+# runs, so editing/renaming/weakening them cannot change the grade.
+trustedPaths: [app.test.mjs, sanity.test.mjs]
