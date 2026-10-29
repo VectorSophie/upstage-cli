@@ -9,9 +9,22 @@ sandbox:
   type: docker
   image: node:22-alpine
   network: none
-  timeout: 120
+  # Per-exec (Docker) wall-clock for each tool call / check. Raised from 120 to
+  # 300 so a slow reasoning model's single tool call is not truncated by the
+  # container clock (EXAONE pilots ran 60–165 s/task). The AGENT's total budget
+  # is bounded by maxTurns × maxTokens, not this per-exec limit; the exact total
+  # agent wall-clock is a pre-freeze decision (see BENCHMARK_V1_SEMANTIC_AUDIT.md
+  # §Budget). Fast checks still finish in well under a second.
+  timeout: 300
 agent:
   permissions: bypassPermissions
   maxTurns: 10
-  maxTokens: 8192
+  # Track A (common-resource) OUTPUT cap. 4096, NOT 8192: Solar is validated only
+  # to an 8192-token TOTAL context (prompt + tools + history + output), so an
+  # 8192 output cap leaves no room for input and the server 400s. 4096 is the
+  # largest output that is simultaneously feasible across all four models within
+  # the 8192 common ceiling (it is also A.X's / EXAONE-no-think's validated
+  # output limit). Kanana/EXAONE-thinking can emit 8192 natively — that extra
+  # headroom is a Track B (model-native) setting, never Track A.
+  maxTokens: 4096
   tools: { allow: [read_file, write_file, run_shell], deny: [] }

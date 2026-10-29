@@ -16,6 +16,13 @@ export const TASK_SCHEMA = {
     // Unified diff applied after the agent finishes and before checks run
     // (SWE-bench test_patch); hidden from the agent and excluded from model_patch
     testPatch: { type: "string" },
+    // Workspace-relative paths that are part of the TRUSTED evaluation harness
+    // (e.g. the acceptance/sanity test files). The runner restores each from the
+    // pristine fixture after the agent runs and before checks, so an agent that
+    // edits, renames, weakens, or deletes a scored test cannot change its own
+    // grade. Any agent modification to these paths is recorded (not silently
+    // ignored) as a tamper signal. See runner.restoreTrustedPaths / docs.
+    trustedPaths: { type: "array", items: { type: "string" } },
     prompt: { type: "string", minLength: 1 },
     context: {
       type: "object",

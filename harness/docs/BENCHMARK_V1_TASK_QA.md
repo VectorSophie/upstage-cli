@@ -25,6 +25,12 @@ For every candidate task:
 6. **Evaluator not agent-modifiable** — acceptance evaluators are named,
    harness-owned code (never fixture code); D generators are read-only mounts from
    the trusted registry; reference solutions live outside the fixture repo.
+   **Scored test files (file tasks) are `trustedPaths`:** the runner restores them
+   from the pristine host fixture after the agent runs and before scoring, so an
+   agent cannot edit, rename, weaken, or delete a scored test to grade itself. The
+   validator enforces that every test file named by a command check is a
+   `trustedPath`. This closed a **confirmed** bypass — see §4 and
+   `BENCHMARK_V1_SEMANTIC_AUDIT.md` §1.
 7. **No shortcut** — `expectedPatchScope` + `pass_to_pass` on untouched code (e.g.
    C1 checks add/sub stay correct) discourage over-editing; command identity +
    stdout-only + read-only mount (D) prevent the T3 bypasses.
@@ -51,23 +57,40 @@ missing entry) all pass.
 
 ## 3. Review state
 
+Structured in the manifest as
+`review.{autoValidated, assistantSemanticReviewed, independentHumanReviewed}`:
+
 | State | Meaning | Count |
 |---|---|---|
-| `auto` | passed mechanical validation + Docker QA above | **14 (all)** |
-| `human` | independently reviewed by a person | **0** |
+| auto-validated | passed mechanical validation + Docker QA above | **14 (all)** |
+| assistant semantic-reviewed | the Phase-2 semantic audit (this assistant) | **14 (all)** |
+| independent human-reviewed | independently reviewed by a person | **0** |
 
-**No task has received independent human review.** The `review` field is `auto`
-for every task; this is stated so results are not over-claimed. Human review is a
-freeze prerequisite (PROTOCOL §7).
+**No task has received independent human review** — it is not claimed merely
+because an AI performed the semantic audit. The validator rejects any task that
+sets `independentHumanReviewed: true`. Human review is a freeze prerequisite
+(PROTOCOL §7, SEMANTIC_AUDIT §10).
 
 ## 4. What automated QA CANNOT establish
 
-- That the acceptance check rejects **every** incorrect solution.
+- That the acceptance check rejects **every** incorrect solution. In particular,
+  **hardcoding to the visible asserted cases** can still pass (the semantic audit
+  strengthened the two weakest graders — a1, a2 — and defers full resistance, via
+  hidden held-out cases, to freeze; see SEMANTIC_AUDIT §1).
 - That it accepts **every** reasonable alternative correct solution.
 - Semantic evaluator flaws beyond the mechanical gates (e.g. a test that passes
   for the wrong reason). The T3 saga is the cautionary example — a leak that
   passed CI until reviewed.
 These require human review and, where useful, adversarial model runs.
+
+### Adversarial integrity regression (added by the semantic audit)
+`tests/h21-benchmark-v1-integrity.test.mjs` (real Docker) drives the actual
+`TaskRunner` on bv1-a1 and proves: with `trustedPaths` **stripped**, an agent that
+renames the tests out of the `^fix_` pattern **passes vacuously** (node `--test`
+exits 0 on a zero-match pattern); with `trustedPaths` present, the same rename —
+plus weakening assertions and deleting the file — all **fail**, and the tampering
+is flagged (`safety.tamperedTrustedPaths`). `tests/h20` adds CPU unit tests for
+`restoreTrustedPaths` and the validator's trusted-path invariant.
 
 ## 5. Development vs held-out split
 
@@ -93,7 +116,8 @@ capability; do not treat the pilot fixtures as held-out items.
 ```bash
 cd harness
 npm run benchmark:build      # regenerate benchmarks/v1/manifest.json from tasks
-npm run benchmark:validate   # CPU-only consistency + quality gates
+npm run benchmark:validate   # CPU-only consistency + quality gates (incl. integrity invariants)
 npm run benchmark:qa         # Docker: baseline-fails / solution-passes per task
-node --test tests/h20-benchmark-v1.test.mjs
+node --test tests/h20-benchmark-v1.test.mjs          # CPU: structure, metadata, restore unit, validator negatives
+node --test tests/h21-benchmark-v1-integrity.test.mjs # Docker: adversarial tamper → fail (needs Docker)
 ```

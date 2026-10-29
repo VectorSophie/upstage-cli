@@ -73,11 +73,44 @@ unofficial NVFP4.
 ## 4. Sample-size / precision justification (for the frozen set)
 
 Target a 95% Wilson CI half-width ≤ ~0.12 for a per-model Success@1 near 0.5,
-which needs roughly **n ≈ 65–70 tasks per model** (same task set across models).
-This motivates the ~60–100 full-set target (PROTOCOL §2). For paired model
-differences, McNemar power depends on the discordant-pair rate; budget ≥ ~25–30
-discordant pairs to detect a moderate difference — revisit after a calibration
-run on the frozen set. Finalise exact numbers before freeze.
+which needs roughly **n ≈ 65–70 INDEPENDENT FAMILIES per model** (same task set
+across models) — **not** 65–70 rows. Language variants (ko/en of one fixture) and
+template replicates (d1/d2) are **not** independent: the audit shows the 14
+candidate rows are only **11 families** and **2 language pairs**
+(`manifest.counts.independentFamilies` / `.languagePairs`). So the ~60–100
+full-set target (PROTOCOL §2) must be read as independent families, with
+language pairs and replicates **added on top**, and power computed with category
+strata and within-family clustering (cluster-robust or family-level resampling).
+For paired model differences, McNemar power depends on the discordant-pair rate;
+budget ≥ ~25–30 discordant pairs (at the family level) to detect a moderate
+difference — revisit after a calibration run on the frozen set. RQ5 needs ≥8–10
+human-verified language pairs across categories; 2 pairs cannot answer it.
+Finalise exact numbers before freeze.
+
+## 6. Failure accounting (model- vs infrastructure-caused)
+
+Keep model-caused and infrastructure-caused failures distinct; do **not** treat
+every `tool_error` as infrastructure. Full table in
+`BENCHMARK_V1_SEMANTIC_AUDIT.md` §6. Buckets:
+
+- **Model** (count against the model): capability failure (required check fails),
+  invalid tool use (malformed args / blocked metacharacters / policy), model-caused
+  tool errors, output truncation (also reported separately for RQ3), self-inflicted
+  context-length overflow.
+- **Infrastructure** (excluded from the model denominator, reported as an incident
+  rate): transport/server/protocol errors, Docker/environment errors, invalid
+  evaluator outcomes (status `error`), harness mis-budgeting.
+- **Ambiguous** (report both ways, flag if concentrated in one model): wall-clock
+  exhaustion; context-length errors whose cause is unclear.
+
+Always report Success@1 under (a) infra-excluded (primary) and (b) infra-as-failure
+(lower bound); if they differ materially the result is **infra-limited** and
+flagged — this guards against flattering a model whose failures cluster in infra.
+
+**Deterministic retry/exclusion rules (fixed before the held-out run):** retry an
+attempt **only** on a classified **infra** failure, ≤ 2 retries; **never** retry a
+model/capability failure; exclude an attempt only if every try hit infra; record
+each try and its failure class in provenance.
 
 ## 5. Reporting template (per model)
 

@@ -19,6 +19,41 @@ const HARNESS_DIR = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 const safe = (s) => String(s).replace(/[^\w.-]+/g, "_");
 
+/**
+ * Restore trusted evaluation files (scored test files / graders) from the
+ * pristine fixture into the agent workspace. Called after the agent finishes
+ * and after its patch has been captured, so test tampering is still recorded in
+ * model_patch but can never change the grade. Bytes are read from the host
+ * fixture (never the agent-writable workspace), so this cannot be subverted
+ * from inside the sandbox. Returns { restored, tampered, missing } (all
+ * workspace-relative). `tampered` = trusted paths the agent actually changed.
+ */
+export function restoreTrustedPaths(fixtureRoot, workdir, trustedPaths, changedFiles = []) {
+  const root = resolve(fixtureRoot);
+  const wd = resolve(workdir);
+  const changed = new Set(changedFiles);
+  const restored = [];
+  const tampered = [];
+  const missing = [];
+  for (const rel of trustedPaths) {
+    const src = resolve(root, rel);
+    const dest = resolve(wd, rel);
+    // Refuse any path that escapes the fixture or the workspace (`..`, abs).
+    if (src !== root && !src.startsWith(root + "/")) { missing.push(rel); continue; }
+    if (dest !== wd && !dest.startsWith(wd + "/")) { missing.push(rel); continue; }
+    if (!existsSync(src)) { missing.push(rel); continue; }
+    if (changed.has(rel)) tampered.push(rel);
+    try {
+      rmSync(dest, { recursive: true, force: true }); // neutralise file→dir swaps
+      cpSync(src, dest, { recursive: true });
+      restored.push(rel);
+    } catch {
+      missing.push(rel);
+    }
+  }
+  return { restored, tampered, missing };
+}
+
 export function makeRunId(taskId, agentId) {
   const ts = new Date().toISOString().replace(/[:\-.]/g, "").slice(0, 15);
   // random suffix: two attempts in the same second must never share an id
@@ -148,7 +183,22 @@ export class TaskRunner {
 
       // ── Evaluation ───────────────────────────────────────────────────────
       let infraError = null;
-      if (task.testPatch) {
+
+      // Restore trusted evaluation files (scored tests / graders) from the
+      // pristine fixture BEFORE any testPatch or checks. The agent's real edits
+      // were already captured above (so tampering stays visible in model_patch),
+      // but the agent must never grade itself by editing, renaming, weakening,
+      // or deleting a scored test. Source bytes come from the host fixture, not
+      // the agent-writable workspace, so this is not subvertible from the sandbox.
+      let trustedRestore = null;
+      if (Array.isArray(task.trustedPaths) && task.trustedPaths.length > 0) {
+        trustedRestore = restoreTrustedPaths(repoPath, workdir, task.trustedPaths, patchRecord.filesChanged);
+        if (trustedRestore.missing.length > 0) {
+          infraError = `trustedPaths not found in the fixture (task misconfiguration): ${trustedRestore.missing.join(", ")}`;
+        }
+      }
+
+      if (!infraError && task.testPatch) {
         try {
           await patchTracker.applyPatch(task.testPatch);
         } catch (err) {
@@ -247,7 +297,12 @@ export class TaskRunner {
           },
           seed: null
         },
-        safety: { riskFlags: [], secretsDetected: false },
+        safety: {
+          riskFlags: trustedRestore?.tampered?.length ? ["trusted_path_modified"] : [],
+          secretsDetected: false,
+          trustedPathsRestored: trustedRestore?.restored ?? null,
+          tamperedTrustedPaths: trustedRestore?.tampered ?? null
+        },
         failure: null,
         humanReview: null
       };

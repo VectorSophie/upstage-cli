@@ -43,6 +43,18 @@ Tasks were chosen for category coverage and clean verifiability, **not** by whic
 models passed them. The pilot fixtures T1–T4 / T3-v1/v2/v3 are retained as
 historical pilot evidence and are **not** reused as independent benchmark tasks.
 
+**Semantic-audit caveat (see `BENCHMARK_V1_SEMANTIC_AUDIT.md`).** The candidate
+set is dominated by **high-disclosure instruction-following / localized repair**.
+Once prompt disclosure is accounted for: category **E** measures *guided* repair,
+not autonomous failure recovery; **F** measures compound repair, not dependent
+multi-step planning; **B** is *guided* cross-file repair (the faulty file is
+named); **C2** measures tool restraint, not debugging; **D1/D2 are one family**.
+The 14 rows represent **11 independent families** and **2 language pairs** — not
+14 independent problems. Corrected construct labels are recorded per task in the
+manifest (`measuredConstruct`/`promptDisclosure`/`auditAction`). This set is for
+protocol **calibration**; a held-out set must add autonomous-diagnosis, genuine
+recovery, and dependent-planning tasks that withhold the solution.
+
 ## 3. Fair evaluation envelope — two tracks (reported separately)
 
 The four models differ in architecture, reasoning, context, quantization, and
@@ -51,16 +63,31 @@ them into one unqualified leaderboard.
 
 ### Track A — common-resource (primary)
 Identical task set and agent-side limits wherever technically possible, bounded
-by the **most constrained** model. **Effective context ceiling = 8192 tokens**
-(Solar's validated limit). Effective context budgets prompt + tool definitions +
-running history + generation output; truncation policy = fail-closed
-`output_truncated` (never silently drop history). Candidate defaults (Track A):
-`maxTurns 10`, `maxToolCalls` = 2×maxTurns, wall-clock = `sandbox.timeout` (120 s
-candidate; per-category at freeze), `maxTokens` (output) 8192 clamped to each
-model's validated ceiling, sampling = low-temperature deterministic-ish per model
-capability table, retry policy = adapter deadline (P1-C) with no silent retry past
-the wall clock, tools = category-defined allow-list, sandbox = Docker/none,
-completion = checks-driven (status) + stopReason (termination).
+by the **most constrained** model. **Effective TOTAL context ceiling = 8192
+tokens** (Solar's validated limit) — this budgets prompt + tool definitions +
+running history + **generation output together**. Candidate defaults (Track A),
+corrected in the semantic audit:
+- **`maxTokens` (output) = 4096**, NOT 8192. Output tokens are part of the 8192
+  total context; an 8192 output cap leaves no room for input and Solar's server
+  400s. 4096 is the largest output simultaneously feasible across all four models
+  within 8192 (also A.X's / EXAONE-no-think's validated cap). Models that can emit
+  8192 natively (Kanana, EXAONE-thinking) use that only in Track B.
+- Input budget (prompt+tools+history) ≤ 4096; compaction at 80% of 8192;
+  truncation policy = fail-closed `output_truncated` (never silently drop
+  history).
+- `maxTurns 10`, `maxToolCalls` = 2×maxTurns.
+- Per-exec Docker wall-clock **300 s** (was 120 s — it truncated EXAONE's slow
+  tool calls, 60–165 s/task); the **total** agent budget is bounded by
+  turns×tokens with a generous safety ceiling (exact value a pre-freeze decision).
+- sampling = each model's vendor preset, **fixed before scoring** and recorded
+  (identical knobs are impossible across reasoning/non-reasoning models);
+  retry policy = adapter deadline (P1-C) + infra-only retries (STATISTICS §);
+  tools = category-defined allow-list; sandbox = Docker/none; completion =
+  checks-driven (status) + stopReason (termination).
+
+Cross-model token budgeting (each model tokenises differently, so 8192 tokens is
+not the same text across models) is a **blocking pre-freeze decision**; see
+`BENCHMARK_V1_SEMANTIC_AUDIT.md` §5 for the bounded path.
 
 ### Track B — model-native (secondary)
 Documented, pinned **vendor-recommended** sampling/reasoning per model, within

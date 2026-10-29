@@ -34,26 +34,42 @@ const CATEGORIES = {
   F: "multi-step"
 };
 
-// Per-task curated metadata. justification = why the task earns inclusion.
-// split: "dev" (calibration/development fixture in THIS PR) or "holdout"
-// (reserved for the frozen evaluation set — none yet; authored later).
-// review: "auto" (mechanically + QA validated) or "human" (independently
-// reviewed by a person — claimed ONLY when actually done).
+// Per-task curated metadata, including the Phase-2 semantic-audit fields.
+//
+//  category          original taxonomy letter (A–F); kept for continuity.
+//  split             "dev" (calibration fixture in THIS PR) or "holdout"
+//                    (reserved for the frozen set — none yet; authored later).
+//  family            underlying-problem id. Rows that share a family are NOT
+//                    independent evidence (ko/en pairs; d1/d2 near-duplicates).
+//  baseTaskId/pairId/langVariant  language-pairing for RQ5 (paired, not
+//                    independent, observations).
+//  measuredConstruct what the task ACTUALLY measures once prompt disclosure is
+//                    accounted for (vs the category's nominal intent).
+//  promptDisclosure  how much the prompt reveals: "low" | "medium" | "high".
+//  auditAction       KEEP | RECLASSIFY | REWRITE | DROP (Phase 2 outcome).
+//  integrity         how the grade is protected from agent tampering:
+//                    "trusted-path-restore" (file tasks) or
+//                    "trace-evaluator-immutable-mount" (category D).
+//  reclassification  corrected construct label when auditAction=RECLASSIFY.
+//
+// review state is structured (not a single "auto"): mechanical/QA validation
+// and this assistant semantic audit are TRUE; independent HUMAN review is FALSE
+// for every task and is a freeze prerequisite — never claimed here.
 const META = {
-  "bv1-a1-range-sum": { category: "A", split: "dev", justification: "Canonical off-by-one; establishes a basic single-function coding baseline with a deterministic verifiable test." },
-  "bv1-a1-range-sum-ko": { category: "A", split: "dev", justification: "Korean-prompt pair of a1 for the RQ5 language-dependence analysis; identical fixture and checks, prompt only differs." },
-  "bv1-a2-cel-to-fahr": { category: "A", split: "dev", justification: "Wrong-formula repair (missing +32); a second independent simple-repair bug shape." },
-  "bv1-b1-string-align": { category: "B", split: "dev", justification: "Defect in a helper used by a caller in another file; requires reading across two files to locate the real fault." },
-  "bv1-b2-validator-chain": { category: "B", split: "dev", justification: "Boundary bug (>= vs >) in a rule composed by another module; cross-file comprehension with a single correct fix site." },
-  "bv1-c1-one-wrong-op": { category: "C", split: "dev", justification: "Three functions, exactly one wrong, plus a distractor file; measures selective repair and over-editing via pass_to_pass on the untouched functions." },
-  "bv1-c1-one-wrong-op-ko": { category: "C", split: "dev", justification: "Korean-prompt pair of c1 for RQ5." },
-  "bv1-c2-trivial-constant": { category: "C", split: "dev", justification: "One-line constant fix where running extra tools is unnecessary; the tool-use quality metric (redundant calls) is read from the trace." },
-  "bv1-d1-tool-result": { category: "D", split: "dev", justification: "Tool-result dependence under the hardened T3-v3 trust model: read-only mounted generator, runtime CSPRNG token, trace-verified. No static answer." },
-  "bv1-d2-tool-result": { category: "D", split: "dev", justification: "Second, distinct trusted generator asset for tool-result dependence; same trust model as d1." },
-  "bv1-e1-syntax-error": { category: "E", split: "dev", justification: "The acceptance command initially ERRORS (SyntaxError), not just fails; measures recovery from a broken command rather than a wrong answer." },
-  "bv1-e2-missing-module": { category: "E", split: "dev", justification: "A required module is absent so the test errors; the agent must diagnose and CREATE the file rather than repeat a failing action." },
-  "bv1-f1-csv-two-bugs": { category: "F", split: "dev", justification: "Two coordinated defects (delimiter + trim) that must both be fixed; multi-step repair with a single verifiable outcome." },
-  "bv1-f2-stack-two-bugs": { category: "F", split: "dev", justification: "Two defects across methods (pop semantics + size) requiring a planned fix and verification of LIFO behaviour." }
+  "bv1-a1-range-sum": { category: "A", split: "dev", family: "a1-range-sum", pairId: "pair-a1", langVariant: "en", measuredConstruct: "instruction-following localized arithmetic repair", promptDisclosure: "high", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Canonical off-by-one; a basic single-function repair baseline with a deterministic verifiable test. Prompt names the file, function, and defect type, so it measures instruction-following + minimal edit, NOT autonomous diagnosis." },
+  "bv1-a1-range-sum-ko": { category: "A", split: "dev", family: "a1-range-sum", baseTaskId: "bv1-a1-range-sum", pairId: "pair-a1", langVariant: "ko", measuredConstruct: "instruction-following localized arithmetic repair (Korean prompt)", promptDisclosure: "high", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Korean-prompt pair of a1 for RQ5; identical fixture and checks, prompt only differs. Paired observation, not an independent task." },
+  "bv1-a2-cel-to-fahr": { category: "A", split: "dev", family: "a2-cel-to-fahr", langVariant: "en", measuredConstruct: "formula repair with light diagnosis (defect not stated)", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Wrong-formula repair; prompt says the value is wrong but NOT that +32 is missing, so some diagnosis is required. Grader strengthened with negative/non-round cases to defeat two-point hardcoding." },
+  "bv1-b1-string-align": { category: "B", split: "dev", family: "b1-string-align", langVariant: "en", measuredConstruct: "guided cross-file repair (fault location disclosed)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "guided multi-file repair — the prompt names the helper as the real defect, so cross-file DIAGNOSIS is largely given; the agent must still read two files and edit the correct site.", integrity: "trusted-path-restore", justification: "Defect in a helper used by a caller in another file. The prompt discloses that the real defect is in the helper, reducing the diagnostic demand; retained as guided cross-file repair." },
+  "bv1-b2-validator-chain": { category: "B", split: "dev", family: "b2-validator-chain", langVariant: "en", measuredConstruct: "guided cross-file boundary repair (fault + boundary disclosed)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "guided multi-file repair — prompt states the zero-boundary bug and that it lives in the dependency rule.", integrity: "trusted-path-restore", justification: "Boundary bug (>= vs >) in a rule composed by another module. Prompt discloses the bug and its location; retained as guided cross-file repair, not blind diagnosis." },
+  "bv1-c1-one-wrong-op": { category: "C", split: "dev", family: "c1-one-wrong-op", pairId: "pair-c1", langVariant: "en", measuredConstruct: "selective repair among candidates + over-edit restraint", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Three functions, exactly one wrong (not said which), plus a distractor file; measures locating the wrong one and NOT editing the others (pass_to_pass guards add/sub). Genuine selective repair." },
+  "bv1-c1-one-wrong-op-ko": { category: "C", split: "dev", family: "c1-one-wrong-op", baseTaskId: "bv1-c1-one-wrong-op", pairId: "pair-c1", langVariant: "ko", measuredConstruct: "selective repair among candidates (Korean prompt)", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Korean-prompt pair of c1 for RQ5. Paired observation, not independent." },
+  "bv1-c2-trivial-constant": { category: "C", split: "dev", family: "c2-trivial-constant", langVariant: "en", measuredConstruct: "tool restraint / instruction-following (exact value given)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "tool-use restraint — the required value is given; the behaviour under test is NOT running unnecessary tools (read from the trace), not repair difficulty.", integrity: "trusted-path-restore", justification: "One-line constant fix where the answer is disclosed; the signal is the redundant-tool-call count from the trace, so it measures restraint, not debugging." },
+  "bv1-d1-tool-result": { category: "D", split: "dev", family: "d-token", langVariant: "en", measuredConstruct: "tool-result dependence (execute trusted tool, consume its stdout)", promptDisclosure: "high", auditAction: "KEEP", integrity: "trace-evaluator-immutable-mount", justification: "Tool-result dependence under the hardened T3-v3 model: read-only mounted generator, runtime CSPRNG token, trace-verified. High disclosure is intrinsic to the category (the exact command is the point)." },
+  "bv1-d2-tool-result": { category: "D", split: "dev", family: "d-token", langVariant: "en", measuredConstruct: "tool-result dependence (same template as d1)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "NOT independent of d1 — identical workflow/template with a different generator asset; grouped into family 'd-token'. Counts as one underlying problem, not two.", integrity: "trace-evaluator-immutable-mount", justification: "Second generator asset for tool-result dependence; mechanically distinct token but the same cognitive demand as d1. Retained as a within-family replicate, not independent evidence." },
+  "bv1-e1-syntax-error": { category: "E", split: "dev", family: "e1-syntax-error", langVariant: "en", measuredConstruct: "guided syntax repair (instruction-following)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "instruction-following repair, NOT autonomous failure recovery — the prompt names broken.mjs, states it is a syntax error, and gives the required behaviour; the agent does not discover or diagnose the failure.", integrity: "trusted-path-restore", justification: "Acceptance initially errors (SyntaxError), but the prompt discloses the file, the defect class, and the target behaviour, so it measures guided repair. Genuine recovery would withhold the diagnosis." },
+  "bv1-e2-missing-module": { category: "E", split: "dev", family: "e2-missing-module", langVariant: "en", measuredConstruct: "spec-driven module creation (instruction-following)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "instruction-following module creation, NOT failure recovery — the prompt states the module is missing and gives its full slugify spec.", integrity: "trusted-path-restore", justification: "A required module is absent so the test errors, but the prompt discloses the missing file and the exact behaviour to implement; the agent follows a spec rather than diagnosing an unexpected failure." },
+  "bv1-f1-csv-two-bugs": { category: "F", split: "dev", family: "f1-csv-two-bugs", langVariant: "en", measuredConstruct: "compound localized repair (two disclosed defects, weak step dependency)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "compound repair, NOT genuine multi-step planning — both defects are disclosed and fixed within one short function with little inter-step dependency.", integrity: "trusted-path-restore", justification: "Two defects (delimiter + trim) in one function; both are named in the prompt. Limited planning demand; retained as a compound-repair calibration item." },
+  "bv1-f2-stack-two-bugs": { category: "F", split: "dev", family: "f2-stack-two-bugs", langVariant: "en", measuredConstruct: "compound repair across two methods (two disclosed defects)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "compound repair + verification, NOT dependent multi-step planning — the two method fixes are largely independent and both are disclosed.", integrity: "trusted-path-restore", justification: "Two defects across methods (pop semantics + size). Both disclosed; fixes are nearly independent, so planning demand is modest. Retained as compound-repair + verification." }
 };
 
 function sha256(buf) { return createHash("sha256").update(buf).digest("hex"); }
@@ -85,6 +101,22 @@ function imageDigest(image) {
   } catch { return null; }
 }
 
+// Test files referenced by command checks (fail_to_pass + pass_to_pass). These
+// run inside the agent workspace, so each must be a trustedPath.
+function referencedTestFiles(task) {
+  const files = new Set();
+  const cmds = [...(task.checks.fail_to_pass || []), ...(task.checks.pass_to_pass || [])]
+    .map((c) => c.command).filter((c) => typeof c === "string");
+  for (const cmd of cmds) {
+    for (const tok of cmd.split(/\s+/)) {
+      // a bare, workspace-relative *.mjs operand (not a flag, not an absolute
+      // mounted path like /opt/bench/d1.mjs)
+      if (/\.mjs$/.test(tok) && !tok.startsWith("-") && !tok.startsWith("/")) files.add(tok);
+    }
+  }
+  return files;
+}
+
 function acceptanceCheckIds(task) {
   return [...(task.checks.fail_to_pass || []), ...(task.checks.custom || [])]
     .filter((c) => c.required !== false)
@@ -109,6 +141,7 @@ export function buildManifest({ withImageDigests = true } = {}) {
       if (!digestCache.has(image)) digestCache.set(image, imageDigest(image));
       digest = digestCache.get(image);
     }
+    const isTrace = (task.checks.custom || []).some((c) => c.evaluator);
     return {
       id: task.id,
       category: meta.category,
@@ -116,12 +149,26 @@ export function buildManifest({ withImageDigests = true } = {}) {
       difficulty: task.difficulty || null,
       language: task.language || "en",
       split: meta.split,
-      review: "auto", // promoted to the QA result; never "human" unless a person reviewed it
+      // Structured review state — the Phase-8 distinction. autoValidated +
+      // assistantSemanticReviewed are TRUE; independentHumanReviewed is FALSE for
+      // every candidate (a freeze prerequisite) and is never claimed here.
+      review: { autoValidated: true, assistantSemanticReviewed: true, independentHumanReviewed: false },
+      // Phase-2 semantic-audit fields.
+      family: meta.family || task.id,
+      baseTaskId: meta.baseTaskId || null,
+      pairId: meta.pairId || null,
+      langVariant: meta.langVariant || (task.language || "en"),
+      measuredConstruct: meta.measuredConstruct || null,
+      promptDisclosure: meta.promptDisclosure || null,
+      auditAction: meta.auditAction || null,
+      reclassification: meta.reclassification || null,
+      integrity: meta.integrity || (isTrace ? "trace-evaluator-immutable-mount" : "trusted-path-restore"),
       sandbox: { type: task.sandbox?.type || null, image, imageDigest: digest, network: task.sandbox?.network || null },
       repo: relative(HARNESS_DIR, resolve(task.repo)),
       fixtureHash: fixtureHash(resolve(task.repo)),
       readonlyMounts: (task.sandbox?.readonlyMounts || []).map((m) => m.container),
       acceptanceCheckIds: acceptanceCheckIds(task),
+      trustedPaths: task.trustedPaths || [],
       budgets: { maxTurns: task.agent?.maxTurns ?? null, maxTokens: task.agent?.maxTokens ?? null, timeoutSec: task.sandbox?.timeout ?? null },
       expectedPatchScope: task.expectedPatchScope || [],
       solution: solutionRef(task),
@@ -131,12 +178,25 @@ export function buildManifest({ withImageDigests = true } = {}) {
   });
   const byCategory = {};
   for (const e of entries) byCategory[e.category] = (byCategory[e.category] || 0) + 1;
+  // Family / language-pair rollup: how many INDEPENDENT underlying problems the
+  // rows represent (ko/en pairs and d1/d2 collapse to one family each).
+  const families = {};
+  for (const e of entries) (families[e.family] ||= []).push(e.id);
+  const languagePairs = {};
+  for (const e of entries) if (e.pairId) (languagePairs[e.pairId] ||= []).push(e.id);
   return {
     manifestVersion: MANIFEST_VERSION,
     generatedFrom: "tasks/benchmark-v1",
-    note: "CANDIDATE set — development/calibration fixtures for validating the protocol, NOT a frozen leaderboard set. No task has had independent human review yet (see review field + BENCHMARK_V1_TASK_QA.md).",
-    counts: { total: entries.length, byCategory },
+    note: "CANDIDATE set — development/calibration fixtures for validating the protocol, NOT a frozen leaderboard set. Every task has passed mechanical + Docker QA and an ASSISTANT semantic audit (Phase 2); NONE has had independent human review (review.independentHumanReviewed=false) — a freeze prerequisite. See BENCHMARK_V1_SEMANTIC_AUDIT.md + BENCHMARK_V1_TASK_QA.md.",
+    counts: {
+      total: entries.length,
+      byCategory,
+      independentFamilies: Object.keys(families).length,
+      languagePairs: Object.keys(languagePairs).length
+    },
     categories: CATEGORIES,
+    families,
+    languagePairs,
     tasks: entries
   };
 }
@@ -219,6 +279,39 @@ export function validateManifest(manifest = loadManifest()) {
       if (!m.container || typeof m.container !== "string") te.push("readonlyMount missing a resolved container path");
     }
     // the raw YAML asset names are validated at load; here confirm containers resolved
+
+    // 5b. EVALUATOR INTEGRITY. A scored test file that lives in the agent
+    // workspace must be a trustedPath (restored from the pristine fixture before
+    // scoring; see runner.restoreTrustedPaths) — otherwise the agent could edit,
+    // rename, weaken, or delete it to grade itself. Trace tasks (category D)
+    // instead require an immutable, read-only mounted generator.
+    const isTrace = (task.checks.custom || []).some((c) => c.evaluator);
+    if (isTrace) {
+      for (const c of (task.checks.custom || []).filter((x) => x.evaluator === "tool-result-continuation")) {
+        if (c.config?.immutableGenerator !== true) te.push(`trace check '${c.id}' must set config.immutableGenerator:true (read-only mounted generator)`);
+      }
+      if ((task.sandbox?.readonlyMounts || []).length === 0) te.push("trace (category-D) task must declare a read-only mounted generator");
+    } else {
+      const trusted = new Set(task.trustedPaths || []);
+      for (const ref of referencedTestFiles(task)) {
+        if (!trusted.has(ref)) te.push(`scored test file '${ref}' is agent-editable — it must be listed in trustedPaths (evaluator-integrity invariant)`);
+      }
+    }
+    // 5c. every declared trustedPath must exist in the pristine fixture (else the
+    // post-agent restore would misconfigure and error at run time).
+    for (const rel of task.trustedPaths || []) {
+      if (existsSync(repo) && !existsSync(join(repo, rel))) te.push(`trustedPath '${rel}' does not exist in the fixture`);
+    }
+
+    // 5d. NEVER claim independent human review for a candidate task.
+    if (entry.review && entry.review.independentHumanReviewed === true) {
+      te.push("review.independentHumanReviewed must be false for candidate tasks (no independent human review has occurred)");
+    }
+    // 5e. audit metadata completeness.
+    if (!entry.measuredConstruct) te.push("missing measuredConstruct (semantic-audit field)");
+    if (!["low", "medium", "high"].includes(entry.promptDisclosure)) te.push(`invalid/missing promptDisclosure '${entry.promptDisclosure}'`);
+    if (!["KEEP", "RECLASSIFY", "REWRITE", "DROP"].includes(entry.auditAction)) te.push(`invalid/missing auditAction '${entry.auditAction}'`);
+
     // 6. unpinned dependency reminder (image tag vs digest)
     if (task.sandbox?.image && !/@sha256:/.test(task.sandbox.image)) {
       warnings.push(`${entry.id}: image '${task.sandbox.image}' is a tag, not a digest — must be pinned by digest before protocol freeze`);
@@ -233,6 +326,21 @@ export function validateManifest(manifest = loadManifest()) {
 
     perTask[entry.id] = { errors: te, warnings: [] };
     for (const e of te) errors.push(`${entry.id}: ${e}`);
+  }
+
+  // 9. language pairs are PAIRED observations: a ko variant must point at an
+  // existing base task, use the identical fixture (same hash) and the same
+  // acceptance checks — otherwise it cannot isolate a language effect.
+  const entryById = new Map(manifest.tasks.map((e) => [e.id, e]));
+  for (const entry of manifest.tasks) {
+    if (!entry.baseTaskId) continue;
+    const base = entryById.get(entry.baseTaskId);
+    if (!base) { errors.push(`${entry.id}: baseTaskId '${entry.baseTaskId}' is not in the manifest`); continue; }
+    if (entry.fixtureHash !== base.fixtureHash) errors.push(`${entry.id}: language pair must share the base fixture (hash differs from ${entry.baseTaskId})`);
+    const a = JSON.stringify([...(entry.acceptanceCheckIds || [])].sort());
+    const b = JSON.stringify([...(base.acceptanceCheckIds || [])].sort());
+    if (a !== b) errors.push(`${entry.id}: language pair must use the same acceptance checks as ${entry.baseTaskId}`);
+    if (entry.family !== base.family) errors.push(`${entry.id}: language pair must share the base family`);
   }
 
   return { ok: errors.length === 0, errors, warnings, perTask };

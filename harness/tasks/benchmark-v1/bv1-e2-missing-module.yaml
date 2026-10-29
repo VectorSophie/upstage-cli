@@ -16,3 +16,6 @@ difficulty: medium
 language: en
 expectedPatchScope: [slug.mjs]
 expectedMaxLines: 20
+# Scored test files; restored from the pristine fixture after the agent
+# runs, so editing/renaming/weakening them cannot change the grade.
+trustedPaths: [app.test.mjs, sanity.test.mjs]
