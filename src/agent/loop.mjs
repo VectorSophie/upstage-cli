@@ -239,6 +239,30 @@ function createTokenBudgeter(session, tokenLimit) {
 
 // maxChars: set only under a caller-validated context budget; one oversized
 // tool result must not by itself exhaust the window.
+// Give every tool call of the latest assistant turn a result message.
+function completeDanglingToolCalls(conversation, session) {
+  let idx = -1;
+  for (let i = conversation.length - 1; i >= 0; i -= 1) {
+    if (conversation[i]?.role === "assistant" && Array.isArray(conversation[i].tool_calls) && conversation[i].tool_calls.length > 0) {
+      idx = i;
+      break;
+    }
+  }
+  if (idx < 0) return;
+  const answered = new Set(conversation.slice(idx + 1).filter((m) => m?.role === "tool").map((m) => m.tool_call_id));
+  for (const tc of conversation[idx].tool_calls) {
+    if (!tc?.id || answered.has(tc.id)) continue;
+    const msg = {
+      role: "tool",
+      tool_call_id: tc.id,
+      name: tc.function?.name,
+      content: JSON.stringify({ error: "not executed: an earlier tool call in this turn failed" })
+    };
+    conversation.push(msg);
+    appendHistory(session, msg);
+  }
+}
+
 function appendToolMessageToConversation(conversation, session, toolCall, toolName, result, maxChars) {
   let content = toToolMessage(result);
   if (Number.isInteger(maxChars) && content.length > maxChars) {
@@ -941,7 +965,9 @@ export async function* runAgentLoop({
       `adapter max_tokens (${adapter.maxTokens}) exceeds contextBudget.maxOutputTokens (${effectiveContext.maxOutputTokens}): the declared output reservation would not hold`
     );
   }
-  if (effectiveContext.explicit && !runtimeCache) runtimeCache = {};
+  // The re-plan counters live in runtimeCache; without one they would reset
+  // on every turn.
+  if (!runtimeCache) runtimeCache = {};
   if (!session) {
     session = {
       id: "ephemeral",
@@ -1368,7 +1394,24 @@ export async function* runAgentLoop({
         if (phaseResult.terminal.stopReason === StopReason.TOOL_ERROR) {
           const rs = getReplanState(runtimeCache);
           rs.consecutiveFailures += 1;
-          if (rs.consecutiveFailures >= REPLAN_CONSECUTIVE_FAILURE_THRESHOLD && rs.replanCount < REPLAN_MAX_REPLANS) {
+          // The failed tool's error is already in the conversation. Calls of the
+          // same turn that never ran get an explicit result, so the turn stays
+          // well-formed and the model sees what happened.
+          completeDanglingToolCalls(conversation, session);
+          if (rs.consecutiveFailures < REPLAN_CONSECUTIVE_FAILURE_THRESHOLD) {
+            // Below the threshold the model gets to react to the error itself.
+            // (Previously this fell through to a hard stop on the FIRST failure,
+            // so the threshold and the re-plan below were unreachable.)
+            yield createEvent(AgentEventType.SYSTEM_WARNING, {
+              level: "warning",
+              code: "TOOL_ERROR_RECOVERABLE",
+              message: `${phaseResult.terminal.response} (consecutive failures: ${rs.consecutiveFailures}/${REPLAN_CONSECUTIVE_FAILURE_THRESHOLD})`
+            });
+            state = AgentState.PLANNING;
+            steps += 1;
+            continue;
+          }
+          if (rs.replanCount < REPLAN_MAX_REPLANS) {
             rs.replanCount += 1;
             rs.consecutiveFailures = 0;
             const errMsg = (phaseResult.terminal.response || "").slice(0, 200);
