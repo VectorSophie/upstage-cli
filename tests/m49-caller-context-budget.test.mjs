@@ -228,3 +228,46 @@ test("4. a long tool episode compacts, and every request still carries the task 
     }
   });
 });
+
+function usageAdapter(reportRatio) {
+  // one tool call, then done; optionally reports usage.prompt_tokens =
+  // reportRatio x (characters sent / 4)
+  let turn = 0;
+  return recordingAdapter((messages) => {
+    turn += 1;
+    const chars = messages.reduce((n, m) => n + (m.content || "").length, 0);
+    const usage = reportRatio ? { prompt_tokens: Math.ceil((chars / 4) * reportRatio), completion_tokens: 10 } : undefined;
+    if (turn === 1) return { content: "", toolCalls: [{ id: "c1", type: "function", function: { name: "echo", arguments: JSON.stringify({ text: "r".repeat(3000) }) } }], usage };
+    return { content: "done", toolCalls: [], usage };
+  });
+}
+
+test("observed server usage replaces a pessimistic calibration (episode continues where calibration alone stops)", async () => {
+  await withHome(async () => {
+    const budget = { contextLimit: 16384, maxOutputTokens: 8192, charsPerToken: 1.0 };
+    const task = "TASK " + "x".repeat(1000);
+    const calibrated = usageAdapter(null);
+    const r1 = await run({ input: task, registry: registryWithEcho(), adapter: calibrated, session: createSession(process.cwd()), contextBudget: budget });
+    assert.equal(r1.result.stopReason, "context_exhausted", "calibration alone stops after the tool result");
+    assert.equal(calibrated.requests.length, 1);
+    const observed = usageAdapter(1.0);
+    const r2 = await run({ input: task, registry: registryWithEcho(), adapter: observed, session: createSession(process.cwd()), contextBudget: budget });
+    assert.equal(r2.result.stopReason, "done");
+    assert.equal(observed.requests.length, 2);
+    assert.ok(r2.events.some((e) => e.code === "CONTEXT_CALIBRATION"));
+  });
+});
+
+test("observed usage above the calibration makes estimates stricter (fails closed earlier)", async () => {
+  await withHome(async () => {
+    const budget = { contextLimit: 16384, maxOutputTokens: 8192, charsPerToken: 4 };
+    const task = "TASK " + "x".repeat(4500);
+    const optimistic = usageAdapter(null);
+    const r1 = await run({ input: task, registry: registryWithEcho(), adapter: optimistic, session: createSession(process.cwd()), contextBudget: budget });
+    assert.equal(r1.result.stopReason, "done");
+    const heavy = usageAdapter(3.5); // server counts 3.5x the heuristic
+    const r2 = await run({ input: task, registry: registryWithEcho(), adapter: heavy, session: createSession(process.cwd()), contextBudget: budget });
+    assert.equal(r2.result.stopReason, "context_exhausted");
+    assert.equal(heavy.requests.length, 1, "the second request was not sent");
+  });
+});

@@ -17,7 +17,14 @@
 //     safetyMarginRatio?,  // fraction of contextLimit held back (default 0.05)
 //     source?              // free text, recorded in events
 //   }
+//
+// Token estimates start from the caller's calibrated charsPerToken (a
+// worst-case ratio). Once the server has reported usage.prompt_tokens for a
+// request, the observed ratio (server tokens / base heuristic of exactly what
+// was sent, max over the run, plus 10%) replaces it: the server's tokenizer
+// and chat template are the authority.
 import { getModelCapabilities } from "../model/model-capabilities.mjs";
+import { estimateTokens } from "../core/context-manager.mjs";
 
 export class ContextBudgetError extends Error {
   constructor(message) {
@@ -33,6 +40,8 @@ const MIN_INPUT_BUDGET = 512;
 const REPO_CONTEXT_RATIO = 0.09;
 // A single tool result may use at most this share of the conversation budget.
 const TOOL_RESULT_RATIO = 0.25;
+const OBSERVED_MARGIN = 1.1;
+const OBSERVED_RATIO_BOUNDS = [0.25, 4];
 
 function isPositiveInt(n) {
   return Number.isInteger(n) && n > 0;
@@ -68,7 +77,8 @@ export function validateContextBudget(budget) {
     charsPerToken,
     safetyMarginTokens,
     inputBudget,
-    repoContextMaxChars: Math.floor(inputBudget * REPO_CONTEXT_RATIO * charsPerToken)
+    repoContextMaxChars: Math.floor(inputBudget * REPO_CONTEXT_RATIO * charsPerToken),
+    observedRatio: null
   };
 }
 
@@ -94,6 +104,7 @@ export function resolveEffectiveContext({ contextBudget, modelId, env = process.
  *  heuristic's 2.5 chars/token unless the calibration is stricter). */
 export function estimateWith(effective, str) {
   if (!str) return 0;
+  if (effective.observedRatio) return Math.ceil(estimateTokens(str) * effective.observedRatio * OBSERVED_MARGIN);
   let cjk = 0;
   for (let i = 0; i < str.length; i++) {
     const cp = str.charCodeAt(i);
@@ -115,4 +126,20 @@ export function estimateMessages(effective, messages) {
 /** Cap for one tool result's serialized content, in characters. */
 export function toolResultMaxChars(effective, conversationBudget) {
   return Math.max(1000, Math.floor(conversationBudget * TOOL_RESULT_RATIO * effective.charsPerToken));
+}
+
+/** Record the server's prompt_tokens for exactly `messages` + `tools`.
+ *  Returns the ratio used from now on (null if usage was not reported). */
+export function observeUsage(effective, messages, tools, promptTokens) {
+  if (!(Number.isFinite(promptTokens) && promptTokens > 0)) return effective.observedRatio;
+  let base = estimateTokens(JSON.stringify(tools || []));
+  for (const m of messages || []) {
+    if (typeof m?.content === "string") base += estimateTokens(m.content);
+    if (Array.isArray(m?.tool_calls)) for (const tc of m.tool_calls) base += estimateTokens(JSON.stringify(tc));
+  }
+  if (base <= 0) return effective.observedRatio;
+  const [lo, hi] = OBSERVED_RATIO_BOUNDS;
+  const ratio = Math.min(hi, Math.max(lo, promptTokens / base));
+  effective.observedRatio = Math.max(effective.observedRatio ?? 0, ratio);
+  return effective.observedRatio;
 }
