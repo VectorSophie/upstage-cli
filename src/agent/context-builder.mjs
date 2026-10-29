@@ -170,8 +170,10 @@ function resolveMaxContextChars(modelId) {
   return Math.floor(contextLimit * CONTEXT_CHARS_PER_TOKEN * CONTEXT_BUDGET_RATIO);
 }
 
-export function formatContextForModel(context, { modelId } = {}) {
-  const maxContextChars = resolveMaxContextChars(modelId);
+// maxContextChars: explicit cap from a caller-validated context budget
+// (src/agent/effective-context.mjs); otherwise derived from the model id.
+export function formatContextForModel(context, { modelId, maxContextChars: explicitMax } = {}) {
+  const maxContextChars = Number.isInteger(explicitMax) && explicitMax > 0 ? explicitMax : resolveMaxContextChars(modelId);
   const lines = [];
   lines.push("Repository context:");
   lines.push(`- totalFiles: ${context.repoSummary.totalFiles}`);

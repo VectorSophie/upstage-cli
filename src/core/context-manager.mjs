@@ -43,9 +43,13 @@ const TRUNCATION_SUFFIX = " …[truncated]";
 const MICRO_MAX_CHARS = 100;
 
 export class ContextManager {
-  constructor(maxTokens = 65_536, threshold = 0.8) {
+  // options.estimateMessage: per-message token estimator (default: the
+  // heuristic above). A caller with a validated context budget passes a
+  // calibrated one (src/agent/effective-context.mjs).
+  constructor(maxTokens = 65_536, threshold = 0.8, options = {}) {
     this.maxTokens = maxTokens;
     this.threshold = threshold;
+    this._messageTokens = typeof options.estimateMessage === "function" ? options.estimateMessage : messageTokens;
     this.compactionCount = 0;
     this.lastPreCompactTokens = 0;
     this.lastPostCompactTokens = 0;
@@ -53,7 +57,7 @@ export class ContextManager {
 
   getTokenCount(messages) {
     if (!Array.isArray(messages)) return 0;
-    return messages.reduce((sum, msg) => sum + messageTokens(msg), 0);
+    return messages.reduce((sum, msg) => sum + this._messageTokens(msg), 0);
   }
 
   shouldCompact(messages) {
@@ -75,12 +79,17 @@ export class ContextManager {
     });
   }
 
-  compact(messages, keepRecent = 6) {
+  // options.pinned: a message (by reference) that must survive compaction
+  // verbatim — the current task's instruction. options.force: skip the
+  // micro-only shortcut and always do a full compaction.
+  // options.maxSummaryChars: bound the summary (its most recent lines kept).
+  compact(messages, keepRecent = 6, options = {}) {
     if (!Array.isArray(messages)) return messages;
+    const pinned = options.pinned;
 
     // First try microCompact
     const micro = this.microCompact(messages);
-    if (!this.shouldCompact(micro)) {
+    if (!options.force && !this.shouldCompact(micro)) {
       this.compactionCount++;
       this.lastPreCompactTokens = this.getTokenCount(messages);
       this.lastPostCompactTokens = this.getTokenCount(micro);
@@ -90,7 +99,8 @@ export class ContextManager {
     // Full compaction: keep last keepRecent messages, summarize the rest
     const pre = this.getTokenCount(messages);
     const kept = messages.slice(-keepRecent);
-    const dropped = messages.slice(0, messages.length - keepRecent);
+    const dropped = messages.slice(0, messages.length - keepRecent).filter((m) => m !== pinned);
+    const keepPinned = pinned && !kept.includes(pinned) && messages.includes(pinned);
 
     const summary = dropped
       .map((m) => {
@@ -103,12 +113,16 @@ export class ContextManager {
       })
       .join("\n");
 
+    const maxSummary = options.maxSummaryChars;
+    const boundedSummary = Number.isInteger(maxSummary) && summary.length > maxSummary
+      ? `…[earlier summary truncated]\n${summary.slice(summary.length - maxSummary)}`
+      : summary;
     const summaryMessage = {
       role: "user",
-      content: `[Context compacted — summary of ${dropped.length} earlier messages]\n\n${summary}`
+      content: `[Context compacted — summary of ${dropped.length} earlier messages]\n\n${boundedSummary}`
     };
 
-    const compacted = [summaryMessage, ...kept];
+    const compacted = keepPinned ? [pinned, summaryMessage, ...kept] : [summaryMessage, ...kept];
     this.compactionCount++;
     this.lastPreCompactTokens = pre;
     this.lastPostCompactTokens = this.getTokenCount(compacted);
