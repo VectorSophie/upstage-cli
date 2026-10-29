@@ -19,6 +19,7 @@ import {
 import { ContextManager } from "../core/context-manager.mjs";
 import { CheckpointManager } from "../core/checkpoints.mjs";
 import { getModelCapabilities } from "../model/model-capabilities.mjs";
+import { resolveEffectiveContext, estimateWith, estimateMessages, toolResultMaxChars, ContextBudgetError } from "./effective-context.mjs";
 
 export function resolveTokenLimit(modelId) {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
@@ -26,6 +27,17 @@ export function resolveTokenLimit(modelId) {
     return Math.floor(rawLimit);
   }
   return getModelCapabilities(modelId).contextLimit;
+}
+
+function contextExhausted(trace, session, detail) {
+  return {
+    ok: false,
+    state: AgentState.FAIL,
+    stopReason: StopReason.CONTEXT_EXHAUSTED,
+    response: `Stopped: context budget exhausted — ${detail}.`,
+    trace,
+    session
+  };
 }
 
 const DEFAULT_MAX_CONVERSATION_MESSAGES = 40;
@@ -225,12 +237,18 @@ function createTokenBudgeter(session, tokenLimit) {
   };
 }
 
-function appendToolMessageToConversation(conversation, session, toolCall, toolName, result) {
+// maxChars: set only under a caller-validated context budget; one oversized
+// tool result must not by itself exhaust the window.
+function appendToolMessageToConversation(conversation, session, toolCall, toolName, result, maxChars) {
+  let content = toToolMessage(result);
+  if (Number.isInteger(maxChars) && content.length > maxChars) {
+    content = `${content.slice(0, maxChars)} …[tool result truncated: ${content.length - maxChars} of ${content.length} chars omitted to fit the context budget]`;
+  }
   const toolMessage = {
     role: "tool",
     tool_call_id: toolCall?.id,
     name: toolName,
-    content: toToolMessage(result)
+    content
   };
   conversation.push(toolMessage);
   appendHistory(session, toolMessage);
@@ -255,10 +273,14 @@ function createConversationFromSession(session) {
     });
 }
 
-function buildModelMessages({ systemPrompt, contextBlock, conversation, maxConversationMessages }) {
-  const rawConversation = Array.isArray(conversation)
+function buildModelMessages({ systemPrompt, contextBlock, conversation, maxConversationMessages, pinned }) {
+  let rawConversation = Array.isArray(conversation)
     ? conversation.slice(-Math.max(1, maxConversationMessages || DEFAULT_MAX_CONVERSATION_MESSAGES))
     : [];
+  // Under an explicit context budget the task instruction is never windowed out.
+  if (pinned && Array.isArray(conversation) && conversation.includes(pinned) && !rawConversation.includes(pinned)) {
+    rawConversation = [pinned, ...rawConversation];
+  }
   const trimmedConversation = [];
   for (let i = 0; i < rawConversation.length; i += 1) {
     const message = rawConversation[i];
@@ -517,7 +539,7 @@ async function* executeToolCallsPhase({
     });
 
     if (!result.ok) {
-      appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
+      appendToolMessageToConversation(conversation, session, toolCall, toolName, result, runtimeCache?.toolResultMaxChars);
       const stopReason =
         result.error?.code === "POLICY_BLOCKED" || result.error?.code === "POLICY_VIOLATION"
           ? StopReason.POLICY_BLOCKED
@@ -554,7 +576,7 @@ async function* executeToolCallsPhase({
         if (result.data?.rollbackPatch) {
           await registry.execute("apply_patch", { patch: result.data.rollbackPatch }, { cwd, runtimeCache, session });
         }
-        appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
+        appendToolMessageToConversation(conversation, session, toolCall, toolName, result, runtimeCache?.toolResultMaxChars);
         return {
           ok: false,
           state: AgentState.FAIL,
@@ -568,7 +590,7 @@ async function* executeToolCallsPhase({
       appendAppliedPatch(session, { path: result.data.path, verified: true });
     }
 
-    appendToolMessageToConversation(conversation, session, toolCall, toolName, result);
+    appendToolMessageToConversation(conversation, session, toolCall, toolName, result, runtimeCache?.toolResultMaxChars);
     return null;
   }
 
@@ -908,8 +930,18 @@ export async function* runAgentLoop({
   budget = DEFAULT_LOOP_BUDGET,
   settings,
   systemPromptOverride,
-  addDirs
+  addDirs,
+  // Caller-validated context budget; see src/agent/effective-context.mjs.
+  // Invalid values throw ContextBudgetError before anything runs.
+  contextBudget
 }) {
+  const effectiveContext = resolveEffectiveContext({ contextBudget, modelId: adapter?.model });
+  if (effectiveContext.explicit && Number.isInteger(adapter?.maxTokens) && adapter.maxTokens > effectiveContext.maxOutputTokens) {
+    throw new ContextBudgetError(
+      `adapter max_tokens (${adapter.maxTokens}) exceeds contextBudget.maxOutputTokens (${effectiveContext.maxOutputTokens}): the declared output reservation would not hold`
+    );
+  }
+  if (effectiveContext.explicit && !runtimeCache) runtimeCache = {};
   if (!session) {
     session = {
       id: "ephemeral",
@@ -922,14 +954,15 @@ export async function* runAgentLoop({
     };
   }
 
-  const tokenLimit = resolveTokenLimit(adapter?.model);
+  const tokenLimit = effectiveContext.contextLimit;
   const tokenBudgeter = createTokenBudgeter(session, tokenLimit);
   const reasoningEffort = resolveReasoningEffort(settings);
 
-  const contextManager = new ContextManager(
-    settings?.maxContextTokens || tokenLimit,
-    settings?.compactThreshold || 0.8
-  );
+  const contextManager = effectiveContext.explicit
+    ? new ContextManager(effectiveContext.inputBudget, settings?.compactThreshold || 0.8, {
+        estimateMessage: (m) => estimateMessages(effectiveContext, [m])
+      })
+    : new ContextManager(settings?.maxContextTokens || tokenLimit, settings?.compactThreshold || 0.8);
 
   if (settings?.fileCheckpointingEnabled !== false) {
     const checkpointManager = new CheckpointManager();
@@ -1006,7 +1039,18 @@ export async function* runAgentLoop({
   } catch { /* mentions are best-effort */ }
 
   appendHistory(session, { role: "user", content: effectiveInput });
-  conversation.push({ role: "user", content: effectiveInput });
+  const taskMessage = { role: "user", content: effectiveInput };
+  conversation.push(taskMessage);
+  // Pinned only under an explicit budget (default behaviour unchanged).
+  const pinned = effectiveContext.explicit ? taskMessage : undefined;
+  if (effectiveContext.explicit) {
+    yield createEvent(AgentEventType.SYSTEM_WARNING, {
+      level: "info",
+      code: "CONTEXT_BUDGET",
+      message: `Context budget from ${effectiveContext.source}: limit ${effectiveContext.contextLimit}, output ${effectiveContext.maxOutputTokens}, input ${effectiveContext.inputBudget} tokens`,
+      contextBudget: effectiveContext
+    });
+  }
 
   try {
     while (steps < budget.maxSteps) {
@@ -1065,7 +1109,27 @@ export async function* runAgentLoop({
       }
 
       const context = await buildContext({ input, registry, cwd, runtimeCache });
-      const contextBlock = formatContextForModel(context, { modelId: adapter?.model });
+      const contextBlock = formatContextForModel(context, {
+        modelId: adapter?.model,
+        maxContextChars: effectiveContext.repoContextMaxChars ?? undefined
+      });
+
+      // Explicit budget: the conversation gets what the input budget leaves
+      // after the system prompt, context block and tool schemas.
+      let toolSchemaTokens = 0;
+      if (effectiveContext.explicit) {
+        const tools = registry?.toModelTools ? registry.toModelTools() : [];
+        toolSchemaTokens = estimateWith(effectiveContext, JSON.stringify(tools));
+        const overhead =
+          estimateWith(effectiveContext, systemPrompt) + estimateWith(effectiveContext, contextBlock) + toolSchemaTokens;
+        const conversationBudget = effectiveContext.inputBudget - overhead;
+        if (conversationBudget < estimateMessages(effectiveContext, [taskMessage])) {
+          return contextExhausted(trace, session, `fixed prompt overhead (${overhead} tokens) leaves no room for the task within the input budget of ${effectiveContext.inputBudget} tokens`);
+        }
+        contextManager.maxTokens = conversationBudget;
+        runtimeCache.toolResultMaxChars = toolResultMaxChars(effectiveContext, conversationBudget);
+        runtimeCache.compactionSummaryMaxChars = Math.floor(conversationBudget * 0.15 * effectiveContext.charsPerToken);
+      }
 
       yield createEvent(AgentEventType.PLAN, { mode: "model", contextSummary: context.repoSummary, keywords: context.keywords });
 
@@ -1082,7 +1146,7 @@ export async function* runAgentLoop({
           ? await registry.hookEngine.runPreCompact({ trigger: "auto_threshold", ...contextManager.getStats() })
           : true;
         if (proceed) {
-          conversation = contextManager.compact(conversation);
+          conversation = contextManager.compact(conversation, 6, { pinned, maxSummaryChars: runtimeCache?.compactionSummaryMaxChars });
           yield createEvent(AgentEventType.COMPACTION, {
             reason: "auto_threshold",
             ...contextManager.getStats()
@@ -1090,12 +1154,40 @@ export async function* runAgentLoop({
         }
       }
 
-      const messages = buildModelMessages({
+      let messages = buildModelMessages({
         systemPrompt,
         contextBlock,
         conversation,
-        maxConversationMessages: runtimeCache?.maxConversationMessages || DEFAULT_MAX_CONVERSATION_MESSAGES
+        maxConversationMessages: runtimeCache?.maxConversationMessages || DEFAULT_MAX_CONVERSATION_MESSAGES,
+        pinned
       });
+
+      // Explicit budget: never send a request estimated not to fit. Full
+      // compaction keeping 4, then 2, then 0 recent messages (task message
+      // always verbatim, summary bounded); then fail closed. At most 3 steps.
+      if (effectiveContext.explicit && estimateMessages(effectiveContext, messages) + toolSchemaTokens > effectiveContext.inputBudget) {
+        let estimate = Infinity;
+        for (const keepRecent of [4, 2, 0]) {
+          conversation = contextManager.compact(conversation, keepRecent, {
+            pinned,
+            force: true,
+            maxSummaryChars: runtimeCache.compactionSummaryMaxChars
+          });
+          messages = buildModelMessages({
+            systemPrompt,
+            contextBlock: createCompactContextBlock(context),
+            conversation,
+            maxConversationMessages: CONTEXT_EXCEEDED_RETRY_MESSAGES,
+            pinned
+          });
+          estimate = estimateMessages(effectiveContext, messages) + toolSchemaTokens;
+          if (estimate <= effectiveContext.inputBudget) break;
+        }
+        yield createEvent(AgentEventType.COMPACTION, { reason: "context_budget_fit", estimate, ...contextManager.getStats() });
+        if (estimate > effectiveContext.inputBudget) {
+          return contextExhausted(trace, session, `request estimated at ${estimate} tokens after compaction exceeds the input budget of ${effectiveContext.inputBudget} tokens`);
+        }
+      }
 
       yield createEvent(AgentEventType.THINKING, {
         thought: {
@@ -1133,7 +1225,11 @@ export async function* runAgentLoop({
       if (!completionResult.ok) {
         if (completionResult.isContextLengthExceeded) {
           // Route through ContextManager for consistent compaction logic
-          conversation = contextManager.compact(conversation, 4);
+          conversation = contextManager.compact(conversation, 4, {
+            pinned,
+            force: effectiveContext.explicit,
+            maxSummaryChars: runtimeCache?.compactionSummaryMaxChars
+          });
 
           yield createEvent(AgentEventType.COMPACTION, {
             reason: "context_length_exceeded",
@@ -1157,7 +1253,8 @@ export async function* runAgentLoop({
             contextBlock: createCompactContextBlock(context),
             conversation,
             maxConversationMessages:
-              runtimeCache?.contextExceededRetryMessages || CONTEXT_EXCEEDED_RETRY_MESSAGES
+              runtimeCache?.contextExceededRetryMessages || CONTEXT_EXCEEDED_RETRY_MESSAGES,
+            pinned
           });
 
           const retryCompletion = await requestModelCompletion({
@@ -1171,6 +1268,11 @@ export async function* runAgentLoop({
             reasoningEffort
           });
           if (!retryCompletion.ok) {
+            // Exactly one compaction retry. Under an explicit budget a second
+            // context-length rejection is reported as context exhaustion.
+            if (effectiveContext.explicit && retryCompletion.isContextLengthExceeded) {
+              return contextExhausted(trace, session, "the server rejected the request as too long again after one compaction retry");
+            }
             return retryCompletion.terminal;
           }
           const completion = retryCompletion.completion;

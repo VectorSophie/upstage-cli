@@ -20,5 +20,10 @@ export const StopReason = {
   // finish_reason=length (output budget exhausted) or content_filter. The
   // generation is UNFINISHED, so it must never be reported as a normal DONE
   // completion, and any tool call it was mid-way through must not be executed.
-  OUTPUT_TRUNCATED: "output_truncated"
+  OUTPUT_TRUNCATED: "output_truncated",
+  // A caller-validated context budget (runAgentLoop's contextBudget) cannot
+  // hold the next request even after full compaction, or the server rejected
+  // it as too long again after the one bounded compaction retry. Distinct
+  // from MODEL_ERROR: the request was never valid for this context window.
+  CONTEXT_EXHAUSTED: "context_exhausted"
 };
