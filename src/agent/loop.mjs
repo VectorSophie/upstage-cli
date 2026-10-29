@@ -19,7 +19,7 @@ import {
 import { ContextManager } from "../core/context-manager.mjs";
 import { CheckpointManager } from "../core/checkpoints.mjs";
 import { getModelCapabilities } from "../model/model-capabilities.mjs";
-import { resolveEffectiveContext, estimateWith, estimateMessages, toolResultMaxChars, ContextBudgetError } from "./effective-context.mjs";
+import { resolveEffectiveContext, estimateWith, estimateMessages, toolResultMaxChars, ContextBudgetError, observeUsage } from "./effective-context.mjs";
 
 export function resolveTokenLimit(modelId) {
   const rawLimit = Number(process.env.UPSTAGE_MODEL_CONTEXT_LIMIT);
@@ -1117,8 +1117,10 @@ export async function* runAgentLoop({
       // Explicit budget: the conversation gets what the input budget leaves
       // after the system prompt, context block and tool schemas.
       let toolSchemaTokens = 0;
+      let turnTools = [];
       if (effectiveContext.explicit) {
         const tools = registry?.toModelTools ? registry.toModelTools() : [];
+        turnTools = tools;
         toolSchemaTokens = estimateWith(effectiveContext, JSON.stringify(tools));
         const overhead =
           estimateWith(effectiveContext, systemPrompt) + estimateWith(effectiveContext, contextBlock) + toolSchemaTokens;
@@ -1185,7 +1187,7 @@ export async function* runAgentLoop({
         }
         yield createEvent(AgentEventType.COMPACTION, { reason: "context_budget_fit", estimate, ...contextManager.getStats() });
         if (estimate > effectiveContext.inputBudget) {
-          return contextExhausted(trace, session, `request estimated at ${estimate} tokens after compaction exceeds the input budget of ${effectiveContext.inputBudget} tokens`);
+          return contextExhausted(trace, session, `request estimated at ${estimate} tokens after compaction exceeds the input budget of ${effectiveContext.inputBudget} tokens (estimate basis: ${effectiveContext.observedRatio ? `observed ratio ${effectiveContext.observedRatio.toFixed(3)}` : `calibrated ${effectiveContext.charsPerToken} chars/token`})`);
         }
       }
 
@@ -1276,6 +1278,9 @@ export async function* runAgentLoop({
             return retryCompletion.terminal;
           }
           const completion = retryCompletion.completion;
+          if (effectiveContext.explicit) {
+            observeUsage(effectiveContext, compactedMessages, turnTools, normalizeTokenUsage(completion.usage)?.promptTokens);
+          }
 
           const toolCallList = Array.isArray(completion.toolCalls) ? completion.toolCalls : [];
 
@@ -1309,6 +1314,10 @@ export async function* runAgentLoop({
 
       const completion = completionResult.completion;
       const toolCallList = Array.isArray(completion.toolCalls) ? completion.toolCalls : [];
+      if (effectiveContext.explicit) {
+        const ratio = observeUsage(effectiveContext, messages, turnTools, normalizeTokenUsage(completion.usage)?.promptTokens);
+        if (ratio) yield createEvent(AgentEventType.SYSTEM_WARNING, { level: "info", code: "CONTEXT_CALIBRATION", observedRatio: ratio });
+      }
 
       // Re-plan: detect tool loop before executing
       if (toolCallList.length > 0) {
