@@ -2,7 +2,7 @@
 
 > **English docs:** [README.en.md](./README.en.md)
 
-upstage-cli는 **Upstage Solar Pro4** 기반 에이전트형 터미널 UI(TUI)입니다. Bun 위에서 네이티브로 렌더링되는 OpenTUI, 내장 도구 36개, MCP 클라이언트/서버 연동, 평가 하네스(harness)를 갖췄습니다. 모델별 기능 테이블을 통해 `solar-pro3`/`solar-pro2`도 지원합니다.
+upstage-cli는 **Upstage Solar Pro4** 기반 에이전트형 터미널 UI(TUI)입니다. Bun 위에서 네이티브로 렌더링되는 OpenTUI, 내장 도구 36개, MCP 클라이언트/서버 연동을 갖췄습니다. 에이전트 평가 하네스는 이 CLI의 에이전트 루프와 도구를 그대로 사용하는 [korean-agent-bench](https://github.com/VectorSophie/korean-agent-bench)로 이전되었습니다. 모델별 기능 테이블을 통해 `solar-pro3`/`solar-pro2`도 지원합니다.
 
 ## 설치
 

@@ -3,7 +3,6 @@
 .claude/
 scripts/
 tests/
-harness/
 cmd/
 
 # Fixtures and test artifacts

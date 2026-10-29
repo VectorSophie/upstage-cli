@@ -36,7 +36,7 @@ test("runSandboxedProcess with sandbox:'docker' fails closed when Docker is unav
   // fail-closed path end-to-end rather than an injected fake. If a future
   // CI runner *does* have Docker, this assertion is skipped rather than
   // asserting a fail path that would no longer be true — same gating
-  // convention as harness/tests/h6-sandbox-docker.test.mjs's SKIP_DOCKER.
+  // convention as korean-agent-bench's harness/tests/h6-sandbox-docker.test.mjs's SKIP_DOCKER.
   if (DockerExecutor.isAvailable()) return;
 
   await assert.rejects(

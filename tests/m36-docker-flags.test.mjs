@@ -1,7 +1,7 @@
 // Tests for src/sandbox/docker-flags.mjs (3.3.0 Thread B, Task B.2) — the
 // shared `docker run` security-flag builder. Extracted so the main agent's
 // DockerExecutor (src/sandbox/docker-executor.mjs) and the eval harness's
-// DockerSandbox (harness/src/sandbox/docker.mjs) build the exact same
+// DockerSandbox (korean-agent-bench harness/src/sandbox/docker.mjs) build the exact same
 // `--network none`/`--read-only`/`--tmpfs`/resource-cap flags from one
 // place instead of two independently-drifting copies.
 
