@@ -283,6 +283,31 @@ export class LocalOpenAIAdapter {
     return payload;
   }
 
+  /**
+   * Exact prompt-token count from the server's own tokenizer and chat template
+   * (vLLM POST /tokenize), for the same messages, tools and chat_template_kwargs
+   * complete() would send. Returns null on any failure (callers fall back to
+   * estimates); never throws.
+   */
+  async countTokens(messages, tools = []) {
+    const p = this.buildPayload({ messages, tools });
+    const body = { model: p.model, messages: p.messages, add_generation_prompt: true };
+    if (p.tools) body.tools = p.tools;
+    if (p.chat_template_kwargs) body.chat_template_kwargs = p.chat_template_kwargs;
+    const headers = { "Content-Type": "application/json" };
+    if (this.apiKey) headers.Authorization = `Bearer ${this.apiKey}`;
+    const root = this.baseUrl.replace(/\/v1$/, "");
+    const ms = Math.max(1, Math.min(30_000, this._remainingMs()));
+    try {
+      const r = await fetch(`${root}/tokenize`, { method: "POST", headers, body: JSON.stringify(body), signal: AbortSignal.timeout(ms) });
+      if (!r.ok) return null;
+      const j = await r.json();
+      return Number.isInteger(j?.count) ? j.count : null;
+    } catch {
+      return null;
+    }
+  }
+
   // Remaining wall-clock budget (ms) before the agent-run deadline, or Infinity
   // when no deadline is set.
   _remainingMs() {

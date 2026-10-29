@@ -15,8 +15,13 @@
 //     maxOutputTokens,     // the output allowance sent as max_tokens
 //     charsPerToken?,      // caller-calibrated chars per token (default 4)
 //     safetyMarginRatio?,  // fraction of contextLimit held back (default 0.05)
+//     countTokens?,        // async (messages, tools) => exact prompt tokens | null
 //     source?              // free text, recorded in events
 //   }
+//
+// With countTokens (e.g. LocalOpenAIAdapter.countTokens → vLLM /tokenize), the
+// pre-request fit check uses the server's exact count; estimates remain for
+// budgeting compaction and as the fallback when counting fails.
 //
 // Token estimates start from the caller's calibrated charsPerToken (a
 // worst-case ratio). Once the server has reported usage.prompt_tokens for a
@@ -61,6 +66,9 @@ export function validateContextBudget(budget) {
   if (!(typeof charsPerToken === "number" && charsPerToken > 0 && charsPerToken <= 8)) {
     throw new ContextBudgetError(`charsPerToken must be in (0, 8] (got ${charsPerToken})`);
   }
+  if (budget.countTokens !== undefined && typeof budget.countTokens !== "function") {
+    throw new ContextBudgetError("countTokens must be a function");
+  }
   if (!(typeof safetyMarginRatio === "number" && safetyMarginRatio >= 0 && safetyMarginRatio < 0.5)) {
     throw new ContextBudgetError(`safetyMarginRatio must be in [0, 0.5) (got ${safetyMarginRatio})`);
   }
@@ -78,7 +86,8 @@ export function validateContextBudget(budget) {
     safetyMarginTokens,
     inputBudget,
     repoContextMaxChars: Math.floor(inputBudget * REPO_CONTEXT_RATIO * charsPerToken),
-    observedRatio: null
+    observedRatio: null,
+    countTokens: budget.countTokens || null
   };
 }
 

@@ -1151,10 +1151,12 @@ export async function* runAgentLoop({
         const overhead =
           estimateWith(effectiveContext, systemPrompt) + estimateWith(effectiveContext, contextBlock) + toolSchemaTokens;
         const conversationBudget = effectiveContext.inputBudget - overhead;
-        if (conversationBudget < estimateMessages(effectiveContext, [taskMessage])) {
+        // Without an exact counter, an estimated overflow ends the run here;
+        // with one, the exact check before the request decides.
+        if (!effectiveContext.countTokens && conversationBudget < estimateMessages(effectiveContext, [taskMessage])) {
           return contextExhausted(trace, session, `fixed prompt overhead (${overhead} tokens) leaves no room for the task within the input budget of ${effectiveContext.inputBudget} tokens`);
         }
-        contextManager.maxTokens = conversationBudget;
+        contextManager.maxTokens = Math.max(conversationBudget, 256);
         runtimeCache.toolResultMaxChars = toolResultMaxChars(effectiveContext, conversationBudget);
         runtimeCache.compactionSummaryMaxChars = Math.floor(conversationBudget * 0.15 * effectiveContext.charsPerToken);
       }
@@ -1190,30 +1192,43 @@ export async function* runAgentLoop({
         pinned
       });
 
-      // Explicit budget: never send a request estimated not to fit. Full
-      // compaction keeping 4, then 2, then 0 recent messages (task message
-      // always verbatim, summary bounded); then fail closed. At most 3 steps.
-      if (effectiveContext.explicit && estimateMessages(effectiveContext, messages) + toolSchemaTokens > effectiveContext.inputBudget) {
-        let estimate = Infinity;
-        for (const keepRecent of [4, 2, 0]) {
-          conversation = contextManager.compact(conversation, keepRecent, {
-            pinned,
-            force: true,
-            maxSummaryChars: runtimeCache.compactionSummaryMaxChars
-          });
-          messages = buildModelMessages({
-            systemPrompt,
-            contextBlock: createCompactContextBlock(context),
-            conversation,
-            maxConversationMessages: CONTEXT_EXCEEDED_RETRY_MESSAGES,
-            pinned
-          });
-          estimate = estimateMessages(effectiveContext, messages) + toolSchemaTokens;
-          if (estimate <= effectiveContext.inputBudget) break;
+      // Explicit budget: never send a request that does not fit — by the
+      // server's exact count when the caller provides one, else by estimate.
+      // Full compaction keeping 4, then 2, then 0 recent messages (task
+      // message always verbatim, summary bounded); then fail closed.
+      if (effectiveContext.explicit) {
+        const measure = async () => {
+          const estimate = estimateMessages(effectiveContext, messages) + toolSchemaTokens;
+          const exact = effectiveContext.countTokens ? await effectiveContext.countTokens(messages, turnTools) : null;
+          if (exact !== null) observeUsage(effectiveContext, messages, turnTools, exact);
+          return { exact, estimate, size: exact ?? estimate };
+        };
+        let m = await measure();
+        if (m.size > effectiveContext.inputBudget) {
+          for (const keepRecent of [4, 2, 0]) {
+            conversation = contextManager.compact(conversation, keepRecent, {
+              pinned,
+              force: true,
+              maxSummaryChars: runtimeCache.compactionSummaryMaxChars
+            });
+            messages = buildModelMessages({
+              systemPrompt,
+              contextBlock: createCompactContextBlock(context),
+              conversation,
+              maxConversationMessages: CONTEXT_EXCEEDED_RETRY_MESSAGES,
+              pinned
+            });
+            m = await measure();
+            if (m.size <= effectiveContext.inputBudget) break;
+          }
+          yield createEvent(AgentEventType.COMPACTION, { reason: "context_budget_fit", estimate: m.estimate, exact: m.exact, ...contextManager.getStats() });
         }
-        yield createEvent(AgentEventType.COMPACTION, { reason: "context_budget_fit", estimate, ...contextManager.getStats() });
-        if (estimate > effectiveContext.inputBudget) {
-          return contextExhausted(trace, session, `request estimated at ${estimate} tokens after compaction exceeds the input budget of ${effectiveContext.inputBudget} tokens (estimate basis: ${effectiveContext.observedRatio ? `observed ratio ${effectiveContext.observedRatio.toFixed(3)}` : `calibrated ${effectiveContext.charsPerToken} chars/token`})`);
+        yield createEvent(AgentEventType.SYSTEM_WARNING, {
+          level: "info", code: "CONTEXT_FIT", exact: m.exact, estimate: m.estimate, inputBudget: effectiveContext.inputBudget,
+          observedRatio: effectiveContext.observedRatio
+        });
+        if (m.size > effectiveContext.inputBudget) {
+          return contextExhausted(trace, session, `request ${m.exact !== null ? `counted at ${m.exact} tokens by the server` : `estimated at ${m.estimate} tokens (calibrated ${effectiveContext.observedRatio ? `observed ratio ${effectiveContext.observedRatio.toFixed(3)}` : `${effectiveContext.charsPerToken} chars/token`})`} after compaction exceeds the input budget of ${effectiveContext.inputBudget} tokens`);
         }
       }
 
