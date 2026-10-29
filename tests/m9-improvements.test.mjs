@@ -1,6 +1,6 @@
 ﻿import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import { join } from "node:path";
 
@@ -72,6 +72,15 @@ test("createRegistryWithExtensions wires discovered tools with command invoker",
 });
 
 test("session list uses persisted index metadata", async () => {
+  // Private HOME: the session index is shared, unlocked state under
+  // os.homedir(), and node --test runs test files as concurrent processes.
+  // Against the real home, another file's index update could drop this
+  // test's entries (observed intermittently on master).
+  const home = await mkdtemp(join(os.tmpdir(), "m9-home-"));
+  const savedHome = process.env.HOME;
+  const savedProfile = process.env.USERPROFILE;
+  process.env.HOME = home;
+  process.env.USERPROFILE = home;
   const uniqueCwd = `${process.cwd()}/.__session-index-${Date.now()}`;
   const first = createSession(uniqueCwd);
   const second = createSession(uniqueCwd);
@@ -102,5 +111,13 @@ test("session list uses persisted index metadata", async () => {
   } finally {
     await resetSession(first.id);
     await resetSession(second.id);
+    restoreEnv("HOME", savedHome);
+    restoreEnv("USERPROFILE", savedProfile);
+    await rm(home, { recursive: true, force: true });
   }
 });
+
+function restoreEnv(key, value) {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}

@@ -256,12 +256,22 @@ export async function listSessions() {
 
 export async function loadLatestSession(cwd) {
   const sessions = await listSessions();
-  const sameWorkspace = sessions.find((session) => session.workspace?.cwd === cwd);
-  if (sameWorkspace) {
-    return loadSession(sameWorkspace.id);
-  }
-  if (sessions[0]) {
-    return loadSession(sessions[0].id);
+  // Same workspace first, then most recent. The index is a cache updated by
+  // read-modify-write, so concurrent processes can leave an entry whose
+  // session file is gone; skip and prune it instead of failing with ENOENT.
+  const candidates = [
+    ...sessions.filter((session) => session.workspace?.cwd === cwd),
+    ...sessions.filter((session) => session.workspace?.cwd !== cwd)
+  ];
+  for (const meta of candidates) {
+    try {
+      return await loadSession(meta.id);
+    } catch (err) {
+      if (err?.code !== "ENOENT") {
+        throw err;
+      }
+      await removeSessionFromIndex(meta.id);
+    }
   }
   return null;
 }
