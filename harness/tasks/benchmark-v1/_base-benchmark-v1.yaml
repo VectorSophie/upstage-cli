@@ -1,0 +1,17 @@
+# Shared envelope for benchmark v1 candidate tasks. Not a task itself (leading
+# underscore → skipped by loadTaskDir). Children _import this and add
+# id/repo/prompt/checks/etc. Budgets are Track A (common-resource) defaults; see
+# docs/BENCHMARK_V1_PROTOCOL.md. Do not tune per task after seeing results.
+version: 1
+branch: main
+context: { strategy: default, maxFiles: 10, includeTests: true }
+sandbox:
+  type: docker
+  image: node:22-alpine
+  network: none
+  timeout: 120
+agent:
+  permissions: bypassPermissions
+  maxTurns: 10
+  maxTokens: 8192
+  tools: { allow: [read_file, write_file, run_shell], deny: [] }

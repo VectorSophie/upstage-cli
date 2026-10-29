@@ -1,0 +1,518 @@
+{
+  "manifestVersion": "1.0.0-candidate",
+  "generatedFrom": "tasks/benchmark-v1",
+  "note": "CANDIDATE set — development/calibration fixtures for validating the protocol, NOT a frozen leaderboard set. No task has had independent human review yet (see review field + BENCHMARK_V1_TASK_QA.md).",
+  "counts": {
+    "total": 14,
+    "byCategory": {
+      "A": 3,
+      "B": 2,
+      "C": 3,
+      "D": 2,
+      "E": 2,
+      "F": 2
+    }
+  },
+  "categories": {
+    "A": "simple-repair",
+    "B": "multi-file-repair",
+    "C": "tool-selection",
+    "D": "tool-result-dependence",
+    "E": "failure-recovery",
+    "F": "multi-step"
+  },
+  "tasks": [
+    {
+      "id": "bv1-a1-range-sum",
+      "category": "A",
+      "categoryName": "simple-repair",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/a1-range-sum",
+      "fixtureHash": "sha256:82c7694e92059140a329eb6fe16da52ec18824c875758b8aa9c65793be9dae4d",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "src.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-a1-range-sum"
+      },
+      "justification": "Canonical off-by-one; establishes a basic single-function coding baseline with a deterministic verifiable test.",
+      "specSha256": "ecd6abaf5872c830cc305b42a497d0266a3f36a245f8b69f38ae5db7e8efd267"
+    },
+    {
+      "id": "bv1-a1-range-sum-ko",
+      "category": "A",
+      "categoryName": "simple-repair",
+      "difficulty": "easy",
+      "language": "ko",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/a1-range-sum",
+      "fixtureHash": "sha256:82c7694e92059140a329eb6fe16da52ec18824c875758b8aa9c65793be9dae4d",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "src.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-a1-range-sum-ko"
+      },
+      "justification": "Korean-prompt pair of a1 for the RQ5 language-dependence analysis; identical fixture and checks, prompt only differs.",
+      "specSha256": "59d9a9c12d70b71fb7f1d8345e01611bce7759cb991d09506e26d4941eeab0c9"
+    },
+    {
+      "id": "bv1-a2-cel-to-fahr",
+      "category": "A",
+      "categoryName": "simple-repair",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/a2-cel-to-fahr",
+      "fixtureHash": "sha256:eb57d76f23dca4de44893383605cb307845256e2e4800a44163903093cc9ed1c",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "src.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-a2-cel-to-fahr"
+      },
+      "justification": "Wrong-formula repair (missing +32); a second independent simple-repair bug shape.",
+      "specSha256": "00c57887aeed92039a14eabaacf241ca9de1b30bad7e5cc38df3b6a168164fa1"
+    },
+    {
+      "id": "bv1-b1-string-align",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/b1-string-align",
+      "fixtureHash": "sha256:3837bf7b183044f5ea20a58d2bffe3efbd4578c8ff9bb8da0261a31220285938",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "format.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-b1-string-align"
+      },
+      "justification": "Defect in a helper used by a caller in another file; requires reading across two files to locate the real fault.",
+      "specSha256": "8fed24fb777cba30456e529a978c5b707136619cf4b69273ee459da32042722e"
+    },
+    {
+      "id": "bv1-b2-validator-chain",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/b2-validator-chain",
+      "fixtureHash": "sha256:29e17ee34146ce69a46fa7e1377509229456bc9603742d6d71c5458738295de8",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "rules.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-b2-validator-chain"
+      },
+      "justification": "Boundary bug (>= vs >) in a rule composed by another module; cross-file comprehension with a single correct fix site.",
+      "specSha256": "90d6d4cd577e718ca57d4c3b94464163d34d63d6675ba4b5cd48bc3ca7c45c1c"
+    },
+    {
+      "id": "bv1-c1-one-wrong-op",
+      "category": "C",
+      "categoryName": "tool-selection",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/c1-one-wrong-op",
+      "fixtureHash": "sha256:cb30f7e7b079ace688f4a60561e1784e4c4e972457b57f4598eb61d9ef42b985",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "math.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-c1-one-wrong-op"
+      },
+      "justification": "Three functions, exactly one wrong, plus a distractor file; measures selective repair and over-editing via pass_to_pass on the untouched functions.",
+      "specSha256": "5d9e7cd4731561cb1bce8d1c72a7c2049a2e58514e9f6a8d2d563f1eff239701"
+    },
+    {
+      "id": "bv1-c1-one-wrong-op-ko",
+      "category": "C",
+      "categoryName": "tool-selection",
+      "difficulty": "easy",
+      "language": "ko",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/c1-one-wrong-op",
+      "fixtureHash": "sha256:cb30f7e7b079ace688f4a60561e1784e4c4e972457b57f4598eb61d9ef42b985",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "math.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-c1-one-wrong-op-ko"
+      },
+      "justification": "Korean-prompt pair of c1 for RQ5.",
+      "specSha256": "461e704082ca108c37609f4f259688e35e0289881e9fdbd85893fe634ef48d48"
+    },
+    {
+      "id": "bv1-c2-trivial-constant",
+      "category": "C",
+      "categoryName": "tool-selection",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/c2-trivial-constant",
+      "fixtureHash": "sha256:28ae628a35b0f9fcaf426df89ba8be275edf5652acfbefd54fb4a83f673e7c44",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "config.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-c2-trivial-constant"
+      },
+      "justification": "One-line constant fix where running extra tools is unnecessary; the tool-use quality metric (redundant calls) is read from the trace.",
+      "specSha256": "488a16320a503cbe950b56d73f2e0803837a971f722f7562ef6c6971df672189"
+    },
+    {
+      "id": "bv1-d1-tool-result",
+      "category": "D",
+      "categoryName": "tool-result-dependence",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/d1-token/repo",
+      "fixtureHash": "sha256:3f72ad3a1b975b4a86614b5917a89d5fcb8d3eabb0174db5e7f9f8e66316365e",
+      "readonlyMounts": [
+        "/opt/bench/d1.mjs"
+      ],
+      "acceptanceCheckIds": [
+        "tool-result-continuation"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "out.txt"
+      ],
+      "solution": {
+        "kind": "trace-evaluator"
+      },
+      "justification": "Tool-result dependence under the hardened T3-v3 trust model: read-only mounted generator, runtime CSPRNG token, trace-verified. No static answer.",
+      "specSha256": "e4b8da9cd86f2d8dcd98c1cb494b3390a8930690c926644c053ad3f258c807bf"
+    },
+    {
+      "id": "bv1-d2-tool-result",
+      "category": "D",
+      "categoryName": "tool-result-dependence",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/d2-token/repo",
+      "fixtureHash": "sha256:f217f9fd20bac3024cc2903558cf04abbb1bc9b84a828a6f0ce37bca35d1f5bd",
+      "readonlyMounts": [
+        "/opt/bench/d2.mjs"
+      ],
+      "acceptanceCheckIds": [
+        "tool-result-continuation"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "out.txt"
+      ],
+      "solution": {
+        "kind": "trace-evaluator"
+      },
+      "justification": "Second, distinct trusted generator asset for tool-result dependence; same trust model as d1.",
+      "specSha256": "b049327fc843709dfd92fefe1437e8a017032bcc5549f4b429af43f1c86c48bd"
+    },
+    {
+      "id": "bv1-e1-syntax-error",
+      "category": "E",
+      "categoryName": "failure-recovery",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/e1-syntax-error",
+      "fixtureHash": "sha256:687220080d1d2faac3ed69bc974b7736f04dd20c1cc0b0c5440974c3e771b9c3",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "broken.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-e1-syntax-error"
+      },
+      "justification": "The acceptance command initially ERRORS (SyntaxError), not just fails; measures recovery from a broken command rather than a wrong answer.",
+      "specSha256": "0f1ebc350f5eed8aee779ab34e1d4e01269aae101d25288373f276e400f3ef37"
+    },
+    {
+      "id": "bv1-e2-missing-module",
+      "category": "E",
+      "categoryName": "failure-recovery",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/e2-missing-module",
+      "fixtureHash": "sha256:2bbf6351d169d2276d615772e95527ee9d6426e9a96b0ca64f346ddc5c42ff01",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "slug.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-e2-missing-module"
+      },
+      "justification": "A required module is absent so the test errors; the agent must diagnose and CREATE the file rather than repeat a failing action.",
+      "specSha256": "78073e6359e7a007e1bb10423d2fec9ec2ee5c7665cf7a07bd1a5e1d2961348b"
+    },
+    {
+      "id": "bv1-f1-csv-two-bugs",
+      "category": "F",
+      "categoryName": "multi-step",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/f1-csv-two-bugs",
+      "fixtureHash": "sha256:7a80fd9c9e8264a95fc6edb59eeb0bb421d16a9f1b5367a76da90c9a1e8192e7",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "csv.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-f1-csv-two-bugs"
+      },
+      "justification": "Two coordinated defects (delimiter + trim) that must both be fixed; multi-step repair with a single verifiable outcome.",
+      "specSha256": "4f90eb859170edbcaea1694f064663cf274cf0b935e2f2d70fc200f68b6faaec"
+    },
+    {
+      "id": "bv1-f2-stack-two-bugs",
+      "category": "F",
+      "categoryName": "multi-step",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "review": "auto",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/f2-stack-two-bugs",
+      "fixtureHash": "sha256:f5bfe64e53bdf956505e79ed4466c3d1bf297a2d53c203d074365f05cec50c91",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 8192,
+        "timeoutSec": 120
+      },
+      "expectedPatchScope": [
+        "stack.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-f2-stack-two-bugs"
+      },
+      "justification": "Two defects across methods (pop semantics + size) requiring a planned fix and verification of LIFO behaviour.",
+      "specSha256": "ac98f67dabdcdd72169254102e44d31e54fca2d4576fe15deaf5d31288eb81f8"
+    }
+  ]
+}

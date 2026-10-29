@@ -39,6 +39,15 @@ const TRUSTED_MOUNT_ASSETS = {
   "t3-challenge-v3": {
     host: join(FIXTURES_DIR, "tool-continuation-v3", "challenge.mjs"),
     container: "/opt/t3/challenge.mjs"
+  },
+  // Benchmark v1, category D (tool-result dependence) — immutable generators.
+  "bench-d1-token": {
+    host: join(FIXTURES_DIR, "benchmark-v1", "d1-token", "gen.mjs"),
+    container: "/opt/bench/d1.mjs"
+  },
+  "bench-d2-token": {
+    host: join(FIXTURES_DIR, "benchmark-v1", "d2-token", "gen.mjs"),
+    container: "/opt/bench/d2.mjs"
   }
 };
 

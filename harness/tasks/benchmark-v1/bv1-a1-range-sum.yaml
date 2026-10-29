@@ -1,0 +1,17 @@
+_import: ./_base-benchmark-v1.yaml
+id: bv1-a1-range-sum
+description: "category-a — simple-repair"
+repo: ../../fixtures/benchmark-v1/a1-range-sum
+prompt: |
+  rangeSum(n) in src.mjs should return the sum of 1..n inclusive, but it is off by one.
+  Fix src.mjs so the tests in app.test.mjs pass. Do not edit the test files.
+checks:
+  fail_to_pass:
+    - { id: fix, command: 'node --test --test-name-pattern "^fix_" app.test.mjs', timeout: 40 }
+  pass_to_pass:
+    - { id: sanity, command: 'node --test --test-name-pattern "^sanity_" sanity.test.mjs', timeout: 40, weight: 0.0 }
+tags: [benchmark-v1, category-a]
+difficulty: easy
+language: en
+expectedPatchScope: [src.mjs]
+expectedMaxLines: 20
