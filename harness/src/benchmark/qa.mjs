@@ -18,6 +18,7 @@ import { mkdtempSync, cpSync, rmSync, writeFileSync, readdirSync, statSync } fro
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { runAll } from "../evaluation/checks.mjs";
+import { applySelector } from "../evaluation/evaluators.mjs";
 import { selectSandbox } from "../sandbox/manager.mjs";
 import { SOLUTIONS_DIR } from "./manifest.mjs";
 
@@ -56,22 +57,39 @@ function summarize(r) {
   };
 }
 
-/** Execute a trace-evaluator task's intended generator command and write its token. */
+/**
+ * Execute a trace-evaluator task's intended generator command and write the
+ * correct value, then return a synthetic trace. Handles both trusted trace
+ * evaluators: `tool-result-continuation` (write the emitted token) and
+ * `tool-result-selection` (parse the JSON and write the correctly-selected
+ * value, exactly as the evaluator will recompute it).
+ */
 async function driveTraceSolution(task, sandbox, wd) {
-  const custom = (task.checks.custom || []).find((c) => c.evaluator === "tool-result-continuation");
+  const custom = (task.checks.custom || []).find((c) => c.evaluator);
   const cfg = custom.config || {};
   const argv = String(cfg.command).trim().split(/\s+/);
   const r = await sandbox.exec(argv[0], argv.slice(1), { timeoutMs: (task.sandbox?.timeout || 120) * 1000 });
-  const re = new RegExp(cfg.tokenPattern || "T3-[0-9a-f]{32}");
-  const m = (r.stdout || "").match(re);
-  if (!m) throw new Error(`generator produced no token matching ${re} (stdout=${JSON.stringify((r.stdout || "").slice(0, 60))})`);
-  writeFileSync(join(wd, cfg.outputFile || "out.txt"), m[0]);
-  return [{ tool: "run_shell", ok: true, args: { command: cfg.command }, resultData: { ok: r.ok === true, code: r.exitCode ?? 0, stdout: r.stdout || "", stderr: r.stderr || "", timedOut: !!r.timedOut, truncated: false } }];
+  const stdout = r.stdout || "";
+  let value;
+  if (custom.evaluator === "tool-result-selection") {
+    let json;
+    try { json = JSON.parse(stdout.trim().split(/\r?\n/).filter(Boolean).pop() || stdout); }
+    catch (err) { throw new Error(`generator stdout is not JSON: ${err.message}`, { cause: err }); }
+    value = applySelector(json, cfg.selector);
+    if (value === null) throw new Error(`selector ${JSON.stringify(cfg.selector)} did not resolve in ${JSON.stringify(stdout.slice(0, 80))}`);
+  } else {
+    const re = new RegExp(cfg.tokenPattern || "T3-[0-9a-f]{32}");
+    const m = stdout.match(re);
+    if (!m) throw new Error(`generator produced no token matching ${re} (stdout=${JSON.stringify(stdout.slice(0, 60))})`);
+    value = m[0];
+  }
+  writeFileSync(join(wd, cfg.outputFile || "out.txt"), value);
+  return [{ tool: "run_shell", ok: true, args: { command: cfg.command }, resultData: { ok: r.ok === true, code: r.exitCode ?? 0, stdout, stderr: r.stderr || "", timedOut: !!r.timedOut, truncated: false } }];
 }
 
-export async function qaTask(task) {
+export async function qaTask(task, { solutionDir = null } = {}) {
   const isTrace = (task.checks.custom || []).some((c) => c.evaluator);
-  const solDir = join(SOLUTIONS_DIR, task.id);
+  const solDir = solutionDir || join(SOLUTIONS_DIR, task.id);
   const hasFileSolution = !isTrace && statSafe(solDir);
   const out = { id: task.id, mode: isTrace ? "trace" : (hasFileSolution ? "file-overlay" : "none"), ok: false, baseline: null, solution: null, verdict: null };
 
@@ -115,6 +133,20 @@ export async function qaTask(task) {
 export async function qaAll(tasks) {
   const results = [];
   for (const t of tasks) results.push(await qaTask(t));
+  return results;
+}
+
+/**
+ * QA an external held-out pack in the real Docker sandbox, using the pack's
+ * PRIVATE reference solutions (which are never copied into an agent workspace —
+ * only overlaid here, offline, with no model). Returns the same per-task shape
+ * as qaAll but never prints prompts/fixtures/solutions.
+ */
+export async function qaPack(packPath) {
+  const { loadPack } = await import("./pack.mjs");
+  const { tasks, solutionDirs } = loadPack(packPath, { verifyHashes: true });
+  const results = [];
+  for (const t of tasks) results.push(await qaTask(t, { solutionDir: solutionDirs[t.id] || null }));
   return results;
 }
 

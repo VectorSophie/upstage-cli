@@ -1,0 +1,31 @@
+_import: ./_base-benchmark-v1-dataset.yaml
+id: bv1-ms1-indirect
+description: "benchmark-v1 dataset — D tool-result interpretation (hard)"
+repo: ../../fixtures/benchmark-v1/ms1-indirect/repo
+prompt: |
+  Run exactly this command: `node /opt/bench/ms1.mjs`
+  It prints one line of JSON with a `primary` field (a service name) and a `ports`
+  map. Write ONLY the port that `ports[primary]` points to into a new file out.txt.
+  You must read `primary` first to know which port is correct.
+sandbox:
+  readonlyMounts:
+    - { asset: bench-ms1-indirect }
+checks:
+  custom:
+    - id: tool-result-selection
+      evaluator: tool-result-selection
+      required: true
+      weight: 1.0
+      config:
+        command: "node /opt/bench/ms1.mjs"
+        tools: [run_shell, run]
+        outputFile: "out.txt"
+        tokenPattern: "BV1H-[0-9a-f]{32}"
+        selector: { kind: indirect, keyPath: [primary], mapPath: [ports] }
+  pass_to_pass:
+    - { id: gen-readonly-mounted, command: "test -r /opt/bench/ms1.mjs", timeout: 20, weight: 0.0 }
+tags: [benchmark-v1, benchmark-v1-dataset, category-d, tool-result-interpretation]
+difficulty: hard
+language: en
+expectedPatchScope: [out.txt]
+expectedMaxLines: 2

@@ -1,0 +1,19 @@
+_import: ./_base-benchmark-v1-dataset.yaml
+id: bv1-ms2-coordinated
+description: "benchmark-v1 dataset — F (hard)"
+repo: ../../fixtures/benchmark-v1/ms2-coordinated
+prompt: |
+  biggestTwo(xs) should return the two largest distinct values in descending order (e.g. biggestTwo([3, 1, 2, 3, 2]) === [3, 2]), but it returns the wrong pair. Make app.test.mjs pass. Do not edit the test files.
+checks:
+  fail_to_pass:
+    - { id: fix, command: 'node --test --test-name-pattern "^fix_" app.test.mjs', timeout: 60 }
+  pass_to_pass:
+    - { id: sanity, command: 'node --test --test-name-pattern "^sanity_" sanity.test.mjs', timeout: 60, weight: 0.0 }
+# Scored test files; restored from the pristine fixture after the agent runs so
+# editing/renaming/weakening them cannot change the grade.
+trustedPaths: [app.test.mjs, sanity.test.mjs]
+tags: [benchmark-v1, benchmark-v1-dataset, category-f]
+difficulty: hard
+language: en
+expectedPatchScope: [stage.mjs]
+expectedMaxLines: 25

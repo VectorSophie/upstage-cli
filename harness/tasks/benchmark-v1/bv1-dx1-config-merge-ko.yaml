@@ -1,0 +1,19 @@
+_import: ./_base-benchmark-v1-dataset.yaml
+id: bv1-dx1-config-merge-ko
+description: "benchmark-v1 dataset — B (medium)"
+repo: ../../fixtures/benchmark-v1/dx1-config-merge
+prompt: |
+  loadConfig(user)는 사용자 설정을 기본값에 깊게 병합(deep merge)해야 하지만, 중첩된 설정을 덮어쓸 때 형제 키들이 사라집니다 — loadConfig({ server: { timeout: 5 } })가 server.host와 server.port를 잃습니다. app.test.mjs의 테스트가 통과하도록 수정하세요. 테스트 파일은 수정하지 마세요.
+checks:
+  fail_to_pass:
+    - { id: fix, command: 'node --test --test-name-pattern "^fix_" app.test.mjs', timeout: 60 }
+  pass_to_pass:
+    - { id: sanity, command: 'node --test --test-name-pattern "^sanity_" sanity.test.mjs', timeout: 60, weight: 0.0 }
+# Scored test files; restored from the pristine fixture after the agent runs so
+# editing/renaming/weakening them cannot change the grade.
+trustedPaths: [app.test.mjs, sanity.test.mjs]
+tags: [benchmark-v1, benchmark-v1-dataset, category-b, korean]
+difficulty: medium
+language: ko
+expectedPatchScope: [merge.mjs]
+expectedMaxLines: 25

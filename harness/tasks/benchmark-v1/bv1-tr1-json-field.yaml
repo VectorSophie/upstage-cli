@@ -1,0 +1,32 @@
+_import: ./_base-benchmark-v1-dataset.yaml
+id: bv1-tr1-json-field
+description: "benchmark-v1 dataset — D tool-result interpretation (medium)"
+repo: ../../fixtures/benchmark-v1/tr1-json/repo
+prompt: |
+  Run exactly this command: `node /opt/bench/tr1.mjs`
+  It prints one line of JSON listing services, each with a fresh "port". Write
+  ONLY the port of the service whose name is "api" (the exact value, no quotes or
+  extra whitespace) into a new file out.txt. The data is produced at runtime; you
+  must run the command and interpret its output.
+sandbox:
+  readonlyMounts:
+    - { asset: bench-tr1-json }
+checks:
+  custom:
+    - id: tool-result-selection
+      evaluator: tool-result-selection
+      required: true
+      weight: 1.0
+      config:
+        command: "node /opt/bench/tr1.mjs"
+        tools: [run_shell, run]
+        outputFile: "out.txt"
+        tokenPattern: "BV1H-[0-9a-f]{32}"
+        selector: { kind: find-field, listPath: [services], matchKey: name, matchValue: api, valueKey: port }
+  pass_to_pass:
+    - { id: gen-readonly-mounted, command: "test -r /opt/bench/tr1.mjs", timeout: 20, weight: 0.0 }
+tags: [benchmark-v1, benchmark-v1-dataset, category-d, tool-result-interpretation]
+difficulty: medium
+language: en
+expectedPatchScope: [out.txt]
+expectedMaxLines: 2

@@ -235,8 +235,113 @@ export function toolResultContinuation(check, ctx = {}) {
   );
 }
 
+// ── tool-result-selection ──────────────────────────────────────────────────
+// Like tool-result-continuation, but the agent must INTERPRET structured JSON
+// the tool emitted and select the correct value — not copy stdout. The trusted
+// evaluator recomputes the correct value from the qualifying execution's own
+// stdout (so it is always the dynamic, non-guessable token the run produced),
+// using a SAFE, declarative selector (no eval, no agent-supplied code).
+
+/** Walk an object by an explicit key/index path. Returns undefined on any miss. */
+function getPath(obj, path) {
+  let cur = obj;
+  for (const key of path || []) {
+    if (cur === null || typeof cur !== "object") return undefined;
+    cur = cur[key];
+  }
+  return cur;
+}
+
+/**
+ * Apply a declarative selector to parsed JSON → the expected value (or null).
+ *   find-field {listPath, matchKey, matchValue, valueKey}
+ *   max-by     {listPath, valueKey, returnKey}
+ *   indirect   {keyPath, mapPath}
+ */
+export function applySelector(json, sel) {
+  if (!sel || typeof sel !== "object") return null;
+  if (sel.kind === "find-field") {
+    const list = getPath(json, sel.listPath);
+    if (!Array.isArray(list)) return null;
+    const hit = list.find((it) => it && it[sel.matchKey] === sel.matchValue);
+    const v = hit ? hit[sel.valueKey] : undefined;
+    return typeof v === "string" ? v : null;
+  }
+  if (sel.kind === "max-by") {
+    const list = getPath(json, sel.listPath);
+    if (!Array.isArray(list) || list.length === 0) return null;
+    let best = null;
+    for (const it of list) {
+      if (!it || typeof it[sel.valueKey] !== "number") return null;
+      if (best === null || it[sel.valueKey] > best[sel.valueKey]) best = it;
+    }
+    const v = best ? best[sel.returnKey] : undefined;
+    return typeof v === "string" ? v : null;
+  }
+  if (sel.kind === "indirect") {
+    const key = getPath(json, sel.keyPath);
+    if (typeof key !== "string") return null;
+    const map = getPath(json, sel.mapPath);
+    if (!map || typeof map !== "object") return null;
+    const v = map[key];
+    return typeof v === "string" ? v : null;
+  }
+  return null;
+}
+
+export function toolResultSelection(check, ctx = {}) {
+  const cfg = check.config || {};
+  const expectArgv = tokenizeCommand(cfg.command || "node gen.mjs");
+  if (!expectArgv) return infraResult(check, `invalid config.command: ${JSON.stringify(cfg.command)}`);
+  if (!cfg.selector || typeof cfg.selector !== "object") return infraResult(check, "tool-result-selection requires a config.selector");
+  const execTools = new Set(cfg.tools || ["run_shell", "run"]);
+  const outputFile = cfg.outputFile || "out.txt";
+  let tokenRe;
+  try { tokenRe = new RegExp(cfg.tokenPattern || "BV1H-[0-9a-f]{32}"); }
+  catch (err) { return infraResult(check, `invalid tokenPattern: ${err.message}`); }
+
+  const workdir = ctx.workdir;
+  if (!workdir) return infraResult(check, "evaluator missing workdir context");
+  const trace = Array.isArray(ctx.trace) ? ctx.trace : [];
+
+  const idCalls = trace.filter((tc) => tc && execTools.has(tc.tool) && argvEqual(argvOf(tc.args), expectArgv));
+  if (idCalls.length === 0) {
+    return checkResult(check, false, `no ${[...execTools].join("/")} call ran exactly \`${expectArgv.join(" ")}\``);
+  }
+
+  // Recompute the correct value from each qualifying run's OWN stdout.
+  const expected = new Set();
+  let hadValidExec = false;
+  let sawJson = false;
+  for (const tc of idCalls) {
+    const stdout = execStdout(tc);
+    if (stdout === null) continue;
+    hadValidExec = true;
+    let json;
+    try { json = JSON.parse(stdout.trim().split(/\r?\n/).filter(Boolean).pop() || stdout); }
+    catch { continue; }
+    sawJson = true;
+    const v = applySelector(json, cfg.selector);
+    if (typeof v === "string" && tokenRe.test(v)) expected.add(v);
+  }
+  if (!hadValidExec) return checkResult(check, false, `\`${expectArgv.join(" ")}\` ran but no execution succeeded cleanly with structured stdout`);
+  if (!sawJson) return checkResult(check, false, `\`${expectArgv.join(" ")}\` stdout was not valid JSON`);
+  if (expected.size === 0) return checkResult(check, false, `selector ${JSON.stringify(cfg.selector)} did not resolve to a token matching ${tokenRe} in the tool output`);
+
+  const op = join(workdir, outputFile);
+  if (!existsSync(op)) return checkResult(check, false, `'${outputFile}' was not created`);
+  let written;
+  try { written = readFileSync(op, "utf8").trim(); }
+  catch (err) { return infraResult(check, `could not read '${outputFile}': ${err.message}`); }
+  if (!expected.has(written)) {
+    return checkResult(check, false, `'${outputFile}' (${JSON.stringify(written.slice(0, 48))}) is not the correctly-selected value from the tool output — wrong field, copied whole output, guessed, or hardcoded`);
+  }
+  return checkResult(check, true, `exact command \`${expectArgv.join(" ")}\` executed; correctly selected value written to '${outputFile}'`);
+}
+
 const REGISTRY = {
-  "tool-result-continuation": toolResultContinuation
+  "tool-result-continuation": toolResultContinuation,
+  "tool-result-selection": toolResultSelection
 };
 
 export function getEvaluator(name) {

@@ -1,0 +1,32 @@
+_import: ./_base-benchmark-v1-dataset.yaml
+id: bv1-tr2-json-max
+description: "benchmark-v1 dataset — D tool-result interpretation (medium)"
+repo: ../../fixtures/benchmark-v1/tr2-json/repo
+prompt: |
+  Run exactly this command: `node /opt/bench/tr2.mjs`
+  It prints one line of JSON with an `items` array; each item has an `id` and a
+  numeric `score`. Write ONLY the `id` of the item with the highest `score` into a
+  new file out.txt. The data is produced at runtime; you must run the command and
+  interpret its output.
+sandbox:
+  readonlyMounts:
+    - { asset: bench-tr2-json }
+checks:
+  custom:
+    - id: tool-result-selection
+      evaluator: tool-result-selection
+      required: true
+      weight: 1.0
+      config:
+        command: "node /opt/bench/tr2.mjs"
+        tools: [run_shell, run]
+        outputFile: "out.txt"
+        tokenPattern: "BV1H-[0-9a-f]{32}"
+        selector: { kind: max-by, listPath: [items], valueKey: score, returnKey: id }
+  pass_to_pass:
+    - { id: gen-readonly-mounted, command: "test -r /opt/bench/tr2.mjs", timeout: 20, weight: 0.0 }
+tags: [benchmark-v1, benchmark-v1-dataset, category-d, tool-result-interpretation]
+difficulty: medium
+language: en
+expectedPatchScope: [out.txt]
+expectedMaxLines: 2

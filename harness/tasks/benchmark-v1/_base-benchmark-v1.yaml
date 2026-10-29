@@ -7,7 +7,8 @@ branch: main
 context: { strategy: default, maxFiles: 10, includeTests: true }
 sandbox:
   type: docker
-  image: node:22-alpine
+  # Pinned by digest (Phase 8 reproducibility); node:22-alpine as of 2026-10.
+  image: node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
   network: none
   # Per-exec (Docker) wall-clock for each tool call / check. Raised from 120 to
   # 300 so a slow reasoning model's single tool call is not truncated by the

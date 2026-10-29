@@ -17,9 +17,12 @@ const tasks = loadTaskDir(TASKS_DIR).sort((a, b) => a.id.localeCompare(b.id));
 const manifest = buildManifest({ withImageDigests: false });
 
 describe("benchmark v1 — candidate set shape", () => {
-  it("has 12–18 tasks spanning all six categories A–F", () => {
-    assert.ok(manifest.counts.total >= 12 && manifest.counts.total <= 18, `count ${manifest.counts.total}`);
+  it("spans all six categories A–F across both tranches", () => {
+    assert.ok(manifest.counts.total >= 24 && manifest.counts.total <= 48, `count ${manifest.counts.total}`);
     for (const c of ["A", "B", "C", "D", "E", "F"]) assert.ok((manifest.counts.byCategory[c] || 0) >= 1, `category ${c} present`);
+    assert.ok((manifest.counts.byTranche["v1-initial"] || 0) >= 1, "initial tranche present");
+    assert.ok((manifest.counts.byTranche["v1-dataset"] || 0) >= 10, "dataset tranche present");
+    for (const d of ["easy", "medium", "hard"]) assert.ok((manifest.counts.byDifficulty[d] || 0) >= 1, `difficulty ${d} present`);
   });
 
   it("every task runs in Docker with no network and has a required acceptance check", () => {
@@ -114,9 +117,10 @@ describe("benchmark v1 — manifest validator", () => {
     assert.ok(res.errors.some((e) => /missing from the manifest/.test(e)));
   });
 
-  it("flags unpinned image tags as pre-freeze warnings (not blocking)", () => {
+  it("all task images are pinned by digest (no unpinned-image warnings)", () => {
     const res = validateManifest(manifest);
-    assert.ok(res.warnings.some((w) => /not a digest/.test(w)));
+    assert.ok(!res.warnings.some((w) => /not a digest/.test(w)), res.warnings.join(" | "));
+    for (const t of tasks) assert.match(t.sandbox.image, /@sha256:[0-9a-f]{64}$/, `${t.id} image pinned`);
   });
 });
 
@@ -144,12 +148,17 @@ describe("benchmark v1 — evaluator integrity (trusted paths)", () => {
     }
   });
 
-  it("category-D tasks use an immutable read-only mounted generator (no editable scored file)", () => {
+  it("category-D (trace) tasks use a read-only mounted generator (no editable scored file)", () => {
     for (const id of traceIds) {
       const t = tasks.find((x) => x.id === id);
-      const ev = (t.checks.custom || []).find((c) => c.evaluator === "tool-result-continuation");
-      assert.equal(ev.config?.immutableGenerator, true, `${id} immutableGenerator`);
+      const ev = (t.checks.custom || []).find((c) => c.evaluator);
+      assert.ok(["tool-result-continuation", "tool-result-selection"].includes(ev.evaluator), `${id} trusted evaluator`);
+      // the generator is always a read-only mount outside /workspace
       assert.ok((t.sandbox?.readonlyMounts || []).length >= 1, `${id} read-only mount`);
+      // continuation evaluators additionally assert structural immutability
+      if (ev.evaluator === "tool-result-continuation") assert.equal(ev.config?.immutableGenerator, true, `${id} immutableGenerator`);
+      // selection evaluators must declare a selector (harness-owned, not agent code)
+      if (ev.evaluator === "tool-result-selection") assert.ok(ev.config?.selector && typeof ev.config.selector === "object", `${id} selector`);
     }
   });
 
@@ -219,11 +228,12 @@ describe("benchmark v1 — semantic-audit metadata + validator invariants", () =
     }
   });
 
-  it("14 rows collapse to fewer independent families (ko/en + d1/d2 grouped)", () => {
-    assert.equal(manifest.counts.total, 14);
+  it("rows collapse to fewer independent families (ko/en + d1/d2 grouped)", () => {
     assert.ok(manifest.counts.independentFamilies < manifest.counts.total, "families < rows");
     assert.equal(manifest.counts.independentFamilies, Object.keys(manifest.families).length);
     assert.ok(manifest.families["d-token"].length === 2, "d1/d2 share one family");
+    assert.ok(manifest.families["dx1-config-merge"].length === 2, "dx1 en/ko share one family");
+    assert.ok(manifest.families["fr1-crash-recover"].length === 2, "fr1 en/ko share one family");
   });
 
   it("language pairs share the base fixture hash and acceptance checks", () => {

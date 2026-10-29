@@ -1,0 +1,17 @@
+# Shared envelope for the benchmark v1 DATASET-expansion tasks (substantive,
+# low-disclosure). Not a task itself (leading underscore → skipped by loadTaskDir).
+# Same Track A budgets as _base-benchmark-v1.yaml, but the image is PINNED BY
+# DIGEST (Phase 8 reproducibility) rather than a mutable tag.
+version: 1
+branch: main
+context: { strategy: default, maxFiles: 12, includeTests: true }
+sandbox:
+  type: docker
+  image: node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914
+  network: none
+  timeout: 300
+agent:
+  permissions: bypassPermissions
+  maxTurns: 10
+  maxTokens: 4096
+  tools: { allow: [read_file, write_file, run_shell], deny: [] }

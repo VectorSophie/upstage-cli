@@ -35,10 +35,17 @@ and evaluation validity** as separate axes.
 | E | Failure recovery | recover from an erroring command / missing file | bv1-e1, bv1-e2 |
 | F | Multi-step planning + verification | several dependent fixes + verify | bv1-f1, bv1-f2 |
 
-**Full design target:** ~60–100 tasks, balanced across categories and documented
-difficulty, split into a development/calibration set and a **frozen held-out**
-evaluation set. **This PR implements 14 candidate/development fixtures** (≥2 per
-category, plus 2 Korean pairs) to validate the protocol — not a leaderboard.
+**Full design target:** ~60–100 tasks (read as ~70–80 **independent families**,
+with language pairs/replicates on top; see STATISTICS §4), balanced across
+categories and documented difficulty, split into a development/calibration set
+and a **frozen held-out** evaluation set. The initial PR implemented 14
+calibration fixtures (tranche `v1-initial`); a second tranche of **14 substantive
+low-disclosure tasks** (tranche `v1-dataset`: cross-file diagnosis, target
+selection, tool-result interpretation, failure recovery, coordinated multi-step)
+plus the **private held-out pack workflow** is described in
+`BENCHMARK_V1_DATASET.md`. Public set now: **28 rows → 23 independent families →
+4 language pairs**; all images **pinned by digest**. This is calibration material,
+not a leaderboard.
 Tasks were chosen for category coverage and clean verifiability, **not** by which
 models passed them. The pilot fixtures T1–T4 / T3-v1/v2/v3 are retained as
 historical pilot evidence and are **not** reused as independent benchmark tasks.
@@ -157,8 +164,8 @@ time (load amortised across all its tasks):
 - [ ] Expand to the full stratified set (~60–100), balanced, difficulty-labelled.
 - [ ] Author and **freeze a held-out** split; keep reference solutions out of any
       agent-visible path (as the candidate set already does).
-- [ ] Pin every task's Docker image **by digest** (candidates use the
-      `node:22-alpine` tag; the validator warns until pinned).
+- [x] Pin every task's Docker image **by digest** (done — all tasks pinned to
+      `node:22-alpine@sha256:fe4f…`; validator warns on any unpinned tag, now 0).
 - [ ] Freeze Track A and Track B envelopes (all budgets) and record them.
 - [ ] Independent **human** review of each task (current review state = `auto`).
 - [ ] Finalise the statistical plan (sample size / precision; see STATISTICS).

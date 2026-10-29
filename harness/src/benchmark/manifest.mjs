@@ -69,7 +69,23 @@ const META = {
   "bv1-e1-syntax-error": { category: "E", split: "dev", family: "e1-syntax-error", langVariant: "en", measuredConstruct: "guided syntax repair (instruction-following)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "instruction-following repair, NOT autonomous failure recovery — the prompt names broken.mjs, states it is a syntax error, and gives the required behaviour; the agent does not discover or diagnose the failure.", integrity: "trusted-path-restore", justification: "Acceptance initially errors (SyntaxError), but the prompt discloses the file, the defect class, and the target behaviour, so it measures guided repair. Genuine recovery would withhold the diagnosis." },
   "bv1-e2-missing-module": { category: "E", split: "dev", family: "e2-missing-module", langVariant: "en", measuredConstruct: "spec-driven module creation (instruction-following)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "instruction-following module creation, NOT failure recovery — the prompt states the module is missing and gives its full slugify spec.", integrity: "trusted-path-restore", justification: "A required module is absent so the test errors, but the prompt discloses the missing file and the exact behaviour to implement; the agent follows a spec rather than diagnosing an unexpected failure." },
   "bv1-f1-csv-two-bugs": { category: "F", split: "dev", family: "f1-csv-two-bugs", langVariant: "en", measuredConstruct: "compound localized repair (two disclosed defects, weak step dependency)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "compound repair, NOT genuine multi-step planning — both defects are disclosed and fixed within one short function with little inter-step dependency.", integrity: "trusted-path-restore", justification: "Two defects (delimiter + trim) in one function; both are named in the prompt. Limited planning demand; retained as a compound-repair calibration item." },
-  "bv1-f2-stack-two-bugs": { category: "F", split: "dev", family: "f2-stack-two-bugs", langVariant: "en", measuredConstruct: "compound repair across two methods (two disclosed defects)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "compound repair + verification, NOT dependent multi-step planning — the two method fixes are largely independent and both are disclosed.", integrity: "trusted-path-restore", justification: "Two defects across methods (pop semantics + size). Both disclosed; fixes are nearly independent, so planning demand is modest. Retained as compound-repair + verification." }
+  "bv1-f2-stack-two-bugs": { category: "F", split: "dev", family: "f2-stack-two-bugs", langVariant: "en", measuredConstruct: "compound repair across two methods (two disclosed defects)", promptDisclosure: "high", auditAction: "RECLASSIFY", reclassification: "compound repair + verification, NOT dependent multi-step planning — the two method fixes are largely independent and both are disclosed.", integrity: "trusted-path-restore", justification: "Two defects across methods (pop semantics + size). Both disclosed; fixes are nearly independent, so planning demand is modest. Retained as compound-repair + verification." },
+
+  // ── v1-dataset tranche (substantive, low-disclosure) ──────────────────────
+  "bv1-dx1-config-merge": { category: "B", split: "dev", tranche: "v1-dataset", family: "dx1-config-merge", pairId: "pair-dx1", langVariant: "en", measuredConstruct: "cross-file diagnosis — nested deep-merge defect located by tracing loadConfig→deepMerge (location NOT disclosed)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Observable symptom only (nested override drops siblings); the agent must trace across config/defaults/merge to find the shallow-merge bug. A one-level 'fix server only' hack fails the top-level-override case." },
+  "bv1-dx1-config-merge-ko": { category: "B", split: "dev", tranche: "v1-dataset", family: "dx1-config-merge", baseTaskId: "bv1-dx1-config-merge", pairId: "pair-dx1", langVariant: "ko", measuredConstruct: "cross-file diagnosis (Korean prompt)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Korean pair of dx1; identical fixture/grader/budgets/tools, prompt language only differs. Paired observation, not independent." },
+  "bv1-dx2-route-normalize": { category: "B", split: "dev", tranche: "v1-dataset", family: "dx2-route-normalize", langVariant: "en", measuredConstruct: "cross-file diagnosis — route-key normalization defect traced across router→routes→path (location NOT disclosed)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Symptom only (trailing slash misses a route); the real defect is in a normalization helper two files away. Fixing the wrong layer does not pass." },
+  "bv1-dx3-stats-mean": { category: "B", split: "dev", tranche: "v1-dataset", family: "dx3-stats-mean", langVariant: "en", measuredConstruct: "cross-file diagnosis — off-by-one divisor in a mean helper traced summary→mean (location NOT disclosed)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Symptom only (wrong average); the sum is correct, so the agent must localize the defect to mean(). Single-value hardcode fails the multiple cases incl. a single-element list." },
+  "bv1-ts1-target-select": { category: "C", split: "dev", tranche: "v1-dataset", family: "ts1-target-select", langVariant: "en", measuredConstruct: "target selection among distractors — identify which of several settings modules is actually imported", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Two settings modules exist; only one is imported by the code under test. Editing the distractor (legacy_settings) does not pass. Measures selecting the right target, not repair difficulty." },
+  "bv1-fr1-crash-recover": { category: "E", split: "dev", tranche: "v1-dataset", family: "fr1-crash-recover", pairId: "pair-fr1", langVariant: "en", measuredConstruct: "failure recovery — observe a thrown TypeError, diagnose the missing-field cause, recover (location NOT disclosed)", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "names(RECORDS) throws on a record lacking user; the agent must run it, read the stack, and add safe handling. An all-'anonymous' shortcut fails because real names must be preserved." },
+  "bv1-fr1-crash-recover-ko": { category: "E", split: "dev", tranche: "v1-dataset", family: "fr1-crash-recover", baseTaskId: "bv1-fr1-crash-recover", pairId: "pair-fr1", langVariant: "ko", measuredConstruct: "failure recovery (Korean prompt)", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Korean pair of fr1; identical fixture/grader/budgets/tools. Paired observation, not independent." },
+  "bv1-fr2-root-cause": { category: "E", split: "dev", tranche: "v1-dataset", family: "fr2-root-cause", langVariant: "en", measuredConstruct: "failure recovery + root-cause — resist symptom suppression (fix the invalid default, do NOT weaken the validator)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "run() throws a RangeError from a valid validator fed a bad default. The naive fix (weaken the validator) fails because invalid sizes must still be rejected; the agent must find the real cause (the default)." },
+  "bv1-ms2-coordinated": { category: "F", split: "dev", tranche: "v1-dataset", family: "ms2-coordinated", langVariant: "en", measuredConstruct: "dependent multi-step — two COORDINATED edits (topTwo depends on prepare's output order)", promptDisclosure: "low", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "Both prepare() and topTwo() are wrong in interlocking ways; fixing only one fails (verified). Genuine dependency between the two changes, not two independent edits." },
+  "bv1-cr1-stop-when-done": { category: "A", split: "dev", tranche: "v1-dataset", family: "cr1-stop-when-done", langVariant: "en", measuredConstruct: "completion reliability — minimal verifiable fix; whether the agent STOPS after success (post-solution overhead from the trace)", promptDisclosure: "high", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "A small, unambiguous off-by-one fix; the construct is the completion/stop decision (secondary metric Post-Solution Overhead), not debugging difficulty." },
+  "bv1-sr1-clamp": { category: "A", split: "dev", tranche: "v1-dataset", family: "sr1-clamp", langVariant: "en", measuredConstruct: "simple localized repair (baseline), symptom-only disclosure", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trusted-path-restore", justification: "A kept single-function baseline (missing upper bound). Symptom given, defect not; retained so the set has a localized-repair anchor without dominating it." },
+  "bv1-tr1-json-field": { category: "D", split: "dev", tranche: "v1-dataset", family: "tr1-json", langVariant: "en", measuredConstruct: "tool-result interpretation — select the correct JSON field (api service's port) from runtime output", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trace-evaluator-immutable-mount", justification: "Beyond copying stdout: the trusted evaluator recomputes the api port from the qualifying run's own JSON, so copying the whole output or any other port fails. Dynamic CSPRNG tokens; read-only mounted generator." },
+  "bv1-tr2-json-max": { category: "D", split: "dev", tranche: "v1-dataset", family: "tr2-json", langVariant: "en", measuredConstruct: "tool-result interpretation — select the id of the maximum-score item", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trace-evaluator-immutable-mount", justification: "Requires computing an argmax over structured output, not copying. Distinct random scores guarantee a unique answer; evaluator recomputes it from the run's stdout." },
+  "bv1-ms1-indirect": { category: "D", split: "dev", tranche: "v1-dataset", family: "ms1-indirect", langVariant: "en", measuredConstruct: "dependent tool-result interpretation — indirect selection ports[primary] (which value is correct depends on another field)", promptDisclosure: "medium", auditAction: "KEEP", integrity: "trace-evaluator-immutable-mount", justification: "Two-step dependency within one runtime output: read primary, then select ports[primary]. The evaluator applies the same indirect selector to the run's JSON, so a wrong port fails." }
 };
 
 function sha256(buf) { return createHash("sha256").update(buf).digest("hex"); }
@@ -149,6 +165,7 @@ export function buildManifest({ withImageDigests = true } = {}) {
       difficulty: task.difficulty || null,
       language: task.language || "en",
       split: meta.split,
+      tranche: meta.tranche || "v1-initial",
       // Structured review state — the Phase-8 distinction. autoValidated +
       // assistantSemanticReviewed are TRUE; independentHumanReviewed is FALSE for
       // every candidate (a freeze prerequisite) and is never claimed here.
@@ -178,12 +195,18 @@ export function buildManifest({ withImageDigests = true } = {}) {
   });
   const byCategory = {};
   for (const e of entries) byCategory[e.category] = (byCategory[e.category] || 0) + 1;
+  const byTranche = {};
+  for (const e of entries) byTranche[e.tranche] = (byTranche[e.tranche] || 0) + 1;
+  const byDifficulty = {};
+  for (const e of entries) byDifficulty[e.difficulty || "?"] = (byDifficulty[e.difficulty || "?"] || 0) + 1;
   // Family / language-pair rollup: how many INDEPENDENT underlying problems the
   // rows represent (ko/en pairs and d1/d2 collapse to one family each).
   const families = {};
   for (const e of entries) (families[e.family] ||= []).push(e.id);
   const languagePairs = {};
   for (const e of entries) if (e.pairId) (languagePairs[e.pairId] ||= []).push(e.id);
+  // A language pair is a REPLICATE pair only when it has ≥2 members here.
+  const realPairs = Object.fromEntries(Object.entries(languagePairs).filter(([, v]) => v.length >= 2));
   return {
     manifestVersion: MANIFEST_VERSION,
     generatedFrom: "tasks/benchmark-v1",
@@ -191,12 +214,14 @@ export function buildManifest({ withImageDigests = true } = {}) {
     counts: {
       total: entries.length,
       byCategory,
+      byTranche,
+      byDifficulty,
       independentFamilies: Object.keys(families).length,
-      languagePairs: Object.keys(languagePairs).length
+      languagePairs: Object.keys(realPairs).length
     },
     categories: CATEGORIES,
     families,
-    languagePairs,
+    languagePairs: realPairs,
     tasks: entries
   };
 }

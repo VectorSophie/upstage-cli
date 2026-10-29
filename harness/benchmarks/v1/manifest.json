@@ -3,17 +3,26 @@
   "generatedFrom": "tasks/benchmark-v1",
   "note": "CANDIDATE set — development/calibration fixtures for validating the protocol, NOT a frozen leaderboard set. Every task has passed mechanical + Docker QA and an ASSISTANT semantic audit (Phase 2); NONE has had independent human review (review.independentHumanReviewed=false) — a freeze prerequisite. See BENCHMARK_V1_SEMANTIC_AUDIT.md + BENCHMARK_V1_TASK_QA.md.",
   "counts": {
-    "total": 14,
+    "total": 28,
     "byCategory": {
-      "A": 3,
-      "B": 2,
-      "C": 3,
-      "D": 2,
-      "E": 2,
-      "F": 2
+      "A": 5,
+      "B": 6,
+      "C": 4,
+      "D": 5,
+      "E": 5,
+      "F": 3
     },
-    "independentFamilies": 11,
-    "languagePairs": 2
+    "byTranche": {
+      "v1-initial": 14,
+      "v1-dataset": 14
+    },
+    "byDifficulty": {
+      "easy": 10,
+      "medium": 15,
+      "hard": 3
+    },
+    "independentFamilies": 23,
+    "languagePairs": 4
   },
   "categories": {
     "A": "simple-repair",
@@ -44,9 +53,22 @@
     "c2-trivial-constant": [
       "bv1-c2-trivial-constant"
     ],
+    "cr1-stop-when-done": [
+      "bv1-cr1-stop-when-done"
+    ],
     "d-token": [
       "bv1-d1-tool-result",
       "bv1-d2-tool-result"
+    ],
+    "dx1-config-merge": [
+      "bv1-dx1-config-merge",
+      "bv1-dx1-config-merge-ko"
+    ],
+    "dx2-route-normalize": [
+      "bv1-dx2-route-normalize"
+    ],
+    "dx3-stats-mean": [
+      "bv1-dx3-stats-mean"
     ],
     "e1-syntax-error": [
       "bv1-e1-syntax-error"
@@ -59,6 +81,31 @@
     ],
     "f2-stack-two-bugs": [
       "bv1-f2-stack-two-bugs"
+    ],
+    "fr1-crash-recover": [
+      "bv1-fr1-crash-recover",
+      "bv1-fr1-crash-recover-ko"
+    ],
+    "fr2-root-cause": [
+      "bv1-fr2-root-cause"
+    ],
+    "ms1-indirect": [
+      "bv1-ms1-indirect"
+    ],
+    "ms2-coordinated": [
+      "bv1-ms2-coordinated"
+    ],
+    "sr1-clamp": [
+      "bv1-sr1-clamp"
+    ],
+    "tr1-json": [
+      "bv1-tr1-json-field"
+    ],
+    "tr2-json": [
+      "bv1-tr2-json-max"
+    ],
+    "ts1-target-select": [
+      "bv1-ts1-target-select"
     ]
   },
   "languagePairs": {
@@ -69,6 +116,14 @@
     "pair-c1": [
       "bv1-c1-one-wrong-op",
       "bv1-c1-one-wrong-op-ko"
+    ],
+    "pair-dx1": [
+      "bv1-dx1-config-merge",
+      "bv1-dx1-config-merge-ko"
+    ],
+    "pair-fr1": [
+      "bv1-fr1-crash-recover",
+      "bv1-fr1-crash-recover-ko"
     ]
   },
   "tasks": [
@@ -79,6 +134,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -95,7 +151,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -122,7 +178,7 @@
         "path": "benchmarks/v1/solutions/bv1-a1-range-sum"
       },
       "justification": "Canonical off-by-one; a basic single-function repair baseline with a deterministic verifiable test. Prompt names the file, function, and defect type, so it measures instruction-following + minimal edit, NOT autonomous diagnosis.",
-      "specSha256": "344a54512c64e113eb3499fa053b691a892282fc6009ed501d3db80ea40bd63f"
+      "specSha256": "e4517b10295182f0eff187b9dac672d5c7a0ad3be7b1e50b22e59c6245ee2ad3"
     },
     {
       "id": "bv1-a1-range-sum-ko",
@@ -131,6 +187,7 @@
       "difficulty": "easy",
       "language": "ko",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -147,7 +204,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -174,7 +231,7 @@
         "path": "benchmarks/v1/solutions/bv1-a1-range-sum-ko"
       },
       "justification": "Korean-prompt pair of a1 for RQ5; identical fixture and checks, prompt only differs. Paired observation, not an independent task.",
-      "specSha256": "24ef710b5a4b4b4330922eeaa11d6f72004d81b21e7c0c6581b7e47926107444"
+      "specSha256": "4c5b2c99d75f741f7a470a8fe8742faff8ed27fe93a0bae7c60f5f89eab09656"
     },
     {
       "id": "bv1-a2-cel-to-fahr",
@@ -183,6 +240,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -199,7 +257,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -226,7 +284,7 @@
         "path": "benchmarks/v1/solutions/bv1-a2-cel-to-fahr"
       },
       "justification": "Wrong-formula repair; prompt says the value is wrong but NOT that +32 is missing, so some diagnosis is required. Grader strengthened with negative/non-round cases to defeat two-point hardcoding.",
-      "specSha256": "79845cbaec122ccbb8bbe020467276c8baf8cb11c21b708fe2778f0afd8a5f10"
+      "specSha256": "cc9828a7d6cfec7b9663b62c55a5fc9620c8c79a563beeb58df577c4ac45c4aa"
     },
     {
       "id": "bv1-b1-string-align",
@@ -235,6 +293,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -251,7 +310,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -278,7 +337,7 @@
         "path": "benchmarks/v1/solutions/bv1-b1-string-align"
       },
       "justification": "Defect in a helper used by a caller in another file. The prompt discloses that the real defect is in the helper, reducing the diagnostic demand; retained as guided cross-file repair.",
-      "specSha256": "b6b219bdaf3674705289786b9f562fadab46da09ebceb6df4358af58cd3f1221"
+      "specSha256": "07d4dc37ca2af2bab467ae6ed4ce6603b6b45cc57dcebf1b369eed4a1da53585"
     },
     {
       "id": "bv1-b2-validator-chain",
@@ -287,6 +346,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -303,7 +363,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -330,7 +390,7 @@
         "path": "benchmarks/v1/solutions/bv1-b2-validator-chain"
       },
       "justification": "Boundary bug (>= vs >) in a rule composed by another module. Prompt discloses the bug and its location; retained as guided cross-file repair, not blind diagnosis.",
-      "specSha256": "7c103e7f08dbfccb8886d898e06ae0dc9bea9c11ba889b9bac33ea85cca9ccdf"
+      "specSha256": "c4b20dd1643f1a7598428749de3ccc4d2116ab0bf0d40d2b11e8f28a23ecd4cb"
     },
     {
       "id": "bv1-c1-one-wrong-op",
@@ -339,6 +399,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -355,7 +416,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -382,7 +443,7 @@
         "path": "benchmarks/v1/solutions/bv1-c1-one-wrong-op"
       },
       "justification": "Three functions, exactly one wrong (not said which), plus a distractor file; measures locating the wrong one and NOT editing the others (pass_to_pass guards add/sub). Genuine selective repair.",
-      "specSha256": "ba3a8aded6f9bcf95dcc1e5a2a20eeaf97891345cef0de2b1f561ad488b25548"
+      "specSha256": "0effb8047a786024c2a5d0769d5827d0d70a1bc6c7bc3c0b7ec0cc9319cb6e94"
     },
     {
       "id": "bv1-c1-one-wrong-op-ko",
@@ -391,6 +452,7 @@
       "difficulty": "easy",
       "language": "ko",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -407,7 +469,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -434,7 +496,7 @@
         "path": "benchmarks/v1/solutions/bv1-c1-one-wrong-op-ko"
       },
       "justification": "Korean-prompt pair of c1 for RQ5. Paired observation, not independent.",
-      "specSha256": "2d5f52d62728a470780c0de314cd20e1b2f84d8275393c32ad139ad05cb7a109"
+      "specSha256": "ee15741fc5d42c9d157665f41b9b8b3289c97bc65e92d9078cdc31c93b4e7623"
     },
     {
       "id": "bv1-c2-trivial-constant",
@@ -443,6 +505,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -459,7 +522,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -486,7 +549,60 @@
         "path": "benchmarks/v1/solutions/bv1-c2-trivial-constant"
       },
       "justification": "One-line constant fix where the answer is disclosed; the signal is the redundant-tool-call count from the trace, so it measures restraint, not debugging.",
-      "specSha256": "ad6c54e50ade4bfeda8f31abb37439367ef4f3af61211664f53e6b68c1008c1b"
+      "specSha256": "b73711082b2593daccb48dc2aad907d57bab552308c83e8db35df74265860280"
+    },
+    {
+      "id": "bv1-cr1-stop-when-done",
+      "category": "A",
+      "categoryName": "simple-repair",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "cr1-stop-when-done",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "completion reliability — minimal verifiable fix; whether the agent STOPS after success (post-solution overhead from the trace)",
+      "promptDisclosure": "high",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/cr1-stop-when-done",
+      "fixtureHash": "sha256:805b65002b1e8c30d383814b92c541c29eea05430864d9d12952d700151ce28a",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "inventory.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-cr1-stop-when-done"
+      },
+      "justification": "A small, unambiguous off-by-one fix; the construct is the completion/stop decision (secondary metric Post-Solution Overhead), not debugging difficulty.",
+      "specSha256": "97f591bec0f0d4943bd47a91ffbb77a2e60a9cb417e4f191b7e391c0acc0e1a8"
     },
     {
       "id": "bv1-d1-tool-result",
@@ -495,6 +611,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -511,7 +628,7 @@
       "integrity": "trace-evaluator-immutable-mount",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -536,7 +653,7 @@
         "kind": "trace-evaluator"
       },
       "justification": "Tool-result dependence under the hardened T3-v3 model: read-only mounted generator, runtime CSPRNG token, trace-verified. High disclosure is intrinsic to the category (the exact command is the point).",
-      "specSha256": "3cc7072f200467f78b40cabe69637daff0f8a31df4155d5ba8db3c0df35ac7a6"
+      "specSha256": "6a01e37aeda28d5e18367e22dc4328893097d014169404b1f35e29758c28c2f3"
     },
     {
       "id": "bv1-d2-tool-result",
@@ -545,6 +662,7 @@
       "difficulty": "easy",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -561,7 +679,7 @@
       "integrity": "trace-evaluator-immutable-mount",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -586,7 +704,219 @@
         "kind": "trace-evaluator"
       },
       "justification": "Second generator asset for tool-result dependence; mechanically distinct token but the same cognitive demand as d1. Retained as a within-family replicate, not independent evidence.",
-      "specSha256": "d5fa9952b4f3eb241755408fd9887f85a804f77e0150973012697d1d19fab1f7"
+      "specSha256": "f9c99bcda0c9fdaad6407b547f621715fb7854dbf5aa1444a83bd7674c86261d"
+    },
+    {
+      "id": "bv1-dx1-config-merge",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "dx1-config-merge",
+      "baseTaskId": null,
+      "pairId": "pair-dx1",
+      "langVariant": "en",
+      "measuredConstruct": "cross-file diagnosis — nested deep-merge defect located by tracing loadConfig→deepMerge (location NOT disclosed)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/dx1-config-merge",
+      "fixtureHash": "sha256:d6f9f7514b887ab3de47c5bf1e701977623e746954f45576e486838b29ffed5f",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "merge.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-dx1-config-merge"
+      },
+      "justification": "Observable symptom only (nested override drops siblings); the agent must trace across config/defaults/merge to find the shallow-merge bug. A one-level 'fix server only' hack fails the top-level-override case.",
+      "specSha256": "d2c3ada6bad82ea121d6d6e7ab62f35ba1d1b20058b92a89daf92a0c8b955975"
+    },
+    {
+      "id": "bv1-dx1-config-merge-ko",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "ko",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "dx1-config-merge",
+      "baseTaskId": "bv1-dx1-config-merge",
+      "pairId": "pair-dx1",
+      "langVariant": "ko",
+      "measuredConstruct": "cross-file diagnosis (Korean prompt)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/dx1-config-merge",
+      "fixtureHash": "sha256:d6f9f7514b887ab3de47c5bf1e701977623e746954f45576e486838b29ffed5f",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "merge.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-dx1-config-merge-ko"
+      },
+      "justification": "Korean pair of dx1; identical fixture/grader/budgets/tools, prompt language only differs. Paired observation, not independent.",
+      "specSha256": "6afea4c6b79c1a4167d97e1b6432121497537dd7d3d677c375bb4977ef5e1fed"
+    },
+    {
+      "id": "bv1-dx2-route-normalize",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "dx2-route-normalize",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "cross-file diagnosis — route-key normalization defect traced across router→routes→path (location NOT disclosed)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/dx2-route-normalize",
+      "fixtureHash": "sha256:397235e3d91145a78a544d07456d52617967512bfa08310fd1e87dbce5da65e6",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "path.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-dx2-route-normalize"
+      },
+      "justification": "Symptom only (trailing slash misses a route); the real defect is in a normalization helper two files away. Fixing the wrong layer does not pass.",
+      "specSha256": "64a441a7b3d35bc80e68a610fe529b2127410dc5f9a19bcc2ec4c60e493f73ca"
+    },
+    {
+      "id": "bv1-dx3-stats-mean",
+      "category": "B",
+      "categoryName": "multi-file-repair",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "dx3-stats-mean",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "cross-file diagnosis — off-by-one divisor in a mean helper traced summary→mean (location NOT disclosed)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/dx3-stats-mean",
+      "fixtureHash": "sha256:577984dac1d7a2f9e15416807b368c133965fb0c00dfdba7f76cb83fc2e8adec",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "stats.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-dx3-stats-mean"
+      },
+      "justification": "Symptom only (wrong average); the sum is correct, so the agent must localize the defect to mean(). Single-value hardcode fails the multiple cases incl. a single-element list.",
+      "specSha256": "56020ca97601296cd5f06c87f6200154541f58f080acccfc6a4bd0e4481a699e"
     },
     {
       "id": "bv1-e1-syntax-error",
@@ -595,6 +925,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -611,7 +942,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -638,7 +969,7 @@
         "path": "benchmarks/v1/solutions/bv1-e1-syntax-error"
       },
       "justification": "Acceptance initially errors (SyntaxError), but the prompt discloses the file, the defect class, and the target behaviour, so it measures guided repair. Genuine recovery would withhold the diagnosis.",
-      "specSha256": "8e4f05bbfcbd31225dd2cd2c7bb9ca5e63c2270b769810c12911e5224155eaca"
+      "specSha256": "5454023dc1ebfda8dc0c460d29b29de0c40d23376f173d013bcb65f514088be3"
     },
     {
       "id": "bv1-e2-missing-module",
@@ -647,6 +978,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -663,7 +995,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -690,7 +1022,7 @@
         "path": "benchmarks/v1/solutions/bv1-e2-missing-module"
       },
       "justification": "A required module is absent so the test errors, but the prompt discloses the missing file and the exact behaviour to implement; the agent follows a spec rather than diagnosing an unexpected failure.",
-      "specSha256": "05378129f4725bf8bb59a34e95d97c1d41c18317a8a1ad9fef8e5daeddfdc82f"
+      "specSha256": "97a27796392d841bcae0beffdb96b158136a6321fa44805e9bd6a1489b0627f6"
     },
     {
       "id": "bv1-f1-csv-two-bugs",
@@ -699,6 +1031,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -715,7 +1048,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -742,7 +1075,7 @@
         "path": "benchmarks/v1/solutions/bv1-f1-csv-two-bugs"
       },
       "justification": "Two defects (delimiter + trim) in one function; both are named in the prompt. Limited planning demand; retained as a compound-repair calibration item.",
-      "specSha256": "aa7e48a94592c04621fb18f9e78a602551eb0f4851a169b447c8ace8e04751dd"
+      "specSha256": "1995c21f8aef8fe95bbebed8b8e76917e50e96aa2324ba4d5e7e4b5a7453c54e"
     },
     {
       "id": "bv1-f2-stack-two-bugs",
@@ -751,6 +1084,7 @@
       "difficulty": "medium",
       "language": "en",
       "split": "dev",
+      "tranche": "v1-initial",
       "review": {
         "autoValidated": true,
         "assistantSemanticReviewed": true,
@@ -767,7 +1101,7 @@
       "integrity": "trusted-path-restore",
       "sandbox": {
         "type": "docker",
-        "image": "node:22-alpine",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
         "network": "none"
       },
@@ -794,7 +1128,478 @@
         "path": "benchmarks/v1/solutions/bv1-f2-stack-two-bugs"
       },
       "justification": "Two defects across methods (pop semantics + size). Both disclosed; fixes are nearly independent, so planning demand is modest. Retained as compound-repair + verification.",
-      "specSha256": "0e6d6d5b5e5d1eee1e52202deca74fb2083207be16560d4b5535cabee92ad71d"
+      "specSha256": "93c654c8627a112eb0badfd846ea1745a970afd5922eee60eae5e5250b586abc"
+    },
+    {
+      "id": "bv1-fr1-crash-recover",
+      "category": "E",
+      "categoryName": "failure-recovery",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "fr1-crash-recover",
+      "baseTaskId": null,
+      "pairId": "pair-fr1",
+      "langVariant": "en",
+      "measuredConstruct": "failure recovery — observe a thrown TypeError, diagnose the missing-field cause, recover (location NOT disclosed)",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/fr1-crash-recover",
+      "fixtureHash": "sha256:e4d6fc368040ab6d1870555e6b1bc5cd686da0a49d50effff42d618ef4985616",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "extract.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-fr1-crash-recover"
+      },
+      "justification": "names(RECORDS) throws on a record lacking user; the agent must run it, read the stack, and add safe handling. An all-'anonymous' shortcut fails because real names must be preserved.",
+      "specSha256": "32a183f0fa301e88121337759073808b4ae22d35abb5e8a67b045a7fc9535c05"
+    },
+    {
+      "id": "bv1-fr1-crash-recover-ko",
+      "category": "E",
+      "categoryName": "failure-recovery",
+      "difficulty": "medium",
+      "language": "ko",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "fr1-crash-recover",
+      "baseTaskId": "bv1-fr1-crash-recover",
+      "pairId": "pair-fr1",
+      "langVariant": "ko",
+      "measuredConstruct": "failure recovery (Korean prompt)",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/fr1-crash-recover",
+      "fixtureHash": "sha256:e4d6fc368040ab6d1870555e6b1bc5cd686da0a49d50effff42d618ef4985616",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "extract.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-fr1-crash-recover-ko"
+      },
+      "justification": "Korean pair of fr1; identical fixture/grader/budgets/tools. Paired observation, not independent.",
+      "specSha256": "78860a02d420b958b4c12f64de126f847af1a360b1fab2a821b644f76bd260c6"
+    },
+    {
+      "id": "bv1-fr2-root-cause",
+      "category": "E",
+      "categoryName": "failure-recovery",
+      "difficulty": "hard",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "fr2-root-cause",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "failure recovery + root-cause — resist symptom suppression (fix the invalid default, do NOT weaken the validator)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/fr2-root-cause",
+      "fixtureHash": "sha256:c3fd1e8366716e6a1a3d85d55c2c865cf2129b0ed19900e3a3b20622d3f4b54c",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "defaults.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-fr2-root-cause"
+      },
+      "justification": "run() throws a RangeError from a valid validator fed a bad default. The naive fix (weaken the validator) fails because invalid sizes must still be rejected; the agent must find the real cause (the default).",
+      "specSha256": "42fc2fefe9ebd0ef7ac8d4ea51e39346e099fff381f5aafc774de802d654df37"
+    },
+    {
+      "id": "bv1-ms1-indirect",
+      "category": "D",
+      "categoryName": "tool-result-dependence",
+      "difficulty": "hard",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "ms1-indirect",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "dependent tool-result interpretation — indirect selection ports[primary] (which value is correct depends on another field)",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trace-evaluator-immutable-mount",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/ms1-indirect/repo",
+      "fixtureHash": "sha256:a77361945ca517a0f4f03f90337793ddc45ff57057b19811adfc32eaa68e578e",
+      "readonlyMounts": [
+        "/opt/bench/ms1.mjs"
+      ],
+      "acceptanceCheckIds": [
+        "tool-result-selection"
+      ],
+      "trustedPaths": [],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "out.txt"
+      ],
+      "solution": {
+        "kind": "trace-evaluator"
+      },
+      "justification": "Two-step dependency within one runtime output: read primary, then select ports[primary]. The evaluator applies the same indirect selector to the run's JSON, so a wrong port fails.",
+      "specSha256": "3f5572c303f74697aade0c3898e27be97b9e4735e1f7254f586910995f0ae6f0"
+    },
+    {
+      "id": "bv1-ms2-coordinated",
+      "category": "F",
+      "categoryName": "multi-step",
+      "difficulty": "hard",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "ms2-coordinated",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "dependent multi-step — two COORDINATED edits (topTwo depends on prepare's output order)",
+      "promptDisclosure": "low",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/ms2-coordinated",
+      "fixtureHash": "sha256:0bb77abe00ff3afb930e3cae347e61e01cb96163412e5b9e7013aeaa61e33269",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "stage.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-ms2-coordinated"
+      },
+      "justification": "Both prepare() and topTwo() are wrong in interlocking ways; fixing only one fails (verified). Genuine dependency between the two changes, not two independent edits.",
+      "specSha256": "7f7d95ae63bab678db8e713e1e476a709077873a352b2f3f204aee04c3ef70a4"
+    },
+    {
+      "id": "bv1-sr1-clamp",
+      "category": "A",
+      "categoryName": "simple-repair",
+      "difficulty": "easy",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "sr1-clamp",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "simple localized repair (baseline), symptom-only disclosure",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/sr1-clamp",
+      "fixtureHash": "sha256:17f4b751c42000cfd7367f01ea4c4c996661d132114b776fdbc1b5b965d0dccc",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "clamp.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-sr1-clamp"
+      },
+      "justification": "A kept single-function baseline (missing upper bound). Symptom given, defect not; retained so the set has a localized-repair anchor without dominating it.",
+      "specSha256": "d182060b3c7640ab9d78bac5699fd4001a808695d237f2f456371508f4c064d6"
+    },
+    {
+      "id": "bv1-tr1-json-field",
+      "category": "D",
+      "categoryName": "tool-result-dependence",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "tr1-json",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "tool-result interpretation — select the correct JSON field (api service's port) from runtime output",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trace-evaluator-immutable-mount",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/tr1-json/repo",
+      "fixtureHash": "sha256:f8ab739691f660b1b4d5ed90f5d971c1e76eb6da58a0376ca170b972daa66e04",
+      "readonlyMounts": [
+        "/opt/bench/tr1.mjs"
+      ],
+      "acceptanceCheckIds": [
+        "tool-result-selection"
+      ],
+      "trustedPaths": [],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "out.txt"
+      ],
+      "solution": {
+        "kind": "trace-evaluator"
+      },
+      "justification": "Beyond copying stdout: the trusted evaluator recomputes the api port from the qualifying run's own JSON, so copying the whole output or any other port fails. Dynamic CSPRNG tokens; read-only mounted generator.",
+      "specSha256": "8f16dd4cd127ef6e91be779369992997abee74c512d68b308020a6a5c06196eb"
+    },
+    {
+      "id": "bv1-tr2-json-max",
+      "category": "D",
+      "categoryName": "tool-result-dependence",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "tr2-json",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "tool-result interpretation — select the id of the maximum-score item",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trace-evaluator-immutable-mount",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/tr2-json/repo",
+      "fixtureHash": "sha256:80122719ff124ad091c5cad87686afb1f351e10b352c53a88003e8059a728694",
+      "readonlyMounts": [
+        "/opt/bench/tr2.mjs"
+      ],
+      "acceptanceCheckIds": [
+        "tool-result-selection"
+      ],
+      "trustedPaths": [],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "out.txt"
+      ],
+      "solution": {
+        "kind": "trace-evaluator"
+      },
+      "justification": "Requires computing an argmax over structured output, not copying. Distinct random scores guarantee a unique answer; evaluator recomputes it from the run's stdout.",
+      "specSha256": "2f41bf1524e43ee639fd5d0762629e0d213f08618c112da7ae599c6d654e23a3"
+    },
+    {
+      "id": "bv1-ts1-target-select",
+      "category": "C",
+      "categoryName": "tool-selection",
+      "difficulty": "medium",
+      "language": "en",
+      "split": "dev",
+      "tranche": "v1-dataset",
+      "review": {
+        "autoValidated": true,
+        "assistantSemanticReviewed": true,
+        "independentHumanReviewed": false
+      },
+      "family": "ts1-target-select",
+      "baseTaskId": null,
+      "pairId": null,
+      "langVariant": "en",
+      "measuredConstruct": "target selection among distractors — identify which of several settings modules is actually imported",
+      "promptDisclosure": "medium",
+      "auditAction": "KEEP",
+      "reclassification": null,
+      "integrity": "trusted-path-restore",
+      "sandbox": {
+        "type": "docker",
+        "image": "node:22-alpine@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "imageDigest": "node@sha256:fe4f6d74e20370acb04ad889077d14d0f64a9c8ea6a42bc60cddf1e844699914",
+        "network": "none"
+      },
+      "repo": "fixtures/benchmark-v1/ts1-target-select",
+      "fixtureHash": "sha256:b68815a8736e527eb480ead244635f96369449a92d80784c429c5d2f2733a07c",
+      "readonlyMounts": [],
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "trustedPaths": [
+        "app.test.mjs",
+        "sanity.test.mjs"
+      ],
+      "budgets": {
+        "maxTurns": 10,
+        "maxTokens": 4096,
+        "timeoutSec": 300
+      },
+      "expectedPatchScope": [
+        "settings.mjs"
+      ],
+      "solution": {
+        "kind": "file-overlay",
+        "path": "benchmarks/v1/solutions/bv1-ts1-target-select"
+      },
+      "justification": "Two settings modules exist; only one is imported by the code under test. Editing the distractor (legacy_settings) does not pass. Measures selecting the right target, not repair difficulty.",
+      "specSha256": "a1562f32dba86b2196d59a8ae3c4709325ffdabaa7073965ee77f42d723bc211"
     }
   ]
 }

@@ -1,0 +1,53 @@
+{
+  "kind": "holdout-pack-public-summary",
+  "name": "bench-v1-holdout",
+  "version": "0.1.0-candidate",
+  "evaluatorVersion": "bench-v1-eval-2",
+  "taskRows": 3,
+  "independentFamilies": 3,
+  "note": "Hashes pin integrity + evaluator version; they do NOT by themselves guarantee confidentiality. Held-out content is never committed. Not a frozen set until independently reviewed + contamination-checked.",
+  "tasks": [
+    {
+      "id": "hx1-topo-order",
+      "family": "hx1-topo-order",
+      "category": "B",
+      "difficulty": "hard",
+      "split": "holdout",
+      "language": "en",
+      "fixtureHash": "sha256:8fff4f9c8b25a95d622941b1d747c8b51624315b322be1b42eda5b9fe784f9d3",
+      "taskSha256": "sha256:6dbd4d93f8764d3a551ebd705637748a1422cb47e71a8f577ab1415de3d469d8",
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "hasPrivateSolution": true
+    },
+    {
+      "id": "hx2-lru-cache",
+      "family": "hx2-lru-cache",
+      "category": "F",
+      "difficulty": "hard",
+      "split": "holdout",
+      "language": "en",
+      "fixtureHash": "sha256:72ee3e676858c5fcbef1ebeb3d4ab8b9dbc7fd7ec8d0c5cdad3bf6bf453fa847",
+      "taskSha256": "sha256:c997ebe84cd3afac7c98c1b9f3a7e5a57a22107553db8089ca3cf8626ee10fa9",
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "hasPrivateSolution": true
+    },
+    {
+      "id": "hx3-parse-recover",
+      "family": "hx3-parse-recover",
+      "category": "E",
+      "difficulty": "medium",
+      "split": "holdout",
+      "language": "en",
+      "fixtureHash": "sha256:ff9ae4ef6c2920904136acfe54f0af4d71d93ed8493725cdc2fe769728a1bf5f",
+      "taskSha256": "sha256:c014db45e8a8ac42a15b9da9e0dae027137fb069091a11cff297a761dea36b55",
+      "acceptanceCheckIds": [
+        "fix"
+      ],
+      "hasPrivateSolution": true
+    }
+  ]
+}

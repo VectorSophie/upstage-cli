@@ -87,6 +87,13 @@ difference — revisit after a calibration run on the frozen set. RQ5 needs ≥8
 human-verified language pairs across categories; 2 pairs cannot answer it.
 Finalise exact numbers before freeze.
 
+**Update (dataset tranche):** the public set is now **28 rows → 23 independent
+families → 4 language pairs** (`benchmark.mjs report`). The ~60–100 target is read
+as **~70–80 independent families** (≈12–14 per category, difficulty-balanced, with
+≥8–10 language pairs and a few within-family replicates on top). Power/precision
+is computed on families, not rows; language variants and replicates never inflate
+the primary sample size. See `BENCHMARK_V1_DATASET.md` §6.
+
 ## 6. Failure accounting (model- vs infrastructure-caused)
 
 Keep model-caused and infrastructure-caused failures distinct; do **not** treat

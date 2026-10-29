@@ -9,7 +9,7 @@
   "scripts": {
     "check": "node --check src/cli/index.mjs",
     "lint": "eslint src/ tests/",
-    "test": "node --test tests/h1-*.test.mjs tests/h2*.test.mjs tests/h3*.test.mjs tests/h4*.test.mjs tests/h5*.test.mjs tests/h7*.test.mjs tests/h8*.test.mjs tests/h9*.test.mjs tests/h10*.test.mjs tests/h11*.test.mjs tests/h13*.test.mjs tests/h14*.test.mjs tests/h15*.test.mjs tests/h16*.test.mjs tests/h18*.test.mjs tests/h19*.test.mjs tests/h20*.test.mjs",
+    "test": "node --test tests/h1-*.test.mjs tests/h2*.test.mjs tests/h3*.test.mjs tests/h4*.test.mjs tests/h5*.test.mjs tests/h7*.test.mjs tests/h8*.test.mjs tests/h9*.test.mjs tests/h10*.test.mjs tests/h11*.test.mjs tests/h13*.test.mjs tests/h14*.test.mjs tests/h15*.test.mjs tests/h16*.test.mjs tests/h18*.test.mjs tests/h19*.test.mjs tests/h20*.test.mjs tests/h22*.test.mjs tests/h23*.test.mjs",
     "smoke": "node bin/harness.mjs run tasks/fix-flaky-test.yaml --agent mock",
     "ci": "npm run check && npm run lint && npm test && npm run smoke",
     "test:docker": "node --test --test-concurrency=1 tests/h6*.test.mjs tests/h12*.test.mjs tests/h17*.test.mjs tests/h21*.test.mjs",
