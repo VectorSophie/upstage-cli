@@ -5,7 +5,7 @@
 // already returns, so select-executor.mjs (Task B.3) and every call site
 // (Task B.4) can treat "local" and "docker" interchangeably.
 //
-// Deliberately NOT the eval harness's DockerSandbox (harness/src/sandbox/
+// Deliberately NOT the eval harness's DockerSandbox (korean-agent-bench harness/src/sandbox/
 // docker.mjs): that class is SWE-bench-task-shaped — setup(workdir) builds
 // a per-task env image via a generated Dockerfile + a full workdir copy
 // into the build context, which fits a benchmark run but not an

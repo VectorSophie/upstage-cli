@@ -1,6 +1,6 @@
 # ✦✧ upstage-cli
 
-An agentic coding assistant powered by **Upstage Solar Pro4** — runs entirely in your terminal with a full TUI (OpenTUI, native-rendered on Bun), 36 built-in tools, MCP client/server support, and an evaluation harness for benchmarking agents on real coding tasks. A per-model capability table also supports `solar-pro3`/`solar-pro2`.
+An agentic coding assistant powered by **Upstage Solar Pro4** — runs entirely in your terminal with a full TUI (OpenTUI, native-rendered on Bun), 36 built-in tools, and MCP client/server support. Agent evaluation lives in [korean-agent-bench](https://github.com/VectorSophie/korean-agent-bench), which drives this CLI's agent loop and tools. A per-model capability table also supports `solar-pro3`/`solar-pro2`.
 
 ## Installation
 

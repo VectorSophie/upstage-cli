@@ -5,7 +5,7 @@
 // call sites (Task B.4) can treat "local" and "docker" interchangeably.
 //
 // Live-container assertions are gated behind Docker availability, same
-// pattern as harness/tests/h6-sandbox-docker.test.mjs (SKIP_DOCKER=1 or no
+// pattern as korean-agent-bench's harness/tests/h6-sandbox-docker.test.mjs (SKIP_DOCKER=1 or no
 // docker daemon reachable → those tests no-op rather than fail CI).
 
 import test from "node:test";

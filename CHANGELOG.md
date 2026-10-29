@@ -5,6 +5,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Removed
+- **Evaluation harness moved to [korean-agent-bench](https://github.com/VectorSophie/korean-agent-bench).**
+  `harness/` and `HARNESS.md` are removed here; their full history was carried over
+  (`git filter-repo`, each commit annotated with its original SHA). korean-agent-bench
+  consumes this repository as a pinned submodule and uses `src/` only — keep
+  `src/sandbox/docker-flags.mjs` and `src/model/local-openai-adapter.mjs` compatible
+  or move the pin there deliberately. The `harness` CI job is removed with it.
+
 ## [3.3.0] - 2026-09-19
 
 **See it, run it, prove it.** 3.2 made upstage-cli a complete installed Upstage platform

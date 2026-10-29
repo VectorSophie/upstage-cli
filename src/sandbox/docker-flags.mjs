@@ -1,6 +1,8 @@
 // Shared `docker run` security-flag builder (3.3.0 Thread B, Task B.2).
 // The main agent's DockerExecutor (docker-executor.mjs) and the eval
-// harness's DockerSandbox (harness/src/sandbox/docker.mjs) both build
+// harness's DockerSandbox (korean-agent-bench: harness/src/sandbox/docker.mjs,
+// which imports this file through its pinned upstage-cli submodule — treat
+// the signature as a cross-repository contract) both build
 // container invocations from this one place, so the security posture
 // (network isolation, read-only root, resource caps) can't drift between
 // the two copies that used to exist independently.
@@ -21,7 +23,7 @@ export function buildDockerRunArgs({
   env,
   command,
   commandArgs = [],
-  // Optional hardening used by the eval harness (harness/src/sandbox/docker.mjs).
+  // Optional hardening used by the eval harness (korean-agent-bench).
   // All default off so the main agent's DockerExecutor invocation is unchanged.
   name,
   pidsLimit,
